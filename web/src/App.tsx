@@ -8,6 +8,7 @@ import { allItems } from './lib/nav'
 import { MeProvider, useMeQuery, useSignedIn } from './lib/session'
 import { Audit } from './pages/Audit'
 import { Dashboard } from './pages/Dashboard'
+import { IpExplorer } from './pages/IpExplorer'
 import { Network } from './pages/Network'
 import { Planned } from './pages/Planned'
 import { Reconciliation } from './pages/Reconciliation'
@@ -23,6 +24,7 @@ const router = createBrowserRouter([
       { index: true, element: <Dashboard /> },
       { path: 'network', element: <Network /> },
       { path: 'subnets', element: <Subnets /> },
+      { path: 'ip-addresses', element: <IpExplorer /> },
       { path: 'audit', element: <Audit /> },
       { path: 'reconciliation', element: <Reconciliation /> },
       { path: 'users', element: <Users /> },

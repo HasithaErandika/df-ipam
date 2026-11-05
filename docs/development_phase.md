@@ -2,7 +2,7 @@
 
 Everything DF-IPAM has to deliver, and where it stands. Update this file when a feature changes status.
 
-**Last updated:** 5 November 2026
+**Last updated:** 5 November 2026 (Phase 1 screens and remaining API)
 
 | Status | Meaning |
 | --- | --- |
@@ -18,7 +18,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Foundation | ✅ Complete |
-| 1 | Core IPAM | 🟨 Backend mostly done, screens remain |
+| 1 | Core IPAM | ✅ Complete (exit check on Supabase still to run, see below) |
 | 2 | Allocation workflow | ⬜ Schema only |
 | 3 | Imports and devices | ⛔ Device API done, imports need the production files |
 | 4 | Discovery | ⬜ Schema only |
@@ -52,30 +52,32 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 
 ## Phase 1: Core IPAM
 
+**Exit criteria:** overlaps blocked per routing domain, including against exception subnets; edge prefixes tested. Both pass in `make test-db` against PostgreSQL. Run it once more on Supabase after this change lands.
+
 | Item | Status | Notes |
 | --- | --- | --- |
-| Organisations, routing domains | ✅ Done | List and create, used with real data. No edit or delete yet |
-| Sites, zones, VDOMs, VLANs, business units, services, applications, teams | 🟦 API done | Used by the New subnet form where relevant, but no management screens |
-| Network blocks | 🟦 API done | Includes free-space analysis |
-| Subnet create, view, archive, filter, search | ✅ Done | |
-| Subnet edit | 🟦 API done | Version-checked. No edit form yet |
-| Subnet delete | 🟦 API done | Blocked when records depend on it |
-| Bulk subnet operations | ⬜ To do | |
+| Organisations, routing domains | ✅ Done | List, create, edit and delete. Delete is refused while anything uses them |
+| Sites, zones, VDOMs, VLANs, business units, services, applications, teams | ✅ Done | Network Management tabs: search, create, edit, delete. A VDOM needs its firewall as a device, which has no screen until Phase 3 |
+| Network blocks | ✅ Done | Tab with free-space view: used share, free addresses, largest free CIDR |
+| Subnet create, view, archive, filter, search | ✅ Done | Filters for site, VLAN, VDOM, service and block, sortable columns, archived toggle |
+| Subnet edit | ✅ Done | Version-checked form with every mapping |
+| Subnet delete | ✅ Done | Refused when records depend on it, with "archive instead" |
+| Bulk subnet operations | ✅ Done | Edit fields, archive or delete up to 500 at once, all or nothing, one audit row per subnet |
 | Subnet mapping to site, VLAN, block, service | ✅ Done | Contradictions are rejected |
-| Subnet mapping to VDOM, zone, owners, business unit | 🟦 API done | Not in the form yet |
+| Subnet mapping to VDOM, zone, owners, business unit | ✅ Done | In the form. Owners come from `GET /users/lookup`, which needs only `inventory:view` |
 | Overlap prevention | ✅ Done | Enforced by the database |
-| Overlap exceptions | 🟦 API done | Enforced by the database, no screen |
+| Overlap exceptions | ✅ Done | Tab for approvers (`requests:approve`), applied from the subnet form. Expired ones can't be applied, and removing one while the overlap remains is refused |
 | IPv4 and IPv6 calculations, `/31`, `/32`, `/127`, `/128` | ✅ Done | |
 | Utilisation breakdown | ✅ Done | Subnet detail view |
 | Free ranges | ✅ Done | Subnet detail view |
-| Provider-reserved ranges | 🟦 API done | Counted in utilisation. Not created automatically yet |
-| Split, summarise, locate tools | 🟦 API done | |
-| Address grid data | 🟦 API done | Range-based, safe for IPv6 |
-| IP records: create, edit, search, history, evidence | 🟦 API done | |
-| IP Address Explorer screen | ⬜ To do | Grid, table and detail view |
-| DNS and DHCP records | 🟨 Partial | DHCP scopes have an API. `dns_records` is read by findings but has no API |
-| Saved filters, column visibility | ⬜ To do | Table exists |
-| Global search | 🟨 Partial | Subnets only |
+| Provider-reserved ranges | ✅ Done | Created with every subnet in an AWS VPC or Azure VNet routing domain: the first four addresses and the last |
+| Split, summarise, locate tools | ✅ Done | Tools dialog on Subnet Management |
+| Address grid | ✅ Done | Colour-coded, 256 addresses per page, jump to any address. Large IPv6 subnets open on their recorded addresses |
+| IP records: create, edit, search, history, evidence | ✅ Done | Bulk edit of owner, service, application and allocation state (up to 500) |
+| IP Address Explorer screen | ✅ Done | Table and grid views, filters, detail view with history, evidence and DNS records |
+| DNS and DHCP records | ✅ Done | Read-only `GET /dns-records` and `GET /dhcp-scopes/:id/reservations`. DHCP scopes and reserved ranges are managed in the subnet detail view. Filling them from DNS and DHCP servers is Phase 5 |
+| Saved filters, column visibility | ✅ Done | Saved filters are per user on the server. Column choice is per browser |
+| Global search | ✅ Done | Header search across subnets, IP records, blocks, sites, VLANs, VDOMs, devices and DNS records. An address or CIDR matches by containment |
 
 ## Phase 2: Allocation workflow
 

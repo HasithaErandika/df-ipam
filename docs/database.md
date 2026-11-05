@@ -87,7 +87,7 @@ CREATE UNIQUE INDEX ip_alloc_one_active
 
 Supplement §4 allows overlaps in one routing context as a documented exception. Each exception in `overlap_exceptions` records the reason, approver and expiry, and is applied to the specific subnet.
 
-**Known gap, confirmed by test:** a subnet with an exception sits outside the constraint in both directions, so a normal subnet that overlaps it is accepted by the database. The subnet service must therefore check overlaps against exception subnets too, and a trigger should back this up. This has to be built and tested in Phase 1.
+A subnet with an exception sits outside the exclusion constraint in both directions, so the constraint alone would accept a normal subnet that overlaps it. The `subnets_exception_overlap` trigger closes that gap, and `make test-db` covers it. The trigger only runs when overlap-relevant columns are written, so the API sets `overlap_exception_id` in its own statement, only when it changes; otherwise every edit would re-run the check. An exception that has expired can't be applied to a subnet.
 
 Exceptions also don't relax address uniqueness: `(routing_domain_id, address)` stays unique. An address that falls in two subnets belongs to the most specific one.
 
@@ -123,7 +123,7 @@ These are the definitions the API uses everywhere:
 | IPv6 `/128` | 1 | 1 |
 | AWS or Azure subnet | Standard | Minus 5 provider-reserved addresses |
 
-Calculated in Go using `net/netip` and `math/big`. Reserved ranges are stored per subnet, so provider rules are data rather than special cases.
+Calculated in Go using `net/netip` and `math/big`. Reserved ranges are stored per subnet, so provider rules are data rather than special cases. A subnet created in a `vpc` routing domain gets AWS's ranges, and one in a `vnet` gets Azure's: the first four addresses and the last.
 
 `Available candidate count = usable - allocated - reserved - quarantined - provider-reserved`. It is a candidate count, not a promise that an address is free.
 

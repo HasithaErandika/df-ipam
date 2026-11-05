@@ -48,6 +48,8 @@ export interface Subnet {
   businessService: Ref | null
   technicalOwner: Ref | null
   businessOwner: Ref | null
+  hasOverlapException: boolean
+  overlapExceptionId: string | null
 }
 
 export interface Ref { id: string; name: string }
@@ -143,3 +145,59 @@ export interface Summary {
   quarantined: number
   openFindings: number
 }
+
+export interface GridCell {
+  address: string
+  kind: 'record' | 'candidate' | 'network' | 'broadcast' | 'gateway' | 'reserved_range' | 'dhcp'
+  id?: string
+  allocationState?: string
+  observationState?: string
+  hostname?: string
+}
+
+export interface IpAddress {
+  id: string
+  address: string
+  family: 4 | 6
+  subnetId: string
+  subnetName: string
+  subnetCidr: string
+  routingDomainId: string
+  routingDomainName: string
+  environment: string
+  siteName: string | null
+  hostname: string
+  fqdn: string
+  mac: string | null
+  deviceId: string | null
+  deviceName: string | null
+  deviceType: string | null
+  vendor: string | null
+  operatingSystem: string | null
+  applicationId: string | null
+  applicationName: string | null
+  businessServiceId: string | null
+  businessServiceName: string | null
+  ownerId: string | null
+  ownerEmail: string | null
+  allocationState: string
+  observationState: string
+  confidenceScore: number | null
+  confidenceExplanation: string
+  discoverySource: string | null
+  firstSeen: string | null
+  lastSeen: string | null
+  lastVerified: string | null
+  notes: string
+  updatedAt: string
+}
+
+export interface Change { action: string; occurredAt: string; actorEmail: string | null; result: string }
+
+export interface Evidence { source: string; mac: string | null; hostname: string | null; payload: unknown; observedAt: string }
+
+export interface DnsRecord { id: string; name: string; recordType: string; value: string; ttl: number | null; routingDomainName: string | null; source: string | null; lastSeen: string | null }
+
+export interface SearchResult { type: string; id: string; title: string; subtitle: string; routingDomainName: string | null }
+
+export interface BlockSpace { cidr: string; totalAddresses: string; freeAddresses: string; utilisationPct: string; largestFreeCidr?: string; freeRanges: FreeRange[] }

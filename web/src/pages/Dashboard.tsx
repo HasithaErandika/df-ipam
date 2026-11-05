@@ -73,7 +73,7 @@ function BusiestSubnets() {
             const pct = Number(s.utilisationPct)
             return (
               <tr key={s.id}>
-                <Td><Link to={`/subnets?q=${encodeURIComponent(s.name)}`} className="font-medium text-ink hover:text-accent">{s.name}</Link></Td>
+                <Td><Link to={`/subnets?open=${s.id}`} className="font-medium text-ink hover:text-accent">{s.name}</Link></Td>
                 <Td><Mono>{s.calculated.cidr}</Mono></Td>
                 <Td><Badge>{environments[s.environment]}</Badge></Td>
                 <Td><Meter pct={pct} level={s.utilisationLevel} label={`${s.name} utilisation`} /></Td>

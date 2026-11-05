@@ -81,9 +81,15 @@ export async function put(path: string, body: unknown): Promise<void> {
   await send(path, { method: 'PUT', body: JSON.stringify(body) })
 }
 
-export async function patch<T>(path: string, body: unknown, version: number): Promise<T> {
-  const res = await send(path, { method: 'PATCH', body: JSON.stringify(body), headers: { 'If-Match': String(version) } })
+/** Sends the record version in If-Match when the endpoint checks it. */
+export async function patch<T>(path: string, body: unknown, version?: number): Promise<T> {
+  const headers = version === undefined ? undefined : { 'If-Match': String(version) }
+  const res = await send(path, { method: 'PATCH', body: JSON.stringify(body), headers })
   return (await res.json()).data
+}
+
+export async function del(path: string): Promise<void> {
+  await send(path, { method: 'DELETE' })
 }
 
 export function queryString(params: Record<string, string | number | boolean | undefined>): string {

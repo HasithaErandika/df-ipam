@@ -1,5 +1,5 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, ChevronDown, ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
@@ -7,7 +7,8 @@ import { get } from '../lib/api'
 import { signOut } from '../lib/auth'
 import { allItems, nav } from '../lib/nav'
 import { useCan, useMe } from '../lib/session'
-import type { Summary } from '../lib/types'
+import { useDebounced } from '../lib/hooks'
+import type { SearchResult, Summary } from '../lib/types'
 
 function LogoMark() {
   return (
@@ -79,12 +80,37 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   )
 }
 
-const looksLikeAddress = (v: string) => /^[0-9a-f:.]+$/i.test(v) && (v.includes('.') || v.includes(':')) && !v.includes('/')
+const resultTypes: Record<string, string> = {
+  subnet: 'Subnets', ip_address: 'IP records', network_block: 'Network blocks', site: 'Sites', vlan: 'VLANs', vdom: 'VDOMs', device: 'Devices', dns_record: 'DNS records',
+}
+
+/** Where each kind of result opens. */
+function target(r: SearchResult): string {
+  switch (r.type) {
+    case 'subnet': return `/subnets?open=${r.id}`
+    case 'ip_address': return `/ip-addresses?open=${r.id}`
+    case 'network_block': return `/subnets?networkBlockId=${r.id}`
+    case 'site': return `/subnets?siteId=${r.id}`
+    case 'vlan': return `/subnets?vlanId=${r.id}`
+    case 'vdom': return `/subnets?vdomId=${r.id}`
+    case 'dns_record': return `/ip-addresses?q=${encodeURIComponent(r.subtitle.split(' ').pop() ?? '')}`
+    case 'device': return '/devices'
+    default: return '/'
+  }
+}
 
 function GlobalSearch() {
   const navigate = useNavigate()
   const input = useRef<HTMLInputElement>(null)
   const [value, setValue] = useState('')
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const q = useDebounced(value.trim(), 250)
+  const results = useQuery({
+    queryKey: ['search', q], enabled: q.length >= 2, retry: false, placeholderData: keepPreviousData,
+    queryFn: () => get<SearchResult[]>(`/search?q=${encodeURIComponent(q)}`),
+  })
+  const items = q.length >= 2 ? results.data ?? [] : []
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -96,25 +122,65 @@ function GlobalSearch() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+  useEffect(() => setActive(0), [q])
 
+  const go = (r: SearchResult) => {
+    navigate(target(r))
+    setOpen(false)
+    setValue('')
+    input.current?.blur()
+  }
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const q = value.trim()
-    if (q) navigate(`/subnets?q=${encodeURIComponent(looksLikeAddress(q) ? q.split('.').slice(0, 3).join('.') : q)}`)
+    if (items[active]) go(items[active])
   }
-
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, items.length - 1)) }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
+    if (e.key === 'Escape') { setOpen(false); input.current?.blur() }
+  }
+  let lastType = ''
   return (
     <form role="search" onSubmit={submit} className="relative w-full max-w-md">
       <Search size={14} className="absolute top-1/2 left-3 -translate-y-1/2 text-ink-3" aria-hidden />
       <input
         ref={input}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
-        aria-label="Search subnets"
-        placeholder="Search subnets by name or CIDR"
+        onChange={(e) => { setValue(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={onKeyDown}
+        role="combobox"
+        aria-expanded={open && q.length >= 2}
+        aria-controls="global-search-results"
+        aria-activedescendant={items[active] ? `search-${active}` : undefined}
+        aria-label="Search inventory"
+        placeholder="Search IPs, subnets, hostnames, VLANs, sites"
         className="h-[34px] w-full rounded-[5px] border border-transparent bg-bg pr-16 pl-8.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-accent focus:bg-surface focus:outline-none"
       />
       <kbd className="absolute top-1/2 right-2 -translate-y-1/2 rounded-[3px] border border-line-strong bg-surface px-1.5 font-sans text-[10.5px] text-ink-3 max-lg:hidden">Ctrl K</kbd>
+      {open && q.length >= 2 && (
+        <div id="global-search-results" role="listbox" aria-label="Search results"
+          className="absolute top-[calc(100%+6px)] right-0 left-0 z-30 max-h-[70vh] overflow-y-auto rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+          {results.isPending && <div className="px-2.5 py-2 text-[13px] text-ink-3">Searching…</div>}
+          {results.error && <div className="px-2.5 py-2 text-[13px] text-danger">{results.error.message}</div>}
+          {results.data && items.length === 0 && <div className="px-2.5 py-2 text-[13px] text-ink-3">Nothing matches “{q}”.</div>}
+          {items.map((r, i) => {
+            const header = r.type !== lastType ? resultTypes[r.type] ?? r.type : null
+            lastType = r.type
+            return (
+              <div key={`${r.type}-${r.id}`}>
+                {header && <div className="px-2.5 pt-2 pb-1 text-[10.5px] font-semibold tracking-[.06em] text-ink-3 uppercase">{header}</div>}
+                <div id={`search-${i}`} role="option" aria-selected={i === active} onMouseDown={(e) => { e.preventDefault(); go(r) }} onMouseEnter={() => setActive(i)}
+                  className={`flex cursor-pointer items-center justify-between gap-3 rounded-[4px] px-2.5 py-1.5 text-[13px] ${i === active ? 'bg-bg text-ink' : 'text-ink-2'}`}>
+                  <span className="min-w-0 truncate"><span className="font-medium text-ink">{r.title}</span> <span className="font-mono text-[12.5px]">{r.subtitle}</span></span>
+                  {r.routingDomainName && <span className="shrink-0 text-[12px] text-ink-3">{r.routingDomainName}</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </form>
   )
 }

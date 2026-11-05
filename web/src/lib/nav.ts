@@ -20,8 +20,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/network', label: 'Network Management', icon: Network },
       { to: '/subnets', label: 'Subnet Management', icon: TableProperties },
-      { to: '/ip-addresses', label: 'IP Address Explorer', icon: Boxes, phase: 1, summary: 'Search every tracked address and inspect its full history.',
-        features: ['Colour-coded subnet grid with range loading', 'Search by IP, hostname, MAC, VLAN, VDOM or owner', 'Detail view with evidence and audit history', 'Bulk actions subject to permissions'] },
+      { to: '/ip-addresses', label: 'IP Address Explorer', icon: Boxes },
       { to: '/devices', label: 'Device Inventory', icon: Server, phase: 3, summary: 'One record per device, however many sources report it.',
         features: ['Firewalls, routers, switches, servers and VMs', 'Interfaces, MACs, IPs and services per device', 'Discovery history and source tracking'] },
       { to: '/interfaces', label: 'Interface Inventory', icon: Cable, phase: 3, summary: 'Search interfaces across all devices.',

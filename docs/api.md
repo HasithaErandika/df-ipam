@@ -52,16 +52,16 @@ Versioned REST under `/api/v1`. The contract lives in `api/openapi.yaml`, and Sw
 
 ## Endpoint map
 
-Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) applies to: `/business-units`, `/sites`, `/network-zones`, `/vdoms`, `/vlans`, `/network-blocks`, `/devices`, `/interfaces`, `/business-services`, `/applications`, `/teams`, `/reserved-ranges`, `/dhcp-scopes`, `/overlap-exceptions`. They share one handler, `modules/catalog`. `/organisations` and `/routing-domains` have list and create.
+Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) applies to: `/business-units`, `/sites`, `/network-zones`, `/vdoms`, `/vlans`, `/network-blocks`, `/devices`, `/interfaces`, `/business-services`, `/applications`, `/teams`, `/reserved-ranges`, `/dhcp-scopes`, `/overlap-exceptions`. They share one handler, `modules/catalog`. `/organisations` and `/routing-domains` have list, create, get, edit and delete.
 
 | Area | Endpoints |
 | --- | --- |
 | Auth | `GET /auth/me` (sign-in itself happens in Supabase) |
-| Users and roles | `/users`, `/users/:id/roles`, `/roles`, `/permissions` |
+| Users and roles | `/users`, `/users/:id/roles`, `/roles`, `/permissions`, `GET /users/lookup` (owner picker, needs only `inventory:view`) |
 | Subnets | CRUD on `/subnets`, plus `POST /subnets/:id/archive`, `POST /subnets/bulk`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
 | Tools | `POST /tools/split`, `POST /tools/summarise`, `GET /tools/locate?address=`, `GET /network-blocks/:id/free-space` |
 | IP addresses | `GET /ip-addresses`, `POST /ip-addresses`, `GET /ip-addresses/:id`, `PATCH /ip-addresses/:id`, `GET /ip-addresses/:id/history`, `GET /ip-addresses/:id/evidence`, `POST /ip-addresses/bulk` |
-| DNS and DHCP (read-only inventory) | `GET /dns-records`, `GET /dhcp-scopes`, `GET /dhcp-scopes/:id/reservations` |
+| DNS and DHCP (read-only inventory) | `GET /dns-records`, `GET /dhcp-reservations`, `GET /dhcp-scopes/:id/reservations` |
 | Imports enrichment | `GET /imports/enrichment-queue`, `PATCH /imports/records/:id` |
 | Requests | CRUD on `/requests`, plus `POST /requests/:id/submit`, `POST /requests/:id/cancel` |
 | Approvals | `GET /approvals`, `POST /approvals/:id/approve`, `POST /approvals/:id/reject` |
@@ -77,8 +77,13 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 | Reports | `GET /reports/types`, `POST /reports`, `GET /reports/:id`, `GET /reports/:id/download` |
 | Audit | `GET /audit-logs`, `GET /audit-logs/:id` |
 | Dashboard and search | `GET /dashboard/summary`, `GET /dashboard/trends`, `GET /search?q=` |
+| Saved filters | `GET /saved-filters?page=`, `POST /saved-filters`, `DELETE /saved-filters/:id`. Each user sees only their own |
 | Administration | `/administration/settings`, `GET /administration/health` |
+
+## Bulk changes
+
+`POST /subnets/bulk` takes `ids` (up to 500), an `action` (`update`, `archive` or `delete`) and, for updates, the same `changes` as a subnet edit except name and gateway. `POST /ip-addresses/bulk` takes `ids` and `changes`; hostname, FQDN and MAC are per record. Both run in one transaction: if any record fails, nothing changes and the error names that record. Each record still gets its own audit row.
 
 ## Key error codes
 
-`VALIDATION_FAILED`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `STALE_VERSION`, `SUBNET_OVERLAP`, `ADDRESS_NOT_IN_SUBNET`, `ADDRESS_UNAVAILABLE`, `SUBNET_EXHAUSTED`, `SELF_APPROVAL_DENIED`, `TARGET_NOT_ALLOWED`, `DISCOVERY_STOPPED`, `RATE_LIMITED`, `INTERNAL_ERROR`.
+`VALIDATION_FAILED`, `ALREADY_EXISTS`, `RELATED_RECORD`, `SUBNET_IN_USE`, `SUBNET_ARCHIVED`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `STALE_VERSION`, `SUBNET_OVERLAP`, `ADDRESS_NOT_IN_SUBNET`, `ADDRESS_UNAVAILABLE`, `SUBNET_EXHAUSTED`, `SELF_APPROVAL_DENIED`, `TARGET_NOT_ALLOWED`, `DISCOVERY_STOPPED`, `RATE_LIMITED`, `INTERNAL_ERROR`.
