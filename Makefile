@@ -70,8 +70,8 @@ test: test-api test-web ## Run all tests
 test-api: ## Run Go tests
 	cd api && go test ./...
 
-test-db: ## Run schema rule tests on the database (changes are rolled back)
-	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$DATABASE_URL" go test -count=1 -v ./internal/dbrules ./internal/server
+test-db: ## Run database tests: rule and API tests roll back; concurrency tests delete what they create
+	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$DATABASE_URL" go test -count=1 -v ./internal/dbrules ./internal/server ./internal/modules/allocation
 
 sql: ## Regenerate api/sql/supabase-setup.sql from the migrations and seed
 	cd api && go run ./cmd/sqlbundle > sql/supabase-setup.sql

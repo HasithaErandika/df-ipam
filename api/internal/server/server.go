@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/modules/allocation"
 	"dfipam/api/internal/modules/auditlog"
 	"dfipam/api/internal/modules/catalog"
 	"dfipam/api/internal/modules/dashboard"
 	"dfipam/api/internal/modules/ipaddresses"
+	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/organisations"
 	"dfipam/api/internal/modules/reconciliation"
 	"dfipam/api/internal/modules/routingdomains"
@@ -61,5 +63,7 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	catalog.NewHandler(d.Conn).Register(guard)
 	ipaddresses.NewHandler(d.Conn).Register(guard)
 	reconciliation.NewHandler(d.Conn).Register(guard)
+	allocation.NewHandler(allocation.NewService(d.Conn)).Register(guard)
+	notifications.NewHandler(d.Conn).Register(guard)
 	return r, guard
 }

@@ -266,3 +266,99 @@ paths:
     get: { summary: Inventory counts, responses: { '200': { description: OK } } }
   /audit-logs:
     get: { summary: Read the audit trail, responses: { '200': { description: OK } } }
+  /requests:
+    get:
+      summary: List requests. Without approve, allocate, reserve or audit permission, only your own
+      parameters:
+        - { name: status, in: query, schema: { type: string, description: 'A status, or "open" for draft, pending and approved' } }
+        - { name: type, in: query, schema: { type: string, enum: [allocation, reservation, release] } }
+        - { name: mine, in: query, schema: { type: boolean } }
+        - { name: subnetId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Create a draft request. Send submit=true to submit it at once
+      responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /requests/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a request with its approval steps and result, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch:
+      summary: Replace a draft's fields. Requester only. Send the version in If-Match
+      parameters: [{ name: If-Match, in: header, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' }, '412': { $ref: '#/components/responses/Error' } }
+    delete: { summary: Delete a draft. Requester only, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /requests/{id}/submit:
+    post: { summary: Submit a draft for approval, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /requests/{id}/cancel:
+    post: { summary: Cancel a request that is not yet fulfilled, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /approvals:
+    get: { summary: Approval steps the caller may decide now, responses: { '200': { description: OK } } }
+  /approvals/{id}/approve:
+    post:
+      summary: Approve a step. Never your own request, and at most one step per request
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } }
+  /approvals/{id}/reject:
+    post:
+      summary: Reject a step. A comment is required
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /approval-workflows:
+    get: { summary: List approval workflows, responses: { '200': { description: OK } } }
+    post: { summary: Create a workflow with one to five steps, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /approval-workflows/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    put: { summary: Replace a workflow. Submitted requests keep their steps, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a workflow no request has used, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /allocations:
+    get:
+      summary: List allocations. Status defaults to active
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, released, all] } }
+        - { name: subnetId, in: query, schema: { type: string, format: uuid } }
+        - { name: routingDomainId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Fulfil an approved allocation request. Repeating it returns the same allocation with 200
+      responses: { '200': { description: Already allocated }, '201': { description: Allocated }, '409': { $ref: '#/components/responses/Error' } }
+  /allocations/{id}:
+    get: { summary: Get an allocation, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /allocations/{id}/release:
+    post: { summary: Fulfil an approved release request for this allocation, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /reservations:
+    get:
+      summary: List reservations. Status defaults to active
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, released, expired, converted, all] } }
+        - { name: expiringWithinDays, in: query, schema: { type: integer } }
+        - { name: subnetId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Fulfil an approved reservation request. Repeating it returns the same reservation with 200
+      responses: { '200': { description: Already reserved }, '201': { description: Reserved }, '409': { $ref: '#/components/responses/Error' } }
+  /reservations/{id}:
+    get: { summary: Get a reservation, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /reservations/{id}/extend:
+    post: { summary: Move the expiry later, at most a year ahead. Needs a reason, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+  /reservations/{id}/release:
+    post: { summary: End a reservation early. Needs a reason, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /notifications:
+    get: { summary: Your in-app notifications, newest first. unread=true for unread only, responses: { '200': { description: OK } } }
+  /notifications/unread-count:
+    get: { summary: How many of your notifications are unread, responses: { '200': { description: OK } } }
+  /notifications/read-all:
+    post: { summary: Mark all your notifications read, responses: { '204': { description: Done } } }
+  /notifications/{id}/read:
+    post: { summary: Mark one of your notifications read, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Done }, '404': { $ref: '#/components/responses/Error' } } }
+  /notifications/preferences:
+    get: { summary: Your channel choices for every event, responses: { '200': { description: OK } } }
+    put: { summary: Change your channel choices, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+  /notifications/rules:
+    get: { summary: Event rules, responses: { '200': { description: OK } } }
+  /notifications/rules/{eventType}:
+    put:
+      summary: Switch an event on or off, or change its severity
+      parameters: [{ name: eventType, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } }

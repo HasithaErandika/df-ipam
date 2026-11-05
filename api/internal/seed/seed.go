@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/modules/notifications"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -82,6 +83,10 @@ func SQL() string {
 	b.WriteString("INSERT INTO system_settings (key, value) VALUES ('discovery.emergency_stop', 'false') ON CONFLICT (key) DO NOTHING;\n")
 	for _, r := range retention {
 		fmt.Fprintf(&b, "INSERT INTO retention_policies (data_class, retain_days) VALUES (%s, %d) ON CONFLICT (data_class) DO NOTHING;\n", quote(r.Class), r.Days)
+	}
+	// Every event starts switched on; administrators turn them off in the app.
+	for _, e := range notifications.EventTypes {
+		fmt.Fprintf(&b, "INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES (%s, %s, %s) ON CONFLICT (event_type) DO NOTHING;\n", quote(e.Type), quote(e.Severity), quote(e.Recipients))
 	}
 	return b.String()
 }

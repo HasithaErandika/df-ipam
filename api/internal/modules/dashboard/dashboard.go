@@ -24,6 +24,9 @@ type Summary struct {
 	Devices            int64 `json:"devices"`
 	Quarantined        int64 `json:"quarantined"`
 	OpenFindings       int64 `json:"openFindings"`
+	PendingApprovals   int64 `json:"pendingApprovals"`
+	ReadyToFulfil      int64 `json:"readyToFulfil"`
+	ExpiringSoon       int64 `json:"reservationsExpiringSoon"`
 }
 
 type Handler struct{ pool db.Conn }
@@ -49,9 +52,13 @@ func (h *Handler) summary(c *gin.Context) {
 		  count(*) FILTER (WHERE observation_state = 'conflict_suspected'),
 		  (SELECT count(*) FROM devices),
 		  count(*) FILTER (WHERE allocation_state = 'quarantined'),
-		  (SELECT count(*) FROM reconciliation_results WHERE review_status IN ('open', 'investigating'))
+		  (SELECT count(*) FROM reconciliation_results WHERE review_status IN ('open', 'investigating')),
+		  (SELECT count(*) FROM ip_requests WHERE status = 'pending_approval'),
+		  (SELECT count(*) FROM ip_requests WHERE status = 'approved'),
+		  (SELECT count(*) FROM ip_reservations WHERE status = 'active' AND expires_at <= now() + interval '7 days')
 		FROM ip_addresses`).Scan(&s.SubnetsV4, &s.SubnetsV6, &s.IPRecords, &s.Allocated, &s.Reserved,
-		&s.AvailableCandidate, &s.ObservedActive, &s.UnknownObservation, &s.ConflictSuspected, &s.Devices, &s.Quarantined, &s.OpenFindings)
+		&s.AvailableCandidate, &s.ObservedActive, &s.UnknownObservation, &s.ConflictSuspected, &s.Devices, &s.Quarantined, &s.OpenFindings,
+		&s.PendingApprovals, &s.ReadyToFulfil, &s.ExpiringSoon)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
