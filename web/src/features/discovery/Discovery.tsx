@@ -23,18 +23,21 @@ export function Discovery() {
   const [starting, setStarting] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [reason, setReason] = useState('')
-  const status = useQuery({ queryKey: ['discovery', 'status'], refetchInterval: 15000, queryFn: () => get<Status>('/discovery/status') })
+  const status = useQuery({ queryKey: ['discovery', 'status'], refetchInterval: 5000, queryFn: () => get<Status>('/discovery/status') })
   const confirm = useConfirm()
   const stop = useMutation({ meta: { success: (active: boolean) => active ? 'Emergency stop is on. All discovery has stopped.' : 'Emergency stop lifted.', inlineError: true }, mutationFn: (active: boolean) => post('/discovery/emergency-stop', { active, reason }), onSuccess: () => { refresh(); setStopping(false); setReason('') } })
   const tabs = [{ key: 'jobs', label: 'Jobs' }, { key: 'policies', label: 'Policies' }, { key: 'schedules', label: 'Schedules' },
     { key: 'exclusions', label: 'Exclusions' }, { key: 'blackouts', label: 'Blackouts' }, { key: 'agents', label: 'Agents' }]
   const tab = useRouteTab(tabs.map((t) => t.key))
   const s = status.data
+  const active = (s?.running ?? 0) + (s?.queued ?? 0) + (s?.paused ?? 0)
+  // Only offered when there is something to stop. If the status can't be read, it stays
+  // available, because jobs may be running.
+  const showStop = canRun && !s?.emergencyStop && (active > 0 || status.isError)
   return (
     <>
       <PageHeader title="Discovery Centre" description="Controlled discovery inside approved scopes. Results become evidence and observation state; they never change allocation or ownership."
         actions={<>
-          {canRun && s && !s.emergencyStop && <Button variant="danger" onClick={() => { stop.reset(); setStopping(true) }}><OctagonX size={15} aria-hidden /> Emergency stop</Button>}
           {canRun && <Button variant="primary" disabled={s?.emergencyStop} onClick={() => setStarting(true)}><Radar size={15} aria-hidden /> Scan subnets</Button>}
         </>} />
       {s?.emergencyStop && (
@@ -43,10 +46,15 @@ export function Discovery() {
           {canManage && <Button onClick={async () => { if (await confirm({ title: 'Lift the emergency stop?', body: 'Discovery can run again. Stopped jobs stay stopped.', confirmLabel: 'Lift the stop', tone: 'primary' })) stop.mutate(false) }} busy={stop.isPending}>Lift the stop</Button>}
         </div>
       )}
-      {s && (
-        <div className="mb-3 flex flex-wrap gap-3 text-[13px] text-ink-2">
-          <span><b className="text-ink">{s.running}</b> running</span><span><b className="text-ink">{s.queued}</b> queued</span>
-          <span><b className="text-ink">{s.agentsOnline}</b> of {s.agentsTotal} agents online</span>
+      {(s || status.isError) && (
+        <div className={`mb-3 flex min-h-11 flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-1.5 text-[13px] text-ink-2 ${active > 0 ? 'border-accent/40 bg-accent-soft/40' : 'border-line bg-surface'}`}>
+          {s ? (
+            <div className="flex flex-wrap gap-3">
+              <span><b className="text-ink">{s.running}</b> running</span><span><b className="text-ink">{s.queued}</b> queued</span><span><b className="text-ink">{s.paused}</b> paused</span>
+              <span><b className="text-ink">{s.agentsOnline}</b> of {s.agentsTotal} agents online</span>
+            </div>
+          ) : <span>Can't read the discovery status. Jobs may still be running.</span>}
+          {showStop && <Button variant="danger" className="h-8" onClick={() => { stop.reset(); setStopping(true) }}><OctagonX size={15} aria-hidden /> Emergency stop</Button>}
         </div>
       )}
       <RouteTabs tabs={tabs} active={tab} base="/discovery" />
@@ -57,7 +65,7 @@ export function Discovery() {
       {tab === 'blackouts' && <CatalogManager key="blackouts" def={blackouts} />}
       {tab === 'agents' && <Agents />}
       {starting && <StartJobModal onClose={() => setStarting(false)} />}
-      <Modal open={stopping} onClose={() => setStopping(false)} title="Stop all discovery?"
+      <Modal open={stopping} onClose={() => setStopping(false)} title={active > 0 ? `Stop ${active} discovery ${active === 1 ? 'job' : 'jobs'}?` : 'Stop all discovery?'}
         footer={<><Button onClick={() => setStopping(false)}>Cancel</Button><Button variant="danger" busy={stop.isPending} onClick={() => stop.mutate(true)}>Stop everything now</Button></>}>
         <p className="text-[13px] text-ink-2">Every queued, running and paused job stops, and agents halt at their next contact. Lifting the stop needs the manage permission.</p>
         <div className="mt-3"><Field label="Reason" htmlFor="stop-reason" error={fieldIssues(stop.error).reason}><Input id="stop-reason" value={reason} onChange={(e) => setReason(e.target.value)} /></Field></div>

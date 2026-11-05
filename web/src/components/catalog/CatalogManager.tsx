@@ -16,7 +16,7 @@ export function CatalogManager({ def }: { def: EntityDef }) {
   const canEdit = useCan(def.writePermission ?? 'inventory:edit')
   const canDelete = useCan(def.writePermission ?? 'inventory:delete')
   const writable = !def.readOnly
-  const paging = usePaging(def.key, 25)
+  const paging = usePaging(def.key)
   const [search, setSearch] = useState('')
   const q = useDebounced(search.trim())
   const [editing, setEditing] = useState<Row | 'new' | null>(null)

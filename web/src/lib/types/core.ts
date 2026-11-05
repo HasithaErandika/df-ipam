@@ -2,6 +2,18 @@
 
 export interface Me { id: string; email: string; roles: string[]; permissions: string[] }
 
+export interface Profile {
+  id: string
+  email: string
+  displayName: string
+  authProvider: string
+  isActive: boolean
+  lastLoginAt: string | null
+  createdAt: string
+  updatedAt: string
+  assignments: { role: string; description: string; scope: string }[]
+}
+
 export interface Ref { id: string; name: string }
 
 export interface Organisation { id: string; name: string; code: string; createdAt: string }

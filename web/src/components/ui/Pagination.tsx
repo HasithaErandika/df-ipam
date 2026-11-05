@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-r
 import { type PageMeta } from '../../lib/api'
 import { pageWindow } from '../../lib/format'
 
-const pageSizes = [25, 50, 100, 200]
+const pageSizes = [20, 50, 100, 200]
 
 const pageButton = 'grid h-7 min-w-7 cursor-pointer place-items-center rounded-[4px] px-1 text-[12.5px] tabular-nums text-ink-2 hover:bg-surface-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent'
 
@@ -19,7 +19,7 @@ export function Pagination({ meta, onPage, onPageSize }:
             Rows
             <select aria-label="Rows per page" value={pageSize} onChange={(e) => onPageSize(Number(e.target.value))}
               className="h-7 cursor-pointer rounded-[4px] border border-line bg-surface px-1 text-[12.5px] text-ink focus:border-accent focus:outline-none">
-              {pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+              {[...new Set([...pageSizes, meta.pageSize])].sort((a, b) => a - b).map((size) => <option key={size} value={size}>{size}</option>)}
             </select>
           </label>
         )}

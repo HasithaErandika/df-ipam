@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { daysUntil, formatCapacity, formatDate, formatEndOfDay, humanAction, pageWindow, requestTone, severity } from './format'
+import { formatAgo, daysUntil, formatCapacity, formatDate, formatEndOfDay, humanAction, pageWindow, requestTone, severity } from './format'
 
 describe('formatCapacity', () => {
   it('shows IPv4 counts in full', () => expect(formatCapacity('65536', 4, 16)).toBe('65,536'))
@@ -49,4 +49,12 @@ describe('workflow formatting', () => {
     expect(requestTone('allocated')).toBe('ok')
     expect(requestTone('cancelled')).toBe('neutral')
   })
+})
+
+describe('formatAgo', () => {
+  const now = Date.parse('2026-11-05T12:00:00Z')
+  it('says just now', () => expect(formatAgo('2026-11-05T11:59:30Z', now)).toBe('just now'))
+  it('counts minutes', () => expect(formatAgo('2026-11-05T11:48:00Z', now)).toBe('12 minutes ago'))
+  it('uses the singular', () => expect(formatAgo('2026-11-05T11:00:00Z', now)).toBe('1 hour ago'))
+  it('counts days', () => expect(formatAgo('2026-11-02T12:00:00Z', now)).toBe('3 days ago'))
 })

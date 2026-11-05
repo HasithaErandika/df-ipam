@@ -28,7 +28,7 @@ export function DevicePanel({ id }: { id: string }) {
       {nothing && <p className="rounded-[5px] bg-surface-2 px-3 py-2 text-[13px] text-ink-2">Nothing is known about a device here yet. Link a device record, or wait for an approved source to report it.</p>}
       {data.device && (
         <div className="flex items-start gap-3 rounded-[5px] border border-line p-3">
-          <div className="grid size-10 shrink-0 place-items-center rounded-md bg-accent-soft"><DeviceIcon type={data.device.deviceType} size={20} /></div>
+          <DeviceIcon type={data.device.deviceType} size={24} />
           <div className="min-w-0 flex-1">
             <div className="font-medium text-ink">{data.device.name} <Source>{data.device.sourceSystem}</Source></div>
             <div className="text-[12.5px] text-ink-2">{deviceTypes[data.device.deviceType]?.label ?? data.device.deviceType}{[data.device.vendor, data.device.model].filter(Boolean).length > 0 && ` · ${[data.device.vendor, data.device.model].filter(Boolean).join(' ')}`}</div>

@@ -18,7 +18,7 @@ const positive = (value: string | null, fallback: number) => {
  * Keeps page and page size in the URL, so they survive refresh and the back button.
  * A prefix lets two tables share one page.
  */
-export function usePaging(prefix = '', defaultSize = 50): Paging {
+export function usePaging(prefix = '', defaultSize = 20): Paging {
   const [params, setParams] = useSearchParams()
   const pageKey = prefix ? `${prefix}Page` : 'page'
   const sizeKey = prefix ? `${prefix}PageSize` : 'pageSize'

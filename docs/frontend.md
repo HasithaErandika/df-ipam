@@ -36,6 +36,8 @@ Allocation and observation are always shown as two separate badges. "Available c
 
 **Device types and operating systems** have icons (firewall, router, switch, access point, server, virtual machine, laptop, desktop, phone, tablet, printer, camera and more; Windows, Linux, macOS, iOS, Android, network OS). An OS is shown only when a record or reliable source states it, never guessed.
 
+Device types use network-diagram symbols drawn for this project, in `web/src/components/deviceIcons.tsx`, on tiles coloured by kind. Windows, Linux, macOS, iOS and Android use their real logos, in `web/src/components/osLogos.tsx`. Network OS and Hypervisor stay generic, because they cover many vendors. Logos only identify the system a record runs, and belong to their owners.
+
 ## Dialogs
 
 Every dialog is centred over a blurred background, using `Modal` and `ConfirmDialog` in `web/src/components/ui/`. Don't add side drawers.
@@ -97,7 +99,7 @@ Every data view has loading, empty and error states.
 
 ## Large data
 
-- Tables always use server-side filtering, sorting and pagination, through `usePaging` and `Pagination`. Page and page size live in the URL, so they survive refresh and the back button.
+- Tables always use server-side filtering, sorting and pagination, through `usePaging` and `Pagination`. Screens show 20 rows by default, with 50, 100 or 200 in the selector; the API default stays 50 for callers that send no size. Page and page size live in the URL, so they survive refresh and the back button.
 - Dropdowns load every option through `listAll`, never one capped page.
 - The interactive subnet grid handles small and large networks. It is colour-coded by allocation state, and loads ranges through `GET /subnets/:id/addresses?offset=&limit=`.
 - An IPv6 subnet opens on its recorded addresses plus a jump-to-address box, never a full listing.

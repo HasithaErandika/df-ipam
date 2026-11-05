@@ -20,6 +20,14 @@ export function formatCount(n: number): string {
   return n.toLocaleString('en-GB')
 }
 
+/** How long ago, in words: "just now", "12 minutes ago", "3 days ago". */
+export function formatAgo(iso: string, now = Date.now()): string {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60000)
+  if (minutes < 1) return 'just now'
+  const [n, unit] = minutes < 60 ? [minutes, 'minute'] : minutes < 1440 ? [Math.floor(minutes / 60), 'hour'] : [Math.floor(minutes / 1440), 'day']
+  return `${n} ${unit}${n === 1 ? '' : 's'} ago`
+}
+
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 }

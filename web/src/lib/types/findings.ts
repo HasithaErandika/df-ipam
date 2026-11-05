@@ -23,6 +23,10 @@ export interface Finding {
 
 export interface FindingCount { classification: string; count: number }
 
+export interface RunOutcome { detected: number; new: number; resolved: number; open: number }
+
+export interface LastRun { ranAt: string | null; ranBy: string | null; new: number; resolved: number; open: number }
+
 export interface ChangeRequest {
   id: string
   findingId: string | null

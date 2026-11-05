@@ -169,6 +169,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Code size and query rules | ✅ Done | Files under 200 lines, function complexity 15 or less in production code, no query per row on read paths |
 | Feedback, confirmations and error handling | 🟦 Built, not viewed | Toasts, confirmation of edits and deletes, friendly errors, sign-out when a session ends |
 | Screens load on demand, tabs are paths | 🟦 Built, not viewed | Old `?tab=` links redirect |
+| Account menu and details dialog | 🟦 Built, not viewed | Top bar shows a user icon; the menu has Details and Sign out |
 
 ## Waiting on others
 

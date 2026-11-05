@@ -1,12 +1,13 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, ChevronDown, GitCompareArrows, LogOut, Search } from 'lucide-react'
+import { Bell, GitCompareArrows, IdCard, LogOut, Search, UserRound } from 'lucide-react'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { get } from '../../lib/api'
 import { signOut } from '../../lib/auth'
-import { useCan, useMe } from '../../lib/session'
+import { useCan } from '../../lib/session'
 import type { Summary } from '../../lib/types'
+import { ProfileModal } from './ProfileModal'
 
 export function GlobalSearch() {
   const navigate = useNavigate()
@@ -73,34 +74,32 @@ export function AlertsBell() {
   )
 }
 
+const menuItem = 'flex h-8 cursor-pointer items-center gap-2 rounded-[4px] px-2.5 text-[13px] text-ink-2 outline-none data-[highlighted]:bg-bg data-[highlighted]:text-ink'
+
 export function UserMenu() {
-  const me = useMe()
   const queryClient = useQueryClient()
-  const role = me.roles[0] ?? 'No role assigned'
+  const [details, setDetails] = useState(false)
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger aria-label="Account menu"
-        className="flex cursor-pointer items-center gap-2 rounded-[5px] py-1 pr-1.5 pl-1 text-left hover:bg-bg data-[state=open]:bg-bg">
-        <span aria-hidden className="grid size-[30px] shrink-0 place-items-center rounded-[5px] bg-accent text-[12.5px] font-semibold text-white">{me.email.charAt(0).toUpperCase()}</span>
-        <span className="min-w-0 leading-tight max-md:hidden">
-          <span className="block max-w-44 truncate text-[12.5px] font-medium text-ink">{me.email}</span>
-          <span className="block max-w-44 truncate text-[11px] text-ink-3">{role}</span>
-        </span>
-        <ChevronDown size={14} className="shrink-0 text-ink-3" aria-hidden />
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={6}
-          className="z-30 w-64 rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
-          <div className="border-b border-line px-2.5 pt-1.5 pb-2 leading-tight">
-            <div className="truncate text-[13px] font-medium text-ink">{me.email}</div>
-            <div className="mt-0.5 truncate text-[12px] text-ink-3">{me.roles.join(', ') || role}</div>
-          </div>
-          <DropdownMenu.Item onSelect={async () => { await signOut(); queryClient.clear() }}
-            className="mt-1 flex h-8 cursor-pointer items-center gap-2 rounded-[4px] px-2.5 text-[13px] text-ink-2 outline-none data-[highlighted]:bg-bg data-[highlighted]:text-ink">
-            <LogOut size={14} aria-hidden /> Sign out
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+    <>
+      {/* Not modal: a modal menu would fight the details dialog for focus as it closes. */}
+      <DropdownMenu.Root modal={false}>
+        <DropdownMenu.Trigger aria-label="Account menu" title="Account"
+          className="grid size-8 cursor-pointer place-items-center rounded-full bg-accent-soft text-accent hover:bg-accent hover:text-white data-[state=open]:bg-accent data-[state=open]:text-white">
+          <UserRound size={17} strokeWidth={1.75} aria-hidden />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content align="end" sideOffset={6}
+            className="z-30 w-44 rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+            <DropdownMenu.Item onSelect={() => setDetails(true)} className={menuItem}>
+              <IdCard size={14} aria-hidden /> Details
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={async () => { await signOut(); queryClient.clear() }} className={menuItem}>
+              <LogOut size={14} aria-hidden /> Sign out
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+      <ProfileModal open={details} onClose={() => setDetails(false)} />
+    </>
   )
 }

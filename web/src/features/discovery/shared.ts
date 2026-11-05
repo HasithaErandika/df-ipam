@@ -20,7 +20,7 @@ export interface Job {
 
 export interface Agent { id: string; name: string; siteName: string | null; status: string; version: string; lastHeartbeatAt: string | null; registrationPending: boolean; createdAt: string }
 
-export interface Status { emergencyStop: boolean; changedAt: string | null; queued: number; running: number; agentsOnline: number; agentsTotal: number }
+export interface Status { emergencyStop: boolean; changedAt: string | null; queued: number; running: number; paused: number; agentsOnline: number; agentsTotal: number }
 
 export const jobTone: Record<string, 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'> = {
   queued: 'neutral', running: 'accent', paused: 'warn', completed: 'ok', failed: 'danger', cancelled: 'neutral', stopped: 'danger',
