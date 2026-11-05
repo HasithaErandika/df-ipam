@@ -60,7 +60,7 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           package_json_file: web/package.json
       - uses: actions/setup-node@v4
@@ -99,7 +99,7 @@ jobs:
       - name: Scan Go dependencies
         working-directory: api
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           package_json_file: web/package.json
       - name: Scan web dependencies
