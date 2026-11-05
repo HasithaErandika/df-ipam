@@ -7,11 +7,11 @@ One dedicated on-premises Ubuntu Server. Agents run on separate hosts in the net
 | Component | Runs as |
 | --- | --- |
 | Nginx | Serves the React build, HTTPS termination, proxies `/api` |
-| `df-ipam-api` | systemd service, bound to localhost |
-| `df-ipam-worker` | systemd service |
+| `df-ipam-api` | Docker container, published on localhost only |
+| `df-ipam-worker` | Docker container |
 | `df-ipam-agent` | systemd service on each agent host, `CAP_NET_RAW` only |
 | Redis | Local, bound to localhost, password protected, pending approval |
-| PostgreSQL | Supabase |
+| PostgreSQL | Docker container with a named volume, published on localhost only |
 
 Each service has its own account with minimal file permissions. Nothing runs as root. The supplement's PHP-FPM, Laravel and Python services are replaced by the Go services above: see [requirements.md](requirements.md).
 
@@ -23,7 +23,7 @@ Each service has its own account with minimal file permissions. Nothing runs as 
 | Users | Supabase | 443/tcp | Sign-in |
 | Agents | Nginx | 443/tcp | Jobs, results, heartbeats |
 | API | Supabase | 443/tcp | JWKS |
-| API, worker | PostgreSQL | 5432/tcp (TLS) | Database. Local if self-hosted |
+| API, worker | PostgreSQL | 5432/tcp | Database, on Docker's private network |
 | API, worker | Redis | 6379/tcp | Localhost only |
 | Worker | FortiGate, vCenter | 443/tcp (or the configured admin port) | Read-only APIs |
 | Worker | AWS, Azure | 443/tcp | Read-only APIs |
@@ -58,36 +58,38 @@ Observations drive storage. As a rule of thumb: IPs × runs per day × sources �
 
 Needed: Supabase auth (users' browsers and the API), the Supabase database, mail provider, and the integration endpoints. All others are blocked.
 
-## Database: Supabase
+## Database
 
-Supabase PostgreSQL is the only database for now, and there is no local one. The application uses standard PostgreSQL, so moving later is a change of connection string plus a data migration.
+PostgreSQL 16 runs in Docker on the server, with its data in the `df-ipam_db-data` volume. The network inventory never leaves the premises. Start with [setup.md](setup.md).
 
-- The project is in `ap-northeast-1`. The API uses the **session pooler** (`aws-0-ap-northeast-1.pooler.supabase.com`), which works over IPv4. The direct `db.<ref>.supabase.co` host used for migrations is IPv6 only.
-- The Data API must stay closed to DF-IPAM tables. See migration `000006` and [security.md](security.md).
+Connections stay on Docker's private network without TLS, because they never leave the host. Move PostgreSQL to its own server and TLS with certificate verification becomes required.
 
-**Before production data is loaded,** Dialog Finance must confirm:
-
-- [ ] Is a full network inventory allowed outside the premises and country?
-- [ ] Does the Supabase region satisfy residency rules?
-- [ ] Do the plan's availability and backup window meet the requirement?
-- [ ] Is it acceptable that the app can't work during an internet outage?
-- [ ] Is a vendor security review needed?
-
-A system holding a bank's network map, and needed during network incidents, may well need an on-premises database in the end.
+Supabase provides sign-in. Its database is for testing only, through `make test-db-supabase` and `make migrate-supabase`. Its session pooler allows 15 clients in total, and the Data API must stay closed: see migration `000006` and [security.md](security.md).
 
 ## Configuration
 
-In development, settings live in `api/.env` and `web/.env`. On the server, environment files live in `/etc/df-ipam/`, owned by root and readable only by the service user.
+Settings live in `api/.env` and `web/.env`, in development and on the server. `make` loads `api/.env` and passes values to the containers by name. On the server it has mode 600.
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | App role connection |
-| `MIGRATION_DATABASE_URL` | Owner role, used only for migrations |
+| `POSTGRES_PASSWORD`, `DFIPAM_APP_PASSWORD` | Local database passwords. Letters and digits only |
+| `POSTGRES_DB`, `POSTGRES_PORT`, `API_PORT` | Database name, and host ports on localhost |
+| `DATABASE_URL`, `MIGRATION_DATABASE_URL` | Connections for commands run on the host. Containers build their own |
+| `SUPABASE_DATABASE_URL`, `SUPABASE_MIGRATION_DATABASE_URL` | Supabase database, for testing only |
+| `DB_MAX_CONNS` | Connection pool size for processes run on the host |
+| `TRUSTED_PROXIES`, `API_MAX_IN_FLIGHT` | Who may state the client's address, and the most requests running at once |
+| `DOCKER_SUBNET`, `DOCKER_GATEWAY` | The Docker network. The API trusts only this gateway |
+| `INTEGRATION_ALLOWED_HOSTS`, `INTEGRATION_ALLOWED_PRIVATE_RANGES`, `INTEGRATION_CA_FILE` | Outbound policy for connectors |
+| `SECRET_ENCRYPTION_KEY_VERSION`, `SECRET_ENCRYPTION_KEY_PREVIOUS` | Key rotation |
+| `BACKUP_GPG_RECIPIENT` | GPG key backups are encrypted to |
 | `REDIS_URL` | Queue |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Sign-in checks and invitations |
 | `CORS_ALLOWED_ORIGINS` | Web origins allowed to call the API |
 | `SECRET_ENCRYPTION_KEY` | Master key for integration credentials (Phase 5) |
-| `APP_BASE_URL` | Public URL, used in emails and CORS |
+| `APP_BASE_URL` | Public URL of the web app, used for links in emails |
+| `SMTP_HOST`, `SMTP_PORT` | Mail server for the worker. Empty host means email is off. Port 465 uses TLS; other ports must offer STARTTLS |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | Mail server sign-in, if it needs one. Secret |
+| `MAIL_FROM` | Sender address for notifications |
 
 ## Database roles
 
@@ -99,19 +101,18 @@ In development, settings live in `api/.env` and `web/.env`. On the server, envir
 
 ## Release process
 
-1. Build binaries and the frontend in CI, running tests and vulnerability scans.
+1. Run tests and vulnerability scans in CI.
 2. Back up the database.
-3. Run migrations with the owner role.
-4. Replace binaries, then restart the worker and API.
-5. Check `/health` and watch the logs.
+3. Run `make docker-up`, which rebuilds the image, migrates, seeds and restarts what changed.
+4. Check `/ready` and watch the logs.
 
 Migrations are forward-compatible, so the previous binary keeps working if a rollback is needed.
 
 ## Backup and recovery
 
-- **Self-hosted:** daily base backup with continuous WAL archiving (`pgBackRest`), encrypted, with a copy off the server.
-- **Supabase:** provider backups, plus a scheduled encrypted `pg_dump` kept on-prem.
-- **Also back up:** `/etc/df-ipam/` and the encryption key, stored **separately** from the database backups. Without the key, stored integration credentials can't be recovered.
+- **Daily:** `make db-backup` writes an encrypted `pg_dump`, on a systemd timer. **Copy it off the server**, because the database and backups otherwise share one machine.
+- **For a shorter RPO:** add continuous WAL archiving (`pgBackRest`). This isn't set up.
+- **Also back up:** `api/.env` and the encryption key, stored **separately** from the database backups. Without the key, stored integration credentials can't be recovered.
 - **Verify:** check integrity after every backup. A successful backup command doesn't prove a backup can be restored.
 - **Test:** do a full restore at least quarterly and record the result.
 - **Retention:** to be agreed with compliance.
@@ -128,13 +129,7 @@ Examples for business approval, not organisational requirements.
 
 ### Recovery runbooks
 
-To be written and rehearsed in Phase 7:
-
-- Restore the database to a point in time
-- Rebuild the app server from backups
-- Recover or rotate the encryption key and integration credentials
-- Replace a lost agent, and re-register agents
-- Recover from Redis loss: jobs are re-queued from their Postgres records
+See [runbooks.md](runbooks.md). They haven't been rehearsed yet.
 
 ## Monitoring
 

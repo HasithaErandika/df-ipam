@@ -32,7 +32,7 @@ api/
 
 Modules separate HTTP handling, business rules and SQL. A module calls another module's service, never its repository. Small modules with no business rules can skip the service layer. Reference data shares one definition-driven handler in `modules/catalog`.
 
-`make test-db` runs the schema rules, plus a full API flow as the `dfipam_app` role, on the real database inside a transaction that is rolled back.
+`make test-db` runs the schema rules, plus a full API flow as the `dfipam_app` role, on local PostgreSQL inside a transaction that is rolled back. `make test-db-supabase` runs the same on Supabase.
 
 ## Database
 
@@ -40,7 +40,7 @@ The database is Supabase PostgreSQL. There is no local database.
 
 Migrations run as `postgres` (`MIGRATION_DATABASE_URL`), and the app connects as `dfipam_app` (`DATABASE_URL`), which can't change audit logs or run DDL. The app uses the session pooler, where its username is `dfipam_app.<project-ref>`. The Supabase keys can't replace these, because they can't open a Postgres connection.
 
-The first migration creates `dfipam_app` without login. Enable it once in the Supabase SQL editor, using your own password:
+In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Supabase, the first migration creates it without login. Enable it once in the SQL editor, using your own password:
 
 ```sql
 ALTER ROLE dfipam_app WITH LOGIN PASSWORD '<password>';

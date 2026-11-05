@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
+import { BarList, LineChart } from '../components/charts'
 import { Badge, Button, Card, EmptyState, ErrorState, Meter, Mono, PageHeader, SkeletonRows, Td, Th } from '../components/ui'
 import { get, list } from '../lib/api'
 import { environments, formatCount, formatDateTime, humanAction } from '../lib/format'
 import { useCan } from '../lib/session'
-import type { AuditEntry, Subnet, Summary } from '../lib/types'
+import type { AuditEntry, Distribution, Subnet, Summary, TrendPoint } from '../lib/types'
 
 function Stat({ label, value, to, note, alert }: { label: string; value: number; to?: string; note?: string; alert?: boolean }) {
   const body: ReactNode = (
@@ -86,6 +87,39 @@ function BusiestSubnets() {
   )
 }
 
+function Trends() {
+  const { data, isPending, error, refetch } = useQuery({ queryKey: ['dashboard', 'trends'], queryFn: () => get<TrendPoint[]>('/dashboard/trends?days=30') })
+  if (isPending) return <Card><SkeletonRows rows={5} /></Card>
+  if (error) return <Card><ErrorState error={error} onRetry={refetch} /></Card>
+  const utilisation = data.map((p) => ({ label: p.date, value: p.averagePct === '' ? null : Number(p.averagePct) }))
+  return (
+    <div className="grid gap-4 xl:grid-cols-3">
+      <Card title="Average subnet utilisation, 30 days">
+        <LineChart title="Average subnet utilisation" points={utilisation} unit="%" emptyBody="The worker records a snapshot once a day." />
+      </Card>
+      <Card title="New findings, 30 days">
+        <LineChart title="New findings" points={data.map((p) => ({ label: p.date, value: p.newFindings }))} emptyBody="Findings appear after reconciliation runs." />
+      </Card>
+      <Card title="Evidence collected, 30 days">
+        <LineChart title="Observations collected" points={data.map((p) => ({ label: p.date, value: p.observations }))} emptyBody="Evidence appears after discovery or an integration sync." />
+      </Card>
+    </div>
+  )
+}
+
+function Breakdown() {
+  const { data, isPending, error, refetch } = useQuery({ queryKey: ['dashboard', 'distribution'], queryFn: () => get<Distribution>('/dashboard/distribution') })
+  if (isPending) return <Card><SkeletonRows rows={5} /></Card>
+  if (error) return <Card><ErrorState error={error} onRetry={refetch} /></Card>
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      <Card title="Subnets by environment"><BarList title="Subnets by environment" items={data.environments.map((s) => ({ ...s, label: environments[s.label] ?? s.label }))} /></Card>
+      <Card title="Subnets by site"><BarList title="Subnets by site" items={data.sites} /></Card>
+      <Card title="IPv4 and IPv6 subnets"><BarList title="Subnets by address family" items={data.families} /></Card>
+    </div>
+  )
+}
+
 function RecentChanges() {
   const { data, isPending, error, refetch } = useQuery({ queryKey: ['audit', 'recent'], queryFn: () => list<AuditEntry>('/audit-logs?pageSize=6') })
   if (isPending) return <SkeletonRows rows={4} />
@@ -121,6 +155,21 @@ export function Dashboard() {
             <Stat label="Open findings" value={data.openFindings} to="/reconciliation" alert />
             <Stat label="Devices" value={data.devices} />
           </div>
+          <div className="grid grid-cols-1 divide-y divide-line overflow-hidden rounded-md border border-line bg-surface md:grid-cols-3 md:divide-x md:divide-y-0">
+            <Stat label="Pending approvals" value={data.pendingApprovals} to="/requests?tab=all" alert />
+            <Stat label="Approved, waiting to be fulfilled" value={data.readyToFulfil} to="/requests?tab=all" />
+            <Stat label="Reservations ending within 7 days" value={data.reservationsExpiringSoon} to="/reservations" alert />
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-y divide-line overflow-hidden rounded-md border border-line bg-surface md:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+            <Stat label="High-utilisation subnets" value={data.highUtilisationSubnets} to="/subnets" alert note="At the latest snapshot" />
+            <Stat label="Suspected conflicts" value={data.conflictSuspected} to="/reconciliation" alert />
+            <Stat label="Integrations healthy" value={data.integrationsHealthy} to="/integrations" />
+            <Stat label="Integrations failing" value={data.integrationsFailing} to="/integrations" alert />
+            <Stat label="Agents online" value={data.agentsOnline} to="/discovery" note={data.agentsOffline > 0 ? `${formatCount(data.agentsOffline)} offline` : undefined} />
+            <Stat label="Discovery jobs failed today" value={data.discoveryJobsFailedToday} to="/discovery" alert note={`${formatCount(data.discoveryJobsRunning)} running`} />
+          </div>
+          <Trends />
+          <Breakdown />
           <div className="grid gap-4 xl:grid-cols-3">
             <Card title="Most utilised subnets" className="xl:col-span-2"><BusiestSubnets /></Card>
             <div className="space-y-4">

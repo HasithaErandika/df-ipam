@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/config"
 	"dfipam/api/internal/platform/db"
+	"dfipam/api/internal/platform/safehttp"
+	"dfipam/api/internal/platform/secrets"
 	"dfipam/api/internal/server"
 
 	"github.com/gin-gonic/gin"
@@ -49,14 +52,26 @@ func run() error {
 	}
 	verifier := auth.NewSupabaseVerifier(cfg.SupabaseURL+"/auth/v1", cfg.AuthAudience, cfg.SupabaseURL+"/auth/v1/.well-known/jwks.json")
 	resolver := &auth.Resolver{Pool: pool, Provider: verifier.Provider()}
-	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins}
+	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
+		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight}
 	if cfg.SupabaseServiceKey != "" {
 		deps.Inviter = admin
+	}
+	switch keys, err := secrets.FromEnv(); {
+	case err == nil:
+		deps.Keys = keys
+	case errors.Is(err, secrets.ErrNotConfigured):
+		slog.Warn("SECRET_ENCRYPTION_KEY is not set, so integration credentials can't be stored")
+	default:
+		return err
+	}
+	if deps.Outbound, err = safehttp.FromEnv(); err != nil {
+		return err
 	}
 	router, _ := server.New(deps)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute}
+		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	errs := make(chan error, 1)
 	go func() {
 		slog.Info("api listening", "addr", cfg.ListenAddr)

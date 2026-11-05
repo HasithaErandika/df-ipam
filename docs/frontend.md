@@ -34,6 +34,8 @@ Professional financial-enterprise interface. Light theme only. Built for desktop
 
 Allocation and observation are always shown as two separate badges. "Available candidate" is never shortened to "Free".
 
+**Device types and operating systems** have icons (firewall, router, switch, access point, server, virtual machine, laptop, desktop, phone, tablet, printer, camera and more; Windows, Linux, macOS, iOS, Android, network OS). An OS is shown only when a record or reliable source states it, never guessed.
+
 ## Dialogs
 
 Every dialog is centred over a blurred background, using `Modal` and `ConfirmDialog` in `web/src/components/ui.tsx`. Don't add side drawers.
@@ -71,6 +73,21 @@ Every dialog is centred over a blurred background, using `Modal` and `ConfirmDia
 | Governance | Change history, audit trail, integration reports |
 
 Formats: Excel, CSV and PDF.
+
+## Keeping it simple
+
+Show what most people need, and put the rest one click away.
+
+- The sidebar hides what a person can't use.
+- Long forms show the essentials, with the rest under `MoreOptions`. It opens by itself if a hidden field has an error.
+- Table rows have one main action, and a menu for the others.
+
+## Forms
+
+- **Checks:** `web/src/lib/validation.ts` holds the shared checks, and `useChecks` shows them from the first attempt to save. The API checks everything again and has the final word.
+- **Reference data:** pick it with `SearchSelect`, or `RefSelect`, `RoutingDomainSelect` and `PersonSelect`. You can type to search, and they show loading and failure states. Short fixed lists, such as status or environment, stay native selects.
+- **Messages:** `Field` links each error or hint to its control for screen readers.
+- **Dates and times:** use the browser's pickers. Date and time values are sent in UTC.
 
 ## Global features
 

@@ -26,6 +26,8 @@ Grouped by STRIDE.
 | | Viewer sees out-of-scope data | Scope filter applied in the repository layer, covered by tests |
 | | Stolen token through XSS | CSP, output encoding, no `dangerouslySetInnerHTML` |
 | **Denial of service** | Huge IPv6 listing | Range limits, no enumeration, page caps |
+| | Request flood | Limits per address and person, in-flight cap, Nginx and host limits |
+| | Network flood | Upstream firewall. Models A and B aren't reachable from the internet |
 | | Discovery overloads a network | Rate and concurrency ceilings, windows, emergency stop |
 | | Large file upload | Size limits, background processing |
 | **Elevation of privilege** | Self-approval | Enforced in the service layer and database |
@@ -36,6 +38,8 @@ Grouped by STRIDE.
 Specific to this system: DF-IPAM holds a detailed map of the bank's network, so read access is itself sensitive and exports are audited.
 
 ## Supabase Data API
+
+The production database is local PostgreSQL, which has no Data API. These controls stay because the same migrations run on the Supabase test database.
 
 Supabase serves the `public` schema over a REST API to anyone holding the anon key, and that key is in the browser by design. Left open, it would bypass RBAC and the audit log entirely.
 
@@ -71,7 +75,12 @@ Nothing in DF-IPAM changes firewalls, DNS, DHCP or cloud networks.
 - TLS 1.2+ at Nginx, with HSTS
 - `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`, and `frame-ancestors 'none'`
 - CORS restricted to `CORS_ALLOWED_ORIGINS`
-- Rate limits on the API, stricter for agent registration and exports
+- Rate limits per address and per signed-in person, stricter for agent registration, with at most five running reports per person
+- An IPv6 client counts as its whole /64, so stepping through addresses doesn't escape a limit
+- A cap on requests running at once, which refuses work instead of queueing it, and a bound on the limiter's memory
+- Nginx connection limits and timeouts for slow clients, and SYN cookies and per-source limits on the host
+- Discovery stays inside a budget across all agents, and two jobs can't scan one network at once
+- Volumetric floods are stopped upstream, not here: see [setup.md](setup.md), step 9a
 - Request size limits
 - Errors return a generic message and a correlation ID, with detail only in the logs
 
@@ -101,7 +110,7 @@ Used before each release.
 **Data**
 - [ ] All SQL is parameterised
 - [ ] App database role can't modify audit logs or run DDL
-- [ ] Database connections use TLS with certificate verification
+- [ ] PostgreSQL is published on localhost only. If it moves to its own server, connections use TLS with certificate verification
 - [ ] Backups are encrypted and a restore has been tested
 
 **Secrets**

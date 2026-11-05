@@ -57,6 +57,7 @@ paths:
     get: { summary: List users, responses: { '200': { description: OK } } }
   /roles:
     get: { summary: List roles, responses: { '200': { description: OK } } }
+    post: { summary: Create a role, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
   /users/{id}/roles:
     put:
       summary: Replace a user's roles
@@ -266,3 +267,276 @@ paths:
     get: { summary: Inventory counts, responses: { '200': { description: OK } } }
   /audit-logs:
     get: { summary: Read the audit trail, responses: { '200': { description: OK } } }
+  /requests:
+    get:
+      summary: List requests. Without approve, allocate, reserve or audit permission, only your own
+      parameters:
+        - { name: status, in: query, schema: { type: string, description: 'A status, or "open" for draft, pending and approved' } }
+        - { name: type, in: query, schema: { type: string, enum: [allocation, reservation, release] } }
+        - { name: mine, in: query, schema: { type: boolean } }
+        - { name: subnetId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Create a draft request. Send submit=true to submit it at once
+      responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /requests/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a request with its approval steps and result, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch:
+      summary: Replace a draft's fields. Requester only. Send the version in If-Match
+      parameters: [{ name: If-Match, in: header, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' }, '412': { $ref: '#/components/responses/Error' } }
+    delete: { summary: Delete a draft. Requester only, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /requests/{id}/submit:
+    post: { summary: Submit a draft for approval, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /requests/{id}/cancel:
+    post: { summary: Cancel a request that is not yet fulfilled, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /approvals:
+    get: { summary: Approval steps the caller may decide now, responses: { '200': { description: OK } } }
+  /approvals/{id}/approve:
+    post:
+      summary: Approve a step. Never your own request, and at most one step per request
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } }
+  /approvals/{id}/reject:
+    post:
+      summary: Reject a step. A comment is required
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
+  /approval-workflows:
+    get: { summary: List approval workflows, responses: { '200': { description: OK } } }
+    post: { summary: Create a workflow with one to five steps, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /approval-workflows/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    put: { summary: Replace a workflow. Submitted requests keep their steps, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a workflow no request has used, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /allocations:
+    get:
+      summary: List allocations. Status defaults to active
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, released, all] } }
+        - { name: subnetId, in: query, schema: { type: string, format: uuid } }
+        - { name: routingDomainId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Fulfil an approved allocation request. Repeating it returns the same allocation with 200
+      responses: { '200': { description: Already allocated }, '201': { description: Allocated }, '409': { $ref: '#/components/responses/Error' } }
+  /allocations/{id}:
+    get: { summary: Get an allocation, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /allocations/{id}/release:
+    post: { summary: Fulfil an approved release request for this allocation, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /reservations:
+    get:
+      summary: List reservations. Status defaults to active
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, released, expired, converted, all] } }
+        - { name: expiringWithinDays, in: query, schema: { type: integer } }
+        - { name: subnetId, in: query, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Fulfil an approved reservation request. Repeating it returns the same reservation with 200
+      responses: { '200': { description: Already reserved }, '201': { description: Reserved }, '409': { $ref: '#/components/responses/Error' } }
+  /reservations/{id}:
+    get: { summary: Get a reservation, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /reservations/{id}/extend:
+    post: { summary: Move the expiry later, at most a year ahead. Needs a reason, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+  /reservations/{id}/release:
+    post: { summary: End a reservation early. Needs a reason, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /notifications:
+    get: { summary: Your in-app notifications, newest first. unread=true for unread only, responses: { '200': { description: OK } } }
+  /notifications/unread-count:
+    get: { summary: How many of your notifications are unread, responses: { '200': { description: OK } } }
+  /notifications/read-all:
+    post: { summary: Mark all your notifications read, responses: { '204': { description: Done } } }
+  /notifications/{id}/read:
+    post: { summary: Mark one of your notifications read, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Done }, '404': { $ref: '#/components/responses/Error' } } }
+  /notifications/preferences:
+    get: { summary: Your channel choices for every event, responses: { '200': { description: OK } } }
+    put: { summary: Change your channel choices, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+  /notifications/rules:
+    get: { summary: Event rules, responses: { '200': { description: OK } } }
+  /notifications/rules/{eventType}:
+    put:
+      summary: Switch an event on or off, or change its severity
+      parameters: [{ name: eventType, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } }
+  /organisations/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    patch: { summary: Rename an organisation or change its code, responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete an empty organisation and its empty Default routing domain, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /routing-domains/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    patch: { summary: Rename a routing domain or change its route distinguisher or isolation, responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a routing domain nothing refers to, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /subnets/bulk:
+    post:
+      summary: Create up to 500 subnets in one transaction. dryRun=true validates without saving; any failed row saves nothing
+      responses: { '200': { description: Validated or rejected, with a result per row }, '201': { description: Created } }
+  /subnets/bulk-archive:
+    post: { summary: Archive up to 500 subnets together, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+  /dns-records:
+    get: { summary: List DNS records from read-only sources. Supports routingDomainId, ipAddressId and q, responses: { '200': { description: OK } } }
+  /dns-records/{id}:
+    get: { summary: Get a DNS record, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /search:
+    get:
+      summary: Search subnets, IP records, devices and VLANs. An address finds the subnets holding it in every routing domain
+      parameters: [{ name: q, in: query, required: true, schema: { type: string, minLength: 2 } }]
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } }
+  /saved-filters:
+    get:
+      summary: Your saved filters for one page
+      parameters: [{ name: page, in: query, required: true, schema: { type: string, enum: [subnets, ip-addresses, requests, reservations, allocations, audit] } }]
+      responses: { '200': { description: OK } }
+    post: { summary: Save a filter, replacing one with the same name, responses: { '201': { description: Saved }, '422': { $ref: '#/components/responses/Error' } } }
+  /saved-filters/{id}:
+    delete: { summary: Delete one of your saved filters, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted } } }
+  /people:
+    get: { summary: Active people for owner pickers. Email and name only. Supports q, responses: { '200': { description: OK } } }
+  /ip-addresses/{id}/device:
+    get:
+      summary: The device behind an address, from inventory records and approved read-only sources only. Nothing is probed or guessed
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } }
+  /imports:
+    get: { summary: List import batches, responses: { '200': { description: OK } } }
+    post: { summary: Upload a production export. Every line is kept and checked; nothing is imported until approved, responses: { '201': { description: Validated }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /imports/enrichment-queue:
+    get: { summary: Lines waiting for a correction before approval, responses: { '200': { description: OK } } }
+  /imports/records/{id}:
+    patch: { summary: Correct one line's parsed fields. The raw line never changes, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /imports/{id}:
+    get: { summary: Get an import batch, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/preview:
+    get: { summary: The batch's lines with their status. Supports status, page and pageSize, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/approve:
+    post: { summary: Commit every valid line as a subnet. Someone other than the uploader must approve, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /imports/{id}/reverse:
+    post: { summary: Remove the subnets a batch created, while they are untouched, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /devices/duplicates:
+    get: { summary: Devices that look like one machine, grouped by serial, MAC, management address or hostname, responses: { '200': { description: OK } } }
+  /devices/{id}/merge:
+    post: { summary: Merge this device into another, moving its interfaces and address links, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Merged } } }
+  /discovery/status:
+    get: { summary: Emergency stop state and job and agent counts, responses: { '200': { description: OK } } }
+  /discovery/emergency-stop:
+    post: { summary: Turn the emergency stop on (stops every job) or off (needs the manage permission), responses: { '200': { description: OK } } }
+  /discovery/policies:
+    get: { summary: List discovery policies, responses: { '200': { description: OK } } }
+    post: { summary: Create a policy. It can't run until someone else approves it, responses: { '201': { description: Created }, '422': { $ref: '#/components/responses/Error' } } }
+  /discovery/policies/{id}:
+    put: { summary: Replace a policy. Saving clears its approval, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/policies/{id}/approve:
+    post: { summary: Approve a policy written by someone else, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' } } }
+  /discovery/jobs:
+    get: { summary: List discovery jobs, responses: { '200': { description: OK } } }
+    post: { summary: Start a job on subnets. Its scope is frozen from the approved policy minus exclusions, responses: { '201': { description: Queued }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /discovery/jobs/{id}:
+    get: { summary: Get a job with its frozen configuration, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/logs:
+    get: { summary: A job's log, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/pause:
+    post: { summary: Pause a job, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/resume:
+    post: { summary: Resume a paused job, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/cancel:
+    post: { summary: Cancel a job, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/exclusions:
+    get: { summary: Ranges discovery never touches, responses: { '200': { description: OK } } }
+    post: { summary: Add an exclusion, responses: { '201': { description: Created } } }
+  /discovery/exclusions/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get an exclusion, responses: { '200': { description: OK } } }
+    patch: { summary: Update an exclusion, responses: { '200': { description: OK } } }
+    delete: { summary: Delete an exclusion, responses: { '204': { description: Deleted } } }
+  /discovery/blackouts:
+    get: { summary: Maintenance periods with no active discovery, responses: { '200': { description: OK } } }
+    post: { summary: Add a blackout, responses: { '201': { description: Created } } }
+  /discovery/blackouts/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a blackout, responses: { '200': { description: OK } } }
+    patch: { summary: Update a blackout, responses: { '200': { description: OK } } }
+    delete: { summary: Delete a blackout, responses: { '204': { description: Deleted } } }
+  /discovery/schedules:
+    get: { summary: Discovery schedules, responses: { '200': { description: OK } } }
+    post: { summary: Add a schedule (five-field cron), responses: { '201': { description: Created }, '422': { $ref: '#/components/responses/Error' } } }
+  /discovery/schedules/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a schedule, responses: { '200': { description: OK } } }
+    patch: { summary: Update a schedule, responses: { '200': { description: OK } } }
+    delete: { summary: Delete a schedule, responses: { '204': { description: Deleted } } }
+  /agents:
+    get: { summary: List discovery agents, responses: { '200': { description: OK } } }
+    post: { summary: Create an agent and return its one-time registration token, responses: { '201': { description: Created } } }
+  /agents/{id}/rotate:
+    post: { summary: Issue a new registration token; re-registering replaces the credential, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /agents/{id}/revoke:
+    post: { summary: Revoke an agent at once, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /agent-api/register:
+    post: { summary: 'Agent: trade a registration token for a credential', security: [], responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Error' } } }
+  /agent-api/heartbeat:
+    post: { summary: 'Agent: report health; the reply carries the emergency stop flag', responses: { '200': { description: OK } } }
+  /agent-api/jobs:
+    get: { summary: 'Agent: claim the next job allowed to run now', responses: { '200': { description: A job }, '204': { description: Nothing to do } } }
+  /agent-api/jobs/{id}/results:
+    post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /audit-logs/filters:
+    get: { summary: Actions and object types that exist, for filter pickers, responses: { '200': { description: OK } } }
+  /roles/{id}/permissions:
+    put: { summary: Replace a role's permissions. Refused for a role you hold or if nobody could manage users afterwards, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Updated }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /roles/{id}:
+    put: { summary: Change a role's name and description. Default roles keep their names, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Updated }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete an unused custom role, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /admin/permission-matrix:
+    get: { summary: Every role with its permissions, responses: { '200': { description: OK } } }
+  /system/health:
+    get: { summary: 'Worker, queues, agents, integrations, encryption and backup status', responses: { '200': { description: OK } } }
+  /system/retention:
+    get: { summary: Retention policies, responses: { '200': { description: OK } } }
+  /system/retention/{class}:
+    put: { summary: Change how long a class of data is kept, parameters: [{ name: class, in: path, required: true, schema: { type: string } }], responses: { '204': { description: Updated } } }
+  /dashboard/trends:
+    get: { summary: Daily utilisation, findings and evidence. Counts are strings, parameters: [{ name: days, in: query, schema: { type: integer, minimum: 7, maximum: 365 } }], responses: { '200': { description: OK } } }
+  /dashboard/distribution:
+    get: { summary: 'Active subnets by environment, site and address family', responses: { '200': { description: OK } } }
+  /integrations/kinds:
+    get: { summary: Every connector and the settings it takes, responses: { '200': { description: OK } } }
+  /integrations/connections:
+    get: { summary: List connections. Credentials are never returned, responses: { '200': { description: OK } } }
+    post: { summary: Create a connection. Credentials are encrypted and write-only, responses: { '201': { description: Created }, '422': { $ref: '#/components/responses/Error' } } }
+  /integrations/connections/{id}:
+    get: { summary: Read a connection, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    put: { summary: Update a connection. Credentials change only when new ones are sent, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    delete: { summary: Delete a connection that has never synced, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /integrations/connections/{id}/test:
+    post: { summary: Make one read against the platform, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /integrations/connections/{id}/sync:
+    post: { summary: Queue a sync, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '202': { description: Queued }, '409': { $ref: '#/components/responses/Error' } } }
+  /integrations/connections/{id}/syncs:
+    get: { summary: Sync history, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /integrations/syncs/{id}/errors:
+    get: { summary: Problems recorded during a sync, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /reports/types:
+    get: { summary: Reports this person may run, responses: { '200': { description: OK } } }
+  /reports/summary:
+    get: { summary: Your report counts and, with full export rights, inventory totals, responses: { '200': { description: OK } } }
+  /reports:
+    get: { summary: Your reports, responses: { '200': { description: OK } } }
+    post: { summary: Queue a report, responses: { '202': { description: Queued }, '429': { $ref: '#/components/responses/Error' } } }
+  /reports/{id}/download:
+    get: { summary: 'Download your own finished report. Audited', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: The file }, '409': { $ref: '#/components/responses/Error' } } }
+  /reconciliation/rules:
+    get: { summary: Rule settings for each finding, responses: { '200': { description: OK } } }
+  /reconciliation/rules/{classification}:
+    put: { summary: 'Change source priority, confidence weights or whether a finding is detected', parameters: [{ name: classification, in: path, required: true, schema: { type: string } }], responses: { '200': { description: OK } } }
+  /reconciliation/results/{id}/change-requests:
+    post: { summary: Propose a change from a finding. Nothing changes until someone else approves, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
+  /change-requests:
+    get: { summary: List change requests, responses: { '200': { description: OK } } }
+  /change-requests/{id}/approve:
+    post: { summary: Approve and apply. Refused for your own proposal, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' } } }
+  /change-requests/{id}/reject:
+    post: { summary: Reject. A note is required, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }

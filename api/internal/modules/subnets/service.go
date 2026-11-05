@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -192,6 +193,22 @@ func (s *Service) CheckOverlap(ctx context.Context, req OverlapRequest) ([]Confl
 	return s.repo.Overlaps(ctx, s.pool, req.RoutingDomainID, p.String())
 }
 
+// providers maps a routing domain type to the cloud that reserves addresses in it.
+var providers = map[string]string{"vpc": "aws", "vnet": "azure"}
+
+// ProviderReserved returns the addresses AWS and Azure keep in every subnet:
+// the first four and the last. Prefixes too small to hold them get none.
+func ProviderReserved(p netip.Prefix) []netcalc.Range {
+	all := netcalc.PrefixRange(p)
+	if all.Size().Cmp(big.NewInt(8)) < 0 {
+		return nil
+	}
+	return []netcalc.Range{
+		{First: all.First, Last: netcalc.Offset(all.First, big.NewInt(3))},
+		{First: all.Last, Last: all.Last},
+	}
+}
+
 func (s *Service) Create(ctx context.Context, actor string, req CreateRequest) (Response, error) {
 	p, err := ParseCIDR(req.CIDR)
 	if err != nil {
@@ -239,6 +256,19 @@ func (s *Service) Create(ctx context.Context, actor string, req CreateRequest) (
 		id, err := s.repo.Insert(ctx, tx, actor, req, p.String(), warn, critical)
 		if err != nil {
 			return err
+		}
+		var kind string
+		if err := tx.QueryRow(ctx, `SELECT kind FROM routing_domains WHERE id = $1::uuid`, req.RoutingDomainID).Scan(&kind); err != nil {
+			return err
+		}
+		if provider, ok := providers[kind]; ok {
+			for _, r := range ProviderReserved(p) {
+				if _, err := tx.Exec(ctx, `INSERT INTO subnet_reserved_ranges (subnet_id, range_start, range_end, reason, provider)
+					VALUES ($1::uuid, $2::text::inet, $3::text::inet, $4, $5)`, id, r.First.String(), r.Last.String(),
+					"Reserved by "+map[string]string{"aws": "AWS", "azure": "Azure"}[provider], provider); err != nil {
+					return err
+				}
+			}
 		}
 		if created, err = s.load(ctx, tx, id, false); err != nil {
 			return err
@@ -396,4 +426,16 @@ func (s *Service) Delete(ctx context.Context, actor, id string) error {
 		return httpx.NewError(http.StatusConflict, "SUBNET_IN_USE", "This subnet has linked records. Archive it instead.")
 	}
 	return err
+}
+
+// ChangeFields lists what a change request may set on a subnet.
+var ChangeFields = []db.Field{
+	{Name: "technicalOwnerId", Column: "technical_owner_id", Cast: "uuid", Nullable: true},
+	{Name: "businessOwnerId", Column: "business_owner_id", Cast: "uuid", Nullable: true},
+}
+
+// ApplyChange applies an approved change request, moving the version on so anyone
+// editing the subnet at the same time gets a conflict.
+func ApplyChange(ctx context.Context, tx pgx.Tx, id, actor string, changes map[string]string) (map[string]string, map[string]string, error) {
+	return db.ApplyFields(ctx, tx, "subnets", id, actor, ", version = version + 1", ChangeFields, changes)
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatCapacity, humanAction, pageWindow, severity } from './format'
+import { daysUntil, formatCapacity, formatDate, formatEndOfDay, humanAction, pageWindow, requestTone, severity } from './format'
 
 describe('formatCapacity', () => {
   it('shows IPv4 counts in full', () => expect(formatCapacity('65536', 4, 16)).toBe('65,536'))
@@ -33,4 +33,20 @@ describe('pageWindow', () => {
 
 describe('humanAction', () => {
   it('reads naturally', () => expect(humanAction('routing_domain.create')).toBe('Routing domain create'))
+})
+
+describe('workflow formatting', () => {
+  it('reads date-only values as calendar dates', () => expect(formatDate('2026-12-05')).toBe('5 Dec 2026'))
+  it('shows a reservation end as the chosen day', () => expect(formatEndOfDay('2026-12-06T00:00:00Z')).toBe('End of 5 Dec 2026'))
+  it('counts whole days left', () => {
+    const now = Date.parse('2026-11-05T12:00:00Z')
+    expect(daysUntil('2026-11-12T00:00:00Z', now)).toBe(7)
+    expect(daysUntil('2026-11-05T11:00:00Z', now)).toBe(-0)
+  })
+  it('colours statuses by meaning', () => {
+    expect(requestTone('pending_approval')).toBe('warn')
+    expect(requestTone('rejected')).toBe('danger')
+    expect(requestTone('allocated')).toBe('ok')
+    expect(requestTone('cancelled')).toBe('neutral')
+  })
 })

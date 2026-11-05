@@ -1,6 +1,9 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Play } from 'lucide-react'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
+import { ChangeRequests, FindingRules, ProposeChange, changeableTypes } from '../components/changes'
+import { Tabs, useDebounced } from '../components/workflow'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
 import { list, get, post, queryString } from '../lib/api'
 import { classifications, formatDateTime } from '../lib/format'
@@ -53,6 +56,9 @@ function FindingModal({ finding, onClose }: { finding: Finding | null; onClose: 
         <Row label="Sources" value={finding.sources.join(', ')} />
         <Row label="Confidence" value={finding.confidence === null ? 'Unknown' : `${finding.confidence}%`} />
         <Row label="Source reliability" value={finding.sourceReliability === null ? 'Unknown' : `${finding.sourceReliability}%`} />
+        {finding.confidenceBreakdown.reliability !== undefined && (
+          <Row label="How the score was built" value={`Reliability ${finding.confidenceBreakdown.reliability}, freshness ${finding.confidenceBreakdown.freshness}, agreement ${finding.confidenceBreakdown.agreement}, capped at ${finding.confidenceBreakdown.cap}`} />
+        )}
         {finding.evidenceTo && <Row label="Latest evidence" value={formatDateTime(finding.evidenceTo)} />}
         <Row label="Last detected" value={formatDateTime(finding.lastDetectedAt)} />
         {finding.reviewedBy && <Row label="Reviewed by" value={finding.reviewedBy} />}
@@ -72,19 +78,38 @@ function FindingModal({ finding, onClose }: { finding: Finding | null; onClose: 
         </div>
       )}
       <div className="mt-3"><FormError error={review.error} /></div>
-      <p className="mt-3 text-[12px] text-ink-3">Reviewing a finding never changes inventory.</p>
+      {canReview && finding.objectId && changeableTypes.includes(finding.objectType) && <ProposeChange finding={finding} onDone={onClose} />}
+      <p className="mt-3 text-[12px] text-ink-3">Reviewing a finding never changes inventory. A proposed change takes effect only when a second person approves it.</p>
     </Modal>
   )
 }
 
+const tabs = [{ key: 'findings', label: 'Findings' }, { key: 'changes', label: 'Change requests' }, { key: 'rules', label: 'Rules and confidence' }]
+
 export function Reconciliation() {
+  const [params, setParams] = useSearchParams()
+  const tab = tabs.some((t) => t.key === params.get('tab')) ? params.get('tab')! : 'findings'
+  return (
+    <>
+      <PageHeader title="Reconciliation Centre" description="Differences between inventory and evidence. Nothing here changes inventory until a person acts." />
+      <Tabs tabs={tabs} active={tab} onChange={(key) => setParams({ tab: key })} />
+      {tab === 'findings' && <Findings />}
+      {tab === 'changes' && <ChangeRequests />}
+      {tab === 'rules' && <FindingRules />}
+    </>
+  )
+}
+
+function Findings() {
   const queryClient = useQueryClient()
   const canRun = useCan('discovery:run')
   const [status, setStatus] = useState('active')
   const [classification, setClassification] = useState('')
   const paging = usePaging()
   const [selected, setSelected] = useState<Finding | null>(null)
-  const qs = queryString({ page: paging.page, pageSize: paging.pageSize, status, classification })
+  const [search, setSearch] = useState('')
+  const q = useDebounced(search.trim())
+  const qs = queryString({ page: paging.page, pageSize: paging.pageSize, status, classification, q })
   const { data, isPending, error, refetch } = useQuery({
     queryKey: ['findings', qs], placeholderData: keepPreviousData, queryFn: () => list<Finding>(`/reconciliation/results${qs}`),
   })
@@ -99,8 +124,7 @@ export function Reconciliation() {
   })
   return (
     <>
-      <PageHeader title="Reconciliation Centre" description="Differences between inventory and evidence. Nothing here changes inventory until a person acts."
-        actions={canRun && <Button variant="primary" busy={run.isPending} onClick={() => run.mutate()}><Play size={14} aria-hidden /> Run now</Button>} />
+      {canRun && <div className="mb-3 flex justify-end"><Button variant="primary" busy={run.isPending} onClick={() => run.mutate()}><Play size={14} aria-hidden /> Run now</Button></div>}
       {run.error ? <div className="mb-3"><FormError error={run.error} /></div> : null}
       {summary.data && summary.data.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -119,6 +143,7 @@ export function Reconciliation() {
           <Select aria-label="Review status" className="w-44!" value={status} onChange={(e) => { setStatus(e.target.value); paging.setPage(1) }}>
             {Object.entries(statuses).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
+          <Input aria-label="Search findings" className="max-w-xs" placeholder="Search address or detail" value={search} onChange={(e) => { setSearch(e.target.value); paging.setPage(1) }} />
         </div>
         {isPending && <SkeletonRows rows={8} />}
         {error && <ErrorState error={error} onRetry={refetch} />}

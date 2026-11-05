@@ -1,0 +1,10 @@
+[Unit]
+Description=DF-IPAM encrypted database backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/df-ipam
+Environment=GNUPGHOME=/root/.gnupg
+ExecStart=/usr/bin/make db-backup

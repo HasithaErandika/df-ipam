@@ -1,8 +1,9 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, ChevronDown, ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { Bell, ChevronDown, GitCompareArrows, ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { ErrorBoundary } from '../components/ui'
 import { get } from '../lib/api'
 import { signOut } from '../lib/auth'
 import { allItems, nav } from '../lib/nav'
@@ -22,6 +23,8 @@ function LogoMark() {
 }
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { permissions } = useMe()
+  const groups = nav.map((g) => ({ ...g, items: g.items.filter((i) => !i.anyOf || i.anyOf.some((p) => permissions.includes(p))) })).filter((g) => g.items.length > 0)
   return (
     <aside className={`flex shrink-0 flex-col border-r border-side-border bg-side transition-[width] duration-150 ${collapsed ? 'w-[60px]' : 'w-[248px]'}`}>
       <div className={`flex h-[60px] shrink-0 items-center border-b border-side-border ${collapsed ? 'justify-center' : 'justify-between pr-2 pl-4'}`}>
@@ -47,10 +50,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             <PanelLeftOpen size={16} />
           </button>
         )}
-        {nav.map(({ group, items }) => (
+        {groups.map(({ group, items }) => (
           <div key={group} className="mb-2.5">
             {collapsed ? <div className="mx-4 my-2 h-px bg-side-border" />
-              : <div className="px-4 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] text-side-ink-3 uppercase">{group}</div>}
+              : group && <div className="px-4 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] text-side-ink-3 uppercase">{group}</div>}
             {items.map(({ to, label, icon: Icon, phase }) => (
               <NavLink
                 key={to}
@@ -79,7 +82,6 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   )
 }
 
-const looksLikeAddress = (v: string) => /^[0-9a-f:.]+$/i.test(v) && (v.includes('.') || v.includes(':')) && !v.includes('/')
 
 function GlobalSearch() {
   const navigate = useNavigate()
@@ -100,7 +102,7 @@ function GlobalSearch() {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const q = value.trim()
-    if (q) navigate(`/subnets?q=${encodeURIComponent(looksLikeAddress(q) ? q.split('.').slice(0, 3).join('.') : q)}`)
+    if (q) navigate(`/search?q=${encodeURIComponent(q)}`)
   }
 
   return (
@@ -110,8 +112,8 @@ function GlobalSearch() {
         ref={input}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        aria-label="Search subnets"
-        placeholder="Search subnets by name or CIDR"
+        aria-label="Search the inventory"
+        placeholder="Search IPs, subnets, hostnames, MACs, devices"
         className="h-[34px] w-full rounded-[5px] border border-transparent bg-bg pr-16 pl-8.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-accent focus:bg-surface focus:outline-none"
       />
       <kbd className="absolute top-1/2 right-2 -translate-y-1/2 rounded-[3px] border border-line-strong bg-surface px-1.5 font-sans text-[10.5px] text-ink-3 max-lg:hidden">Ctrl K</kbd>
@@ -119,15 +121,29 @@ function GlobalSearch() {
   )
 }
 
-function FindingsBell() {
+function FindingsLink() {
   const canView = useCan('inventory:view')
   const { data } = useQuery({ queryKey: ['summary'], enabled: canView, queryFn: () => get<Summary>('/dashboard/summary') })
   const open = data?.openFindings ?? 0
+  if (!canView) return null
   return (
     <Link to="/reconciliation" aria-label={`${open} open findings`} title="Open findings"
       className="relative grid size-8 place-items-center rounded-[5px] text-ink-2 hover:bg-bg hover:text-ink">
+      <GitCompareArrows size={16} strokeWidth={1.75} />
+      {open > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-warn px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums">{open > 99 ? '99+' : open}</span>}
+    </Link>
+  )
+}
+
+/** Unread alerts for the signed-in user, refreshed every minute. */
+function AlertsBell() {
+  const { data } = useQuery({ queryKey: ['notifications', 'unread'], refetchInterval: 60_000, queryFn: () => get<{ unread: number }>('/notifications/unread-count') })
+  const unread = data?.unread ?? 0
+  return (
+    <Link to="/alerts" aria-label={`${unread} unread alerts`} title="Alerts"
+      className="relative grid size-8 place-items-center rounded-[5px] text-ink-2 hover:bg-bg hover:text-ink">
       <Bell size={16} strokeWidth={1.75} />
-      {open > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums">{open > 99 ? '99+' : open}</span>}
+      {unread > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums">{unread > 99 ? '99+' : unread}</span>}
     </Link>
   )
 }
@@ -184,12 +200,13 @@ export function AppShell() {
           </nav>
           <GlobalSearch />
           <div className="flex items-center justify-end gap-2">
-            <FindingsBell />
+            <FindingsLink />
+            <AlertsBell />
             <UserMenu />
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1440px] px-6 py-5"><Outlet /></div>
+          <div className="mx-auto max-w-[1440px] px-6 py-5"><ErrorBoundary resetKey={pathname}><Outlet /></ErrorBoundary></div>
         </main>
       </div>
     </div>

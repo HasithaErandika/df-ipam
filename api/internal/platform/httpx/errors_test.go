@@ -52,3 +52,85 @@ func TestMeta(t *testing.T) {
 		}
 	}
 }
+
+func limited(t *testing.T, h gin.HandlerFunc, ip string) int {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/x", nil)
+	c.Request.RemoteAddr = ip + ":1234"
+	h(c)
+	if c.IsAborted() {
+		return w.Code
+	}
+	return http.StatusOK
+}
+
+func TestClientKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"10.0.0.1":             "10.0.0.1",
+		"::ffff:10.0.0.1":      "10.0.0.1",
+		"2001:db8:1:2:aaaa::1": "2001:db8:1:2::/64",
+		"2001:db8:1:2:bbbb::9": "2001:db8:1:2::/64",
+		"2001:db8:1:3::1":      "2001:db8:1:3::/64",
+		"not an address":       "not an address",
+	} {
+		if got := ClientKey(in); got != want {
+			t.Errorf("%s: got %s", in, got)
+		}
+	}
+}
+
+func TestRateLimitStopsOneClientOnly(t *testing.T) {
+	h := RateLimit(0.001, 2)
+	for range 2 {
+		if got := limited(t, h, "10.0.0.1"); got != http.StatusOK {
+			t.Fatalf("within the burst: %d", got)
+		}
+	}
+	if got := limited(t, h, "10.0.0.1"); got != http.StatusTooManyRequests {
+		t.Fatalf("over the limit: %d", got)
+	}
+	if got := limited(t, h, "10.0.0.2"); got != http.StatusOK {
+		t.Fatalf("another client was limited: %d", got)
+	}
+}
+
+// Rotating through one /64 must not escape the limit.
+func TestRateLimitCountsAnIPv6NetworkAsOneClient(t *testing.T) {
+	h := RateLimit(0.001, 1)
+	if got := limited(t, h, "[2001:db8::1]"); got != http.StatusOK {
+		t.Fatalf("first: %d", got)
+	}
+	if got := limited(t, h, "[2001:db8::2]"); got != http.StatusTooManyRequests {
+		t.Fatalf("same /64: %d", got)
+	}
+}
+
+func TestMaxInFlightShedsLoad(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	release, started := make(chan struct{}), make(chan struct{})
+	r.Use(MaxInFlight(1))
+	r.GET("/slow", func(*gin.Context) { close(started); <-release })
+	r.GET("/health", func(c *gin.Context) { c.Status(http.StatusOK) })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/slow", nil))
+	}()
+	<-started
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/slow", nil))
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("got %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("health was shed: %d", w.Code)
+	}
+	close(release)
+	<-done
+}

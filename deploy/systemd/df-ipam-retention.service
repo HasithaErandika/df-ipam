@@ -1,0 +1,9 @@
+[Unit]
+Description=DF-IPAM retention pruning
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/df-ipam
+ExecStart=/usr/bin/make docker-retention

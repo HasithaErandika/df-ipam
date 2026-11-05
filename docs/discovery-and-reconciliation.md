@@ -76,7 +76,7 @@ Defaults:
 
 ## Reconciliation
 
-Runs on demand and hourly from the worker. The rules are in `api/internal/modules/reconciliation/rules.go`. Making priorities and confidence configurable through `reconciliation_rules` is still to do. A rerun updates the same finding, resolves findings no longer true, and leaves dismissed findings dismissed.
+Runs on demand and hourly from the worker. The rules are in `api/internal/modules/reconciliation/rules.go`, and `reconciliation_rules` sets each classification's source priority, confidence weights and whether it runs. Switching one off stops detection without resolving its findings. A rerun updates the same finding, resolves findings no longer true, and leaves dismissed findings dismissed.
 
 All matching is done **within a routing domain**.
 
@@ -103,4 +103,4 @@ The worker's code path has no method for the right-hand column, and tests check 
 
 ### Confidence score
 
-A 0-100 score built from source reliability, evidence age and agreement between sources, with each contribution saved so the UI can explain it. Starting weights are set in Phase 5 and stay configurable.
+A 0-100 score built from source reliability, evidence age and agreement between sources, with each contribution saved in `confidence_breakdown` so the UI can explain it. The weights add up to 1, and a cap keeps weak findings low: several MACs alone never pass 50. Classifications with no weights keep the fixed confidence in their rule. The starting weights are in the seed and need review.

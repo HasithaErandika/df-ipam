@@ -1,6 +1,9 @@
 package subnets
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseCIDR(t *testing.T) {
 	for _, ok := range []string{"10.0.0.0/24", "10.0.0.0/31", "10.0.0.1/32", "2001:db8::/64", "2001:db8::1/128", " 192.168.0.0/16 "} {
@@ -43,5 +46,24 @@ func TestOrderByIgnoresUnknownFields(t *testing.T) {
 	}
 	if got := orderBy("-updatedAt"); got != "s.updated_at DESC, s.id" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestProviderReserved(t *testing.T) {
+	for cidr, want := range map[string]string{
+		"10.0.0.0/24":    "10.0.0.0-10.0.0.3,10.0.0.255-10.0.0.255",
+		"10.1.0.0/29":    "10.1.0.0-10.1.0.3,10.1.0.7-10.1.0.7",
+		"2001:db8::/64":  "2001:db8::-2001:db8::3,2001:db8::ffff:ffff:ffff:ffff-2001:db8::ffff:ffff:ffff:ffff",
+		"10.2.0.0/30":    "",
+		"2001:db8::/126": "",
+	} {
+		p, _ := ParseCIDR(cidr)
+		var parts []string
+		for _, r := range ProviderReserved(p) {
+			parts = append(parts, r.First.String()+"-"+r.Last.String())
+		}
+		if got := strings.Join(parts, ","); got != want {
+			t.Errorf("%s: got %q want %q", cidr, got, want)
+		}
 	}
 }

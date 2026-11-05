@@ -55,10 +55,10 @@ The API derives the issuer and JWKS URL from `SUPABASE_URL`. It uses the anon ke
 ## User provisioning
 
 - A valid token with no `users` row creates an active row with **no roles**, so that user can see nothing until they are given a role.
-- Roles are managed in the Supabase database, or on the User Management page by a Super Administrator. There is no bootstrap setting.
+- Roles are managed in the database, or on the User Management page by a Super Administrator. There is no bootstrap setting.
 - Deactivating a user in DF-IPAM blocks them on their next request, because `users.is_active` is checked every time. A signed-out token otherwise stays valid until it expires.
 
-To make someone the first Super Administrator, have them sign in once, then run this in the Supabase SQL Editor:
+To make someone the first Super Administrator, have them sign in once, then run this in `make db-shell`:
 
 ```sql
 INSERT INTO user_roles (user_id, role_id)
@@ -95,7 +95,7 @@ Stored in `roles`, `permissions`, `role_permissions` and `user_roles`. Checked b
 | View audit history | ✓ | ✓ | | | ✓ | |
 | Export reports | ✓ | ✓ | ✓ | ✓ | ✓ | Scoped |
 
-The role purposes come from the brief. The ticks are a proposed default, and administrators can change them. The code checks permissions, never role names. Separation of duties is enforced regardless: nobody approves their own request.
+The role purposes come from the brief. The ticks are a proposed default, and administrators can change them. The code checks permissions, never role names. Separation of duties is enforced regardless: nobody approves their own request, and a person decides at most one step of a request. Approval workflows and notification rules are administration, so they need `users:manage`. Anyone signed in reads their own notifications and preferences.
 
 `user_roles` has optional scope columns (organisation, business unit, site, business service). Business Viewers see only explicitly permitted business services, and infrastructure details stay hidden unless a permission allows them.
 

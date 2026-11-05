@@ -57,6 +57,11 @@ export async function get<T>(path: string): Promise<T> {
   return (await (await send(path)).json()).data
 }
 
+/** The whole response body, for endpoints whose metadata isn't a page. */
+export async function getBody<T>(path: string): Promise<T> {
+  return (await send(path)).json()
+}
+
 export async function list<T>(path: string): Promise<ListResult<T>> {
   return (await send(path)).json()
 }
@@ -77,8 +82,30 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
   return res.status === 204 ? (undefined as T) : (await res.json()).data
 }
 
+export async function del(path: string): Promise<void> {
+  await send(path, { method: 'DELETE' })
+}
+
 export async function put(path: string, body: unknown): Promise<void> {
   await send(path, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/** Fetches a file with the sign-in token and saves it, since a plain link can't send one. */
+export async function download(path: string, fallbackName: string): Promise<void> {
+  const res = await send(path)
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+/** PATCH for records without a version, such as reference data. */
+export async function patchPlain<T>(path: string, body: unknown): Promise<T> {
+  const res = await send(path, { method: 'PATCH', body: JSON.stringify(body) })
+  return (await res.json()).data
 }
 
 export async function patch<T>(path: string, body: unknown, version: number): Promise<T> {

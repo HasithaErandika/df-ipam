@@ -18,13 +18,15 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Foundation | ✅ Complete |
-| 1 | Core IPAM | 🟨 Backend mostly done, screens remain |
-| 2 | Allocation workflow | ⬜ Schema only |
-| 3 | Imports and devices | ⛔ Device API done, imports need the production files |
-| 4 | Discovery | ⬜ Schema only |
-| 5 | Integrations and reconciliation | 🟨 Findings engine done, integrations not started |
-| 6 | Reporting and dashboard | 🟨 Basic dashboard only |
-| 7 | Hardening | ⬜ Not started |
+| 1 | Core IPAM | ✅ Complete |
+| 2 | Allocation workflow | ✅ Complete. Email waits for a mail provider |
+| 3 | Imports and devices | 🟨 Built. Parser needs checking against the real production files |
+| 4 | Discovery | 🟨 Built. Needs a lab run, the sensitive-networks list and SNMP credentials |
+| 5 | Integrations and reconciliation | 🟨 Built. Connectors need trying against real systems. DNS and DHCP servers blocked |
+| 6 | Reporting and dashboard | 🟨 Built. Not yet viewed in a browser |
+| 7 | Hardening | 🟨 Screens, Docker and runbooks built. Load test, security review and restore not yet run. Company auth blocked |
+
+**Testing status, 5 November 2026:** everything up to the role editing and report summary work passed on Supabase. That later work, and all tests on the local Docker database, have not been run: `make test test-db`.
 
 **Foundation exit check passed:** a real user signed in, roles were enforced, and creating an organisation through the screens wrote an audit row on Supabase.
 
@@ -35,9 +37,10 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Project documentation | ✅ Done | `docs/` |
 | Repository, Makefile, gitignores, `CLAUDE.md` | ✅ Done | |
 | Env files in `api/` and `web/` | ✅ Done | |
-| Go API, worker, agent, migrate and seed programs | ✅ Done | All start and connect. The agent stays idle until Phase 4. The worker runs reconciliation only |
+| Go API, worker, agent, migrate and seed programs | ✅ Done | All start and connect. The agent stays idle until Phase 4. The worker runs reconciliation hourly, and allocation expiry and email every minute |
 | Config, structured logs, correlation IDs | ✅ Done | |
-| Migrations and seed | ✅ Done | 8 migrations live on Supabase |
+| Migrations and seed | ✅ Done | 12 migrations, applied to local PostgreSQL and to Supabase |
+| Docker | ✅ Done | PostgreSQL, API and worker through `docker-compose.yml`. `make docker-up` starts all of it |
 | Single-file SQL setup | ✅ Done | `api/sql/supabase-setup.sql` |
 | Supabase sign-in, token verification | ✅ Done | Tested with real ES256 signatures. MFA not set up |
 | Roles and permissions | ✅ Done | Every route is guarded, enforced by a test |
@@ -54,97 +57,113 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Organisations, routing domains | ✅ Done | List and create, used with real data. No edit or delete yet |
-| Sites, zones, VDOMs, VLANs, business units, services, applications, teams | 🟦 API done | Used by the New subnet form where relevant, but no management screens |
-| Network blocks | 🟦 API done | Includes free-space analysis |
-| Subnet create, view, archive, filter, search | ✅ Done | |
-| Subnet edit | 🟦 API done | Version-checked. No edit form yet |
-| Subnet delete | 🟦 API done | Blocked when records depend on it |
-| Bulk subnet operations | ⬜ To do | |
-| Subnet mapping to site, VLAN, block, service | ✅ Done | Contradictions are rejected |
-| Subnet mapping to VDOM, zone, owners, business unit | 🟦 API done | Not in the form yet |
+| Organisations, routing domains | ✅ Done | Create, edit and delete. Delete only when nothing uses them |
+| Sites, zones, VDOMs, VLANs, business units, services, applications, teams | ✅ Done | One management screen for each, under Network Management |
+| Network blocks | ✅ Done | Management screen with free-space view |
+| Subnet create, view, edit, archive, delete, filter, search | ✅ Done | Edit is version-checked. Delete is blocked when records depend on the subnet |
+| Bulk subnet operations | ✅ Done | Bulk create (all or nothing, with a dry run per row) and bulk archive |
+| Subnet mapping to site, VLAN, block, service, VDOM, zone, owners, business unit | ✅ Done | Contradictions are rejected |
 | Overlap prevention | ✅ Done | Enforced by the database |
-| Overlap exceptions | 🟦 API done | Enforced by the database, no screen |
+| Overlap exceptions | ✅ Done | Management screen for approvers; chosen when creating a subnet |
 | IPv4 and IPv6 calculations, `/31`, `/32`, `/127`, `/128` | ✅ Done | |
-| Utilisation breakdown | ✅ Done | Subnet detail view |
-| Free ranges | ✅ Done | Subnet detail view |
-| Provider-reserved ranges | 🟦 API done | Counted in utilisation. Not created automatically yet |
-| Split, summarise, locate tools | 🟦 API done | |
-| Address grid data | 🟦 API done | Range-based, safe for IPv6 |
-| IP records: create, edit, search, history, evidence | 🟦 API done | |
-| IP Address Explorer screen | ⬜ To do | Grid, table and detail view |
-| DNS and DHCP records | 🟨 Partial | DHCP scopes have an API. `dns_records` is read by findings but has no API |
-| Saved filters, column visibility | ⬜ To do | Table exists |
-| Global search | 🟨 Partial | Subnets only |
+| Utilisation breakdown, free ranges | ✅ Done | Subnet detail view |
+| Provider-reserved ranges | ✅ Done | AWS and Azure reservations are recorded when a subnet is created in a VPC or VNet routing domain |
+| Split, summarise, locate tools | ✅ Done | Tools dialog on Subnets |
+| IP Addresses | ✅ Done | Table and colour-coded grid, filters, record detail with history and evidence, create and edit |
+| Device view per address | ✅ Done | Device, interface, MAC flags, DNS, DHCP and reporting sources, from inventory and approved read-only sources only |
+| Device types and OS family, with icons | ✅ Done | Laptops, desktops, phones, access points, servers, VMs, firewalls and more. Filled by people, imports and, later, discovery |
+| DNS and DHCP records | ✅ Done | Read-only. DNS records list through the API and appear in the device view |
+| Saved filters, column visibility | ✅ Done | Saved filters on Subnets and the Explorer. Column choice on Subnets is kept in the browser |
+| Global search | ✅ Done | Subnets, addresses, hostnames, MACs, devices and VLANs. An address finds its subnet in every routing domain |
+| Live check on Supabase | ✅ Done | Migrations applied, and database tests passed on 5 November 2026 |
 
 ## Phase 2: Allocation workflow
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Direct allocate, reserve, release by an authorised user | 🟦 API done | Release needs a reason. Keeps allocation history |
-| Allocation requests | ⬜ To do | Tables exist |
-| Multi-level approvals, separation of duties | 🟨 Partial | Self-approval is blocked by the database. No workflow yet |
-| Automatic next-free selection | ⬜ To do | Approach tested during design |
-| Concurrent allocation and reservation test | ⬜ To do | Design test covered allocations only |
-| Reservation expiry and reminders | ⬜ To do | |
-| Notifications | ⬜ To do | Needs a mail provider |
-| Alerts page | ⬜ To do | Findings count shows in the header |
+| Allocation, reservation and release requests | ✅ Done | Draft, submit, cancel. Release and conversion requests point at their allocation or reservation |
+| Multi-level approvals, separation of duties | ✅ Done | Workflows choose role-based steps by request type, environment and sensitivity. No self-approval, one step per person, steps in order. Enforced in the service and the database |
+| Approval workflow administration | ✅ Done | Workflows tab on Requests. Submitted requests keep their steps |
+| Fulfilment: allocate, reserve, release | ✅ Done | Only approved requests. Repeating a call returns the same result |
+| Automatic next-free selection | ✅ Done | Range-based, safe for IPv6. Skips held, observed, reserved-range, DHCP, gateway and more-specific-subnet addresses |
+| Concurrent allocation and reservation tests | ✅ Done | Real database, separate connections: 40 allocations 20 at a time, exhaustion, allocation against reservation for one address, racing approvers, repeated fulfilment |
+| Direct allocate, reserve, release by an authorised user | ✅ Done | From the Explorer's edit dialog. Release needs a reason |
+| Reservation expiry, extension and reminders | ✅ Done | Reminder a week before; expiry returns the address to the candidate pool. Extend needs a reason, at most a year ahead |
+| Stale request expiry | ✅ Done | Approved but unfulfilled after 30 days, or a reservation whose end date passed first |
+| Notifications | 🟨 Partial | In-app alerts, rules, per-person preferences and deduplication work. Email is built (SMTP, STARTTLS) but waits for a mail provider |
+| Alerts page | ✅ Done | Inbox, settings, event rules, and what needs attention. Unread count in the header |
+| Requests, Reservations screens | ✅ Done | |
 | Invite users | 🟨 Partial | Built, but no real invitation has been sent |
 | User role assignment | ✅ Done | Screen built. Not yet exercised with a second real user |
+
+**Phase 2 exit check passed:** concurrency tests and the no-self-approval tests pass on PostgreSQL 16 and on Supabase.
 
 ## Phase 3: Imports and devices
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Device and interface API | 🟦 API done | |
-| Device and interface screens | ⬜ To do | |
-| Duplicate device matching | ⬜ To do | |
-| Production file parser | ⛔ Blocked | Needs `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt` |
-| Import preview, approval, reversal, enrichment queue | ⬜ To do | Tables exist |
+| Device and interface inventory screens | 🟦 Built, not tested | Device types and OS family with icons |
+| Duplicate device matching and merge | 🟦 Built, not tested | By serial, interface MAC, management IP or hostname |
+| Production file parser | ⛔ Blocked | Tolerant parser built (CIDR, address and mask, VDOM-prefixed lines). Needs `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt` to confirm no line is dropped |
+| Import preview, second-person approval, reversal, enrichment queue | 🟦 Built, not tested | Every line kept with a status. Migration 11 |
 
 ## Phase 4: Discovery
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Policies, schedules, jobs, exclusions | ⬜ To do | Tables exist. Job snapshots are frozen by the database |
-| Agent registration, heartbeat, credential rotation | ⬜ To do | |
-| ICMP, ARP/NDP, DNS, SNMP, Nmap collectors | ⬜ To do | |
-| Safety controls and emergency stop | ⬜ To do | Setting is seeded, nothing uses it yet |
-| Discovery Centre screen | ⬜ To do | |
-| Redis job queue | ⛔ Blocked | Needs Redis approval |
-| Sensitive network rules | ⛔ Blocked | Needs the list of banking and payment networks |
+| Policies with second-person approval, schedules, exclusions, blackouts | 🟦 Built, not tested | Saving a policy clears its approval |
+| Frozen job scope | 🟦 Built, not tested | Allowlist, exclusions win, blackouts, IPv4 up to /20, IPv6 only at recorded addresses |
+| Agent registration, heartbeat, rotation, revocation | 🟦 Built, not tested | One-time tokens; credentials stored as hashes |
+| ICMP, ARP/NDP, reverse DNS, Nmap host discovery | 🟦 Built, not tested | Agent enforces rate, concurrency and timeout limits |
+| SNMP collector | ⬜ To do | Needs SNMPv3 credential storage (Phase 5 encrypted credentials) |
+| Safety controls and emergency stop | 🟦 Built, not tested | Results re-checked against scope; discovery never changes allocation or ownership |
+| Discovery screen, Explorer scan button | 🟦 Built, not tested | |
+| Redis job queue | ⛔ Blocked | Jobs use PostgreSQL with SKIP LOCKED meanwhile |
+| Sensitive network rules | ⛔ Blocked | Mechanism built (passive only unless an approved sensitive policy); needs the list of banking and payment networks |
+| Lab test of scope and emergency stop | ⬜ To do | Phase 4 exit criterion |
 
 ## Phase 5: Integrations and reconciliation
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Reconciliation engine, all 11 classifications | ✅ Done | Never changes inventory. Discovery-based rules have no evidence to work on yet |
+| Reconciliation engine, all 11 classifications | ✅ Done | Never changes inventory. Stale VMware evidence raises no findings |
 | Findings screen and review | ✅ Done | |
 | Hourly worker run | ✅ Done | Ran on Supabase and wrote a system audit row. Hourly repeats not yet observed |
-| Configurable source priority and confidence | ⬜ To do | Rules are in code today |
-| Change requests from findings | ⬜ To do | |
-| FortiGate, vCenter, AWS, Azure connectors | ⬜ To do | Tables exist |
-| DNS and DHCP connectors | ⛔ Blocked | Needs the server types |
-| Encrypted credential storage | ⬜ To do | |
-| Integrations screen | ⬜ To do | |
+| Configurable source priority and confidence | ✅ Done | Rules and confidence tab. Scores are capped and explained. Starting weights need review |
+| Change requests from findings | ✅ Done | Second person required, enforced in the service and database. Allocation state can't travel this way |
+| FortiGate connector | 🟨 Built | GET only. Tested against fixtures built from published API shapes, not a real device |
+| vCenter connector | 🟨 Built | Tested against VMware's simulator, not a real vCenter |
+| AWS connector | 🟨 Built | Assumes a read-only role. Tested with a fake EC2 client, not a real account. Cloud subnets are kept on evidence only |
+| Azure connector | 🟨 Built | Reader role. Tested with a fake client, not a real subscription. Public IPs, load balancers and application gateways aren't collected yet |
+| DNS and DHCP connectors | ⛔ Blocked | Needs the server types. FortiGate DHCP works through the FortiGate connector |
+| Encrypted credential storage | ✅ Done | AES-256-GCM envelope, tied to each connection, with key versions and `make docker-rotate-secrets` |
+| SSRF protection | ✅ Done | Allowlist, address checks after DNS, connects to the checked address, no redirects |
+| Integrations screen | 🟦 Built, not viewed | Connections, tests, syncs, history, routing map |
+| Read-only confirmed per connector | ⛔ Blocked | Exit criterion. Needs the real service accounts |
 
 ## Phase 6: Reporting and dashboard
 
 | Item | Status | Notes |
 | --- | --- | --- |
 | Dashboard totals, most utilised subnets, allocation state, recent changes | ✅ Done | |
-| Trend charts | ⬜ To do | Needs daily utilisation snapshots |
-| Excel, CSV and PDF reports | ⬜ To do | |
-| Audit log screen | ✅ Done | Filters still to add |
+| Trend and distribution charts | 🟦 Built, not viewed | Daily snapshots from the worker, so trends fill in over time. Hand-built SVG rather than Recharts |
+| Excel, CSV and PDF reports | ✅ Done | 13 reports, in the background. PDF stops at 5,000 rows and says so. Formulas are neutralised |
+| Reports screen and summary | 🟦 Built, not viewed | The summary hasn't had a test run |
+| Scoped reports | 🟨 Partial | Business Viewers get only their business services. Exit criterion "at volume" not yet measured |
+| Audit log screen and filters | 🟦 Built, not viewed | Actor, action, object, result and dates |
 
 ## Phase 7: Hardening
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Load tests and final sizing | ⬜ To do | |
-| Security review | ⬜ To do | Checklist in `docs/security.md` |
-| Nginx, systemd units, backups, runbooks | ⬜ To do | |
-| Roles and Permissions, System Administration screens | ⬜ To do | |
+| Roles and Permissions screen | 🟦 Built, not viewed | Edit permissions and details, create and delete roles. Keeps someone able to manage users. Editing details hasn't had a test run |
+| System Administration screen | 🟦 Built, not viewed | Health, queues, retention |
+| Retention pruning | 🟨 Built | `make docker-retention`, daily timer. Audit logs are never pruned automatically. Not yet run |
+| Docker, Nginx, timers, backup script | 🟨 Built | Docker checked locally. Nginx, timers and backup not yet run on a server |
+| Setup guide and runbooks | 🟨 Written | `docs/setup.md`, `docs/runbooks.md`. Not rehearsed |
+| Load tests and final sizing | ⬜ To do | Tool built (`make load-test`), not run. Needs a test system and the real inventory size |
+| Security review | ⬜ To do | Checklist in `docs/security.md`. `make vuln` and a secret scan not run for this work |
+| Restore test | ⬜ To do | Exit criterion |
 | Company auth migration | ⛔ Blocked | Needs company auth details |
 
 ## Waiting on others
@@ -156,7 +175,8 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | DNS and DHCP server types | Network team | Connectors |
 | List of sensitive networks | Network and security | Active discovery |
 | Redis approval | Infrastructure | Job queue |
-| Cloud data approval | Compliance | Production data |
+| Mail provider (SMTP host or Microsoft Graph) and a sender address | Infrastructure | Email notifications |
+| Service accounts, confirmed read-only | Platform owners | Trying the connectors |
 | RPO, RTO, retention, inventory size | Business | Backups and sizing |
 
 ## Security to-do

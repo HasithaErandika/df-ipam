@@ -1,0 +1,24 @@
+# Runs on each agent host, not the main server.
+[Unit]
+Description=DF-IPAM discovery agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=dfipam-agent
+Group=dfipam-agent
+EnvironmentFile=/etc/df-ipam/agent.env
+WorkingDirectory=/var/lib/df-ipam-agent
+ExecStart=/opt/df-ipam/bin/agent
+Restart=on-failure
+RestartSec=10
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/df-ipam-agent
+
+[Install]
+WantedBy=multi-user.target

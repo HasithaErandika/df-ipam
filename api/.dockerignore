@@ -1,0 +1,10 @@
+# Secrets must never reach an image layer.
+.env
+.env.*
+*.pem
+*.key
+bin/
+tmp/
+*.out
+*.test
+README.md

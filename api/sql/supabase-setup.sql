@@ -989,6 +989,193 @@ ALTER TABLE reconciliation_results
 CREATE UNIQUE INDEX reconciliation_fingerprint_idx ON reconciliation_results (fingerprint);
 CREATE INDEX ip_addresses_state_idx ON ip_addresses (allocation_state, observation_state);
 
+-- 000009_allocation_workflow.up.sql
+-- Phase 2: the allocation workflow. Requests are approved step by step, then
+-- fulfilled as allocations, reservations or releases. No new tables, so the
+-- row level security and grants from earlier migrations still cover everything.
+
+-- Requests: an edit version, the record a release or conversion acts on, and
+-- the workflow and timestamps the approval frozen at submission.
+ALTER TABLE ip_requests
+  ADD COLUMN version integer NOT NULL DEFAULT 1,
+  ADD COLUMN allocation_id uuid REFERENCES ip_allocations(id),
+  ADD COLUMN reservation_id uuid REFERENCES ip_reservations(id),
+  ADD COLUMN workflow_id uuid REFERENCES approval_workflows(id),
+  ADD COLUMN submitted_at timestamptz,
+  ADD COLUMN decided_at timestamptz,
+  ADD COLUMN fulfilled_at timestamptz,
+  ADD COLUMN fulfilled_by uuid REFERENCES users(id),
+  ADD CONSTRAINT ip_requests_release_target CHECK (request_type <> 'release' OR allocation_id IS NOT NULL),
+  ADD CONSTRAINT ip_requests_conversion_target CHECK (reservation_id IS NULL OR request_type = 'allocation');
+
+-- 'reserved' and 'released' are the fulfilled states of reservation and release
+-- requests, as 'allocated' is for allocation requests.
+ALTER TABLE ip_requests DROP CONSTRAINT ip_requests_status_check;
+ALTER TABLE ip_requests ADD CONSTRAINT ip_requests_status_check CHECK (status IN
+  ('draft','submitted','pending_approval','approved','rejected','allocated','reserved','released','cancelled','expired'));
+CREATE INDEX ip_requests_subnet_idx ON ip_requests (subnet_id);
+CREATE INDEX ip_requests_allocation_idx ON ip_requests (allocation_id) WHERE allocation_id IS NOT NULL;
+
+-- Approval steps keep the role the workflow required when the request was
+-- submitted, so later workflow edits don't change requests in flight. A null
+-- role means anyone with the approve permission.
+ALTER TABLE ip_request_approvals ADD COLUMN approver_role_id uuid REFERENCES roles(id);
+-- One person decides at most one step of a request: multi-level approval needs
+-- different people.
+CREATE UNIQUE INDEX ip_request_approvals_one_per_person ON ip_request_approvals (request_id, approver_id)
+  WHERE approver_id IS NOT NULL;
+CREATE INDEX ip_request_approvals_pending_idx ON ip_request_approvals (request_id, step_order) WHERE decision = 'pending';
+
+-- A request is fulfilled at most once, which also makes fulfilment idempotent.
+CREATE UNIQUE INDEX ip_alloc_one_per_request ON ip_allocations (request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX ip_allocations_subnet_idx ON ip_allocations (subnet_id, status);
+
+ALTER TABLE ip_reservations
+  ADD COLUMN request_id uuid REFERENCES ip_requests(id),
+  ADD COLUMN released_by uuid REFERENCES users(id),
+  ADD COLUMN released_at timestamptz,
+  ADD COLUMN reminded_at timestamptz;
+CREATE UNIQUE INDEX ip_reservation_one_per_request ON ip_reservations (request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX ip_reservations_subnet_idx ON ip_reservations (subnet_id, status);
+
+-- Allocations and reservations are separate tables, so their own unique indexes
+-- can't stop one address being active in both. The service settles this through
+-- a conditional update on the single ip_addresses row; these triggers back it up.
+CREATE FUNCTION ip_allocations_block_reserved() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status = 'active' AND EXISTS (
+    SELECT 1 FROM ip_reservations r
+    WHERE r.routing_domain_id = NEW.routing_domain_id AND r.address = NEW.address AND r.status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'address % has an active reservation', NEW.address
+      USING ERRCODE = 'unique_violation', CONSTRAINT = 'ip_alloc_one_active';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER ip_allocations_not_reserved BEFORE INSERT OR UPDATE OF status ON ip_allocations
+  FOR EACH ROW EXECUTE FUNCTION ip_allocations_block_reserved();
+
+CREATE FUNCTION ip_reservations_block_allocated() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status = 'active' AND EXISTS (
+    SELECT 1 FROM ip_allocations a
+    WHERE a.routing_domain_id = NEW.routing_domain_id AND a.address = NEW.address AND a.status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'address % has an active allocation', NEW.address
+      USING ERRCODE = 'unique_violation', CONSTRAINT = 'ip_reservation_one_active';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER ip_reservations_not_allocated BEFORE INSERT OR UPDATE OF status ON ip_reservations
+  FOR EACH ROW EXECUTE FUNCTION ip_reservations_block_allocated();
+
+-- Notifications: one row per recipient, channel and event key, so a repeated
+-- event never floods anyone. Email rows carry their delivery attempts.
+ALTER TABLE notifications
+  ADD COLUMN object_type text,
+  ADD COLUMN object_id text,
+  ADD COLUMN last_error text,
+  ADD COLUMN next_attempt_at timestamptz;
+CREATE UNIQUE INDEX notifications_dedupe ON notifications (recipient_id, channel, dedupe_key)
+  WHERE dedupe_key IS NOT NULL;
+CREATE INDEX notifications_outbox_idx ON notifications (next_attempt_at, created_at)
+  WHERE status = 'pending' AND channel = 'email';
+CREATE INDEX notifications_unread_idx ON notifications (recipient_id) WHERE channel = 'in_app' AND read_at IS NULL;
+
+-- 000010_device_classes.up.sql
+-- More device types, so endpoints and wireless gear can be told apart, and an
+-- operating system family recorded separately from the free-text version.
+-- os_family is set from a record or a reliable source, never guessed.
+ALTER TABLE devices DROP CONSTRAINT devices_device_type_check;
+ALTER TABLE devices ADD CONSTRAINT devices_device_type_check CHECK (device_type IN
+  ('firewall','router','switch','physical_server','virtual_machine','load_balancer','network_appliance','cloud_interface',
+   'access_point','wireless_controller','laptop','desktop','mobile_phone','tablet','printer','ip_phone','camera','storage','iot','other'));
+ALTER TABLE devices ADD COLUMN os_family text NOT NULL DEFAULT 'unknown' CHECK (os_family IN
+  ('unknown','windows','windows_server','linux','macos','ios','android','network_os','hypervisor','other'));
+CREATE INDEX devices_type_idx ON devices (device_type);
+
+-- 000011_imports_discovery.up.sql
+-- Phase 3 and 4: imports know their target, and discovery jobs remember the
+-- schedule or person that started them. No new tables.
+ALTER TABLE import_batches
+  ADD COLUMN routing_domain_id uuid REFERENCES routing_domains(id),
+  ADD COLUMN environment text,
+  ADD COLUMN committed_at timestamptz,
+  ADD COLUMN reversed_by uuid REFERENCES users(id);
+CREATE INDEX import_records_status_idx ON import_records (batch_id, status);
+
+ALTER TABLE discovery_jobs
+  ADD COLUMN schedule_id uuid REFERENCES discovery_schedules(id),
+  ADD COLUMN subnet_id uuid REFERENCES subnets(id),
+  ADD COLUMN claimed_at timestamptz;
+ALTER TABLE discovery_schedules ADD COLUMN last_run_at timestamptz;
+ALTER TABLE discovery_policies ADD COLUMN description text NOT NULL DEFAULT '';
+CREATE INDEX discovery_job_logs_job_idx ON discovery_job_logs (job_id, logged_at);
+CREATE INDEX discovery_observations_job_idx ON discovery_observations (job_id);
+
+-- 000012_integrations_reports.up.sql
+-- Phases 5 to 7: connector scheduling, change requests from findings, configurable
+-- confidence, generated reports and worker health. No new tables, so the row level
+-- security and grants from earlier migrations still cover everything.
+
+-- Connections are scheduled by the worker. Credentials stay write-only in
+-- credential_ciphertext, which no API response ever selects.
+ALTER TABLE integration_connections
+  ADD COLUMN is_enabled boolean NOT NULL DEFAULT true,
+  ADD COLUMN sync_interval_minutes integer NOT NULL DEFAULT 60 CHECK (sync_interval_minutes BETWEEN 5 AND 10080),
+  ADD COLUMN last_sync_at timestamptz,
+  ADD COLUMN last_error text NOT NULL DEFAULT '';
+
+-- contexts lists the VDOMs and networks a sync saw, so a person can map each one
+-- to a routing domain. Connectors never guess that mapping.
+ALTER TABLE integration_sync_jobs
+  ADD COLUMN created_at timestamptz NOT NULL DEFAULT now(),
+  ADD COLUMN requested_by uuid REFERENCES users(id),
+  ADD COLUMN contexts text[] NOT NULL DEFAULT '{}',
+  ADD COLUMN error text NOT NULL DEFAULT '';
+-- One sync at a time per connection, whichever worker or person starts it.
+CREATE UNIQUE INDEX integration_sync_one_active ON integration_sync_jobs (connection_id) WHERE status IN ('queued', 'running');
+CREATE INDEX integration_sync_queue_idx ON integration_sync_jobs (created_at) WHERE status = 'queued';
+CREATE INDEX integration_sync_history_idx ON integration_sync_jobs (connection_id, created_at DESC);
+CREATE INDEX integration_errors_job_idx ON integration_errors (sync_job_id);
+CREATE INDEX discovery_observations_sync_idx ON discovery_observations (sync_job_id) WHERE sync_job_id IS NOT NULL;
+
+-- Change requests carry a finding's proposal through a second person. The check
+-- backs up the service: nobody decides their own request.
+ALTER TABLE change_requests
+  ADD COLUMN finding_id uuid REFERENCES reconciliation_results(id),
+  ADD COLUMN reason text NOT NULL DEFAULT '',
+  ADD COLUMN decision_note text NOT NULL DEFAULT '',
+  ADD COLUMN applied_at timestamptz,
+  ADD CONSTRAINT change_requests_no_self_decision CHECK (decided_by IS NULL OR decided_by <> requested_by);
+CREATE INDEX change_requests_status_idx ON change_requests (status, created_at DESC);
+CREATE UNIQUE INDEX change_requests_one_open_per_finding ON change_requests (finding_id)
+  WHERE finding_id IS NOT NULL AND status IN ('pending', 'approved');
+
+-- Each contribution to a finding's confidence, so the screen can explain the score.
+ALTER TABLE reconciliation_results ADD COLUMN confidence_breakdown jsonb NOT NULL DEFAULT '{}';
+
+-- Report files live with their job: the API and worker run as separate users and
+-- share no directory. Retention removes old rows.
+ALTER TABLE report_jobs
+  ADD COLUMN content bytea,
+  ADD COLUMN content_type text NOT NULL DEFAULT '',
+  ADD COLUMN size_bytes bigint NOT NULL DEFAULT 0,
+  ADD COLUMN row_count bigint NOT NULL DEFAULT 0,
+  ADD COLUMN truncated boolean NOT NULL DEFAULT false,
+  ADD COLUMN error text NOT NULL DEFAULT '',
+  ADD COLUMN started_at timestamptz,
+  ADD COLUMN finished_at timestamptz;
+CREATE INDEX report_jobs_queue_idx ON report_jobs (created_at) WHERE status = 'queued';
+CREATE INDEX report_jobs_owner_idx ON report_jobs (requested_by, created_at DESC);
+
+CREATE INDEX subnet_utilisation_snapshots_time_idx ON subnet_utilisation_snapshots (captured_at);
+CREATE INDEX audit_logs_filter_idx ON audit_logs (action, occurred_at DESC);
+
+-- Once a person edits a role, make seed stops restoring its default permissions, so a
+-- permission taken away doesn't quietly come back on the next deployment.
+ALTER TABLE roles ADD COLUMN is_customised boolean NOT NULL DEFAULT false;
+
 -- Seed data
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view') ON CONFLICT (resource, action) DO NOTHING;
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view_scoped') ON CONFLICT (resource, action) DO NOTHING;
@@ -1008,62 +1195,64 @@ INSERT INTO permissions (resource, action) VALUES ('users', 'manage') ON CONFLIC
 INSERT INTO permissions (resource, action) VALUES ('audit', 'view') ON CONFLICT (resource, action) DO NOTHING;
 INSERT INTO permissions (resource, action) VALUES ('reports', 'export') ON CONFLICT (resource, action) DO NOTHING;
 INSERT INTO permissions (resource, action) VALUES ('reports', 'export_scoped') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Super Administrator', 'Full platform configuration and user administration.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'view_scoped' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'create' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'edit' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'edit_assigned' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'delete' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'request' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'allocate' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'reserve' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'requests' AND p.action = 'approve' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'imports' AND p.action = 'run' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'discovery' AND p.action = 'run' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'discovery' AND p.action = 'manage' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'integrations' AND p.action = 'manage' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'users' AND p.action = 'manage' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'audit' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'reports' AND p.action = 'export' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'reports' AND p.action = 'export_scoped' ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('IPAM Administrator', 'Manages subnets, IP records, discovery policies and integrations.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'create' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'edit' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'delete' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'request' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'allocate' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'reserve' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'requests' AND p.action = 'approve' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'imports' AND p.action = 'run' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'discovery' AND p.action = 'run' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'discovery' AND p.action = 'manage' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'integrations' AND p.action = 'manage' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'audit' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'reports' AND p.action = 'export' ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Network Engineer', 'Manages network records and performs authorised discovery.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'create' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'edit' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'request' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'allocate' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'reserve' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'imports' AND p.action = 'run' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'discovery' AND p.action = 'run' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'reports' AND p.action = 'export' ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Infrastructure Engineer', 'Views inventory, manages assigned records and requests allocations.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'inventory' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'inventory' AND p.action = 'edit_assigned' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'ip' AND p.action = 'request' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'reports' AND p.action = 'export' ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Security Auditor', 'Read-only access to inventory, audit evidence and reports.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'inventory' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'audit' AND p.action = 'view' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'reports' AND p.action = 'export' ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Business Viewer', 'Read-only access to specifically permitted business-service information.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Business Viewer' AND p.resource = 'inventory' AND p.action = 'view_scoped' ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Business Viewer' AND p.resource = 'reports' AND p.action = 'export_scoped' ON CONFLICT DO NOTHING;
+INSERT INTO permissions (resource, action) VALUES ('system', 'manage') ON CONFLICT (resource, action) DO NOTHING;
+INSERT INTO roles (name, description, is_system) VALUES ('Super Administrator', 'Full platform configuration and user administration.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'view_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'create' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'edit' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'edit_assigned' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'delete' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'allocate' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'reserve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'requests' AND p.action = 'approve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'imports' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'discovery' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'discovery' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'integrations' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'users' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'audit' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'reports' AND p.action = 'export_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'system' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO roles (name, description, is_system) VALUES ('IPAM Administrator', 'Manages subnets, IP records, discovery policies and integrations.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'create' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'edit' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'delete' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'allocate' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'reserve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'requests' AND p.action = 'approve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'imports' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'discovery' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'discovery' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'integrations' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'audit' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO roles (name, description, is_system) VALUES ('Network Engineer', 'Manages network records and performs authorised discovery.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'create' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'edit' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'allocate' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'reserve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'imports' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'discovery' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO roles (name, description, is_system) VALUES ('Infrastructure Engineer', 'Views inventory, manages assigned records and requests allocations.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'inventory' AND p.action = 'edit_assigned' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO roles (name, description, is_system) VALUES ('Security Auditor', 'Read-only access to inventory, audit evidence and reports.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'audit' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO roles (name, description, is_system) VALUES ('Business Viewer', 'Read-only access to specifically permitted business-service information.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Business Viewer' AND p.resource = 'inventory' AND p.action = 'view_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
+INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Business Viewer' AND p.resource = 'reports' AND p.action = 'export_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('Authoritative allocation', 'authoritative', 100) ON CONFLICT (name) DO NOTHING;
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('Manual inventory', 'manual', 90) ON CONFLICT (name) DO NOTHING;
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('FortiGate', 'integration', 85) ON CONFLICT (name) DO NOTHING;
@@ -1077,12 +1266,38 @@ INSERT INTO observation_sources (name, kind, reliability) VALUES ('ARP', 'active
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('ICMP', 'active', 40) ON CONFLICT (name) DO NOTHING;
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('Nmap', 'active', 40) ON CONFLICT (name) DO NOTHING;
 INSERT INTO system_settings (key, value) VALUES ('discovery.emergency_stop', 'false') ON CONFLICT (key) DO NOTHING;
+INSERT INTO system_settings (key, value) VALUES ('discovery.max_total_pps', '500') ON CONFLICT (key) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_observations', 180) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_job_logs', 90) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('agent_heartbeats', 30) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('notifications', 365) ON CONFLICT (data_class) DO NOTHING;
+INSERT INTO retention_policies (data_class, retain_days) VALUES ('report_jobs', 30) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('audit_logs', 2555) ON CONFLICT (data_class) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('new_device', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":70,"freshnessDays":30}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('unknown_ip', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":90,"freshnessDays":7}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('ip_conflict_suspected', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.4,"freshness":0.3,"agreement":0.3,"cap":50,"freshnessDays":1}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('duplicate_mac', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('dns_mismatch', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('allocated_not_observed', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('observed_not_allocated', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":95,"freshnessDays":7}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('subnet_overlap', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('ownership_missing', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('infrastructure_mismatch', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('stale_evidence', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('approval_requested', 'info', 'Eligible approvers') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_approved', 'info', 'Requester') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_rejected', 'warning', 'Requester') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_ready', 'info', 'People who can allocate or reserve') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_fulfilled', 'info', 'Requester') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_expired', 'info', 'Requester') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_expiring', 'warning', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_expired', 'warning', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_released', 'info', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('integration_failed', 'warning', 'People who manage integrations') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('report_ready', 'info', 'Person who requested it') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_requested', 'info', 'People who can approve requests') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_decided', 'info', 'Person who proposed it') ON CONFLICT (event_type) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (8, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (12, false);
 
 COMMIT;

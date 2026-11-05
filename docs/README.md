@@ -2,7 +2,7 @@
 
 **DF-IPAM** is the Dialog Finance IP Address Management platform: the central system for managing, discovering, auditing and governing IPv4 and IPv6 address infrastructure.
 
-**Status:** foundation complete. See [development_phase.md](development_phase.md) for what is done and what remains.
+**Status:** Phases 0 to 2 complete. Phases 3 to 7 are built and need checks against real systems. See [development_phase.md](development_phase.md) for what is done and what remains.
 
 | Document | Covers |
 | --- | --- |
@@ -15,7 +15,9 @@
 | [integrations.md](integrations.md) | FortiGate, vCenter, AWS, Azure, file imports |
 | [frontend.md](frontend.md) | Pages, design system, UX rules |
 | [security.md](security.md) | Threat model and review checklist |
-| [deployment.md](deployment.md) | Ubuntu server, Nginx, systemd, Supabase, backups |
+| [setup.md](setup.md) | **Step-by-step company installation**, by network zone and access model |
+| [deployment.md](deployment.md) | Ubuntu server, Docker, Nginx, backups |
+| [runbooks.md](runbooks.md) | Recovery procedures |
 | [roadmap.md](roadmap.md) | Delivery phases and exit criteria |
 | [development_phase.md](development_phase.md) | **Trace of everything to build, and its current status** |
 

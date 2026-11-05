@@ -93,15 +93,51 @@ Exceptions also don't relax address uniqueness: `(routing_domain_id, address)` s
 
 ## Allocation concurrency
 
-1. Begin a transaction.
-2. `SELECT ... FROM subnets WHERE id = $1 FOR UPDATE`, which serialises automatic selection per subnet.
-3. Find the first gap with a query over used addresses. This never enumerates the range, so it is safe for IPv6.
-4. Insert the allocation and set `ip_addresses.allocation_state`.
-5. Write the audit row and commit.
+Fulfilling an approved request runs in one transaction:
 
-The unique index is the final guarantee. If it fires for a user-chosen address, the API returns `409 ADDRESS_UNAVAILABLE`.
+1. Lock the request (`FOR UPDATE`). A request already fulfilled returns its result, so retries are safe.
+2. Lock the subnet (`FOR UPDATE`), which serialises automatic selection per subnet.
+3. Load the blocked ranges: held records, addresses observed active or in conflict, reserved ranges, DHCP pools, the gateway and more specific subnets. The first gap in the usable range is the candidate. This works on ranges, never single addresses, so it is safe for IPv6.
+4. Claim the address with a conditional upsert on its single `ip_addresses` row: it succeeds only if the row is an available candidate in this subnet and not seen in use. A lost race picks the next gap.
+5. Insert the allocation or reservation, mark the request fulfilled, write the audit row and the notifications, and commit.
 
-Allocations and reservations are separate tables, so a per-table index can't stop one address being in both. The single `ip_addresses` row per address settles that: both flows change its `allocation_state` conditionally in the same transaction, and the second caller updates no rows and fails. **This reservation path is not covered by the tests above** and needs its own concurrency test in Phase 2.
+| Guard | Backs up |
+| --- | --- |
+| `ip_alloc_one_active`, `ip_reservation_one_active` | One active allocation, and one active reservation, per address per routing domain |
+| `ip_allocations_not_reserved`, `ip_reservations_not_allocated` triggers | An address is never actively allocated and reserved at once |
+| `ip_alloc_one_per_request`, `ip_reservation_one_per_request` | A request is fulfilled at most once |
+| `ip_request_approvals_one_per_person` | A person decides at most one step of a request |
+| `approvals_no_self` trigger | Nobody approves their own request |
+
+Tested on a real database with separate connections (`make test-db`): 40 automatic allocations 20 at a time get 40 different addresses with no gaps; a full subnet fails cleanly with `SUBNET_EXHAUSTED`; ten allocations and ten reservations racing for one address leave exactly one winner; two approvers deciding one step record one decision; repeated fulfilment creates one allocation.
+
+## Allocation workflow
+
+| Request type | Fulfilled by | Fulfilled status |
+| --- | --- | --- |
+| `allocation` | `POST /allocations` (`ip:allocate`) | `allocated` |
+| `reservation` | `POST /reservations` (`ip:reserve`) | `reserved` |
+| `release` | `POST /allocations/:id/release` (`ip:allocate`) | `released` |
+
+```mermaid
+stateDiagram-v2
+  [*] --> draft
+  draft --> pending_approval: submit
+  pending_approval --> approved: last step approved
+  pending_approval --> rejected: any step rejected
+  approved --> allocated: fulfil allocation
+  approved --> reserved: fulfil reservation
+  approved --> released: fulfil release
+  draft --> cancelled
+  pending_approval --> cancelled
+  approved --> cancelled
+  approved --> expired: 30 days unfulfilled
+  pending_approval --> expired: reservation end date passed
+```
+
+At submission the most specific active workflow whose rules match (request type, environment, subnet sensitivity) is copied into `ip_request_approvals`, one row per step with its role. Without a match, one step goes to anyone with `requests:approve`. Later workflow edits don't change requests already submitted.
+
+A reservation ends at the end of its chosen day in UTC. The worker reminds the holder a week before, and on expiry returns the address to the candidate pool. That end date is one a person approved, so it isn't an automatic release in the sense of the safety rules.
 
 ## Utilisation definitions
 
@@ -225,7 +261,7 @@ Standard audit columns and `id` are omitted.
 | `network_blocks` | `routing_domain_id`, `parent_id?`, `cidr`, `name`, `purpose` | May nest |
 | `subnets` | `routing_domain_id`, `network_block_id?`, `cidr`, `name`, `gateway inet?`, `site_id?`, `network_zone_id?`, `vdom_id?`, `vlan_id?`, `environment`, `security_zone`, `business_service_id?`, `technical_owner_id?`, `business_owner_id?`, `description`, `discovery_enabled`, `discovery_policy_id?`, `discovery_schedule_id?`, `warn_threshold`, `critical_threshold`, `sensitivity`, `business_unit_id?`, `overlap_exception_id?`, `version`, `archived_at?` | Mask, network, broadcast and usable range are calculated. `environment`: production, disaster_recovery, uat, development, testing |
 | `ip_addresses` | `routing_domain_id`, `subnet_id`, `address inet`, `hostname`, `fqdn`, `mac macaddr?`, `device_id?`, `interface_id?`, `application_id?`, `business_service_id?`, `owner_id?`, `allocation_state`, `observation_state`, `confidence_score`, `confidence_explanation`, `discovery_source_id?`, `first_seen`, `last_seen`, `last_verified`, `notes` | Unique `(routing_domain_id, address)`. Family derived with `family(address)`. Device type, vendor, OS, site and location come through the device or subnet. OS is shown only when reliably identified. Rows exist only for addresses of interest, never one per possible address |
-| `devices` | `name`, `hostname`, `management_ip?`, `vendor`, `model`, `serial_number?`, `device_type`, `os_version`, `site_id?`, `environment?`, `owner_id?`, `business_service_id?`, `source_system`, `external_id`, `first_discovered`, `last_discovered`, `last_verified`, `status`, `sensitivity`, `notes` | `sensitivity` drives discovery rules; sensitive devices are passive/API-only by default |
+| `devices` | `name`, `hostname`, `management_ip?`, `vendor`, `model`, `serial_number?`, `device_type`, `os_version`, `os_family`, `site_id?`, `environment?`, `owner_id?`, `business_service_id?`, `source_system`, `external_id`, `first_discovered`, `last_discovered`, `last_verified`, `status`, `sensitivity`, `notes` | `sensitivity` drives discovery rules; sensitive devices are passive/API-only by default |
 | `device_interfaces` | `device_id`, `name`, `mac?`, `interface_type`, `admin_status`, `oper_status`, `vlan_id?`, `vdom_id?`, `routing_domain_id?`, `description`, `source`, `last_observed` | Unique `(device_id, vdom_id, name)`, nulls not distinct. IPs link via `ip_addresses.interface_id` |
 | `business_services` | `name`, `criticality`, `is_sensitive` | Sensitive services default to passive discovery |
 | `applications` | `name`, `business_service_id?` | Addition to the brief |
@@ -279,15 +315,15 @@ Standard audit columns and `id` are omitted.
 
 | Table | Key columns | Notes |
 | --- | --- | --- |
-| `ip_requests` | `request_type`, `subnet_id`, `requested_address?`, `selection_mode`, `application_id?`, `business_service_id?`, `justification`, `department`, `technical_owner_id`, `business_owner_id`, `environment`, `required_date`, `expiry_date?`, `comments`, `status`, `requested_by` | `request_type`: allocation, reservation, release. Status: draft, submitted, pending_approval, approved, rejected, allocated, cancelled, expired |
-| `ip_request_approvals` | `request_id`, `step_order`, `approver_id?`, `decision`, `comment`, `decided_at` | No self-approval: service rule plus a trigger comparing `approver_id` with the request's `requested_by` |
+| `ip_requests` | `request_type`, `subnet_id`, `requested_address?`, `selection_mode`, `allocation_id?`, `reservation_id?`, `workflow_id?`, `version`, `submitted_at`, `decided_at`, `fulfilled_at`, `fulfilled_by`, `application_id?`, `business_service_id?`, `justification`, `department`, `technical_owner_id`, `business_owner_id`, `environment`, `required_date`, `expiry_date?`, `comments`, `status`, `requested_by` | `request_type`: allocation, reservation, release. Status: draft, pending_approval, approved, rejected, allocated, reserved, released, cancelled, expired (submitted is kept for compatibility) |
+| `ip_request_approvals` | `request_id`, `step_order`, `approver_role_id?`, `approver_id?`, `decision`, `comment`, `decided_at` | No self-approval: service rule plus a trigger comparing `approver_id` with the request's `requested_by` |
 | `approval_workflows` | `name`, `match_rules jsonb`, `is_active` | Addition to the brief |
 | `approval_workflow_steps` | `workflow_id`, `step_order`, `approver_role_id` | Addition to the brief |
 | `ip_allocations` | `ip_address_id`, `subnet_id`, `routing_domain_id`, `address`, `request_id?`, `release_request_id?`, `status`, `allocated_by`, `allocated_at`, `released_by?`, `released_at?` | Partial unique index above. Releases also go through approval |
-| `ip_reservations` | `ip_address_id`, `subnet_id`, `routing_domain_id`, `address`, `status`, `reason`, `expires_at?`, `reserved_by` | Same partial unique pattern |
+| `ip_reservations` | `ip_address_id`, `subnet_id`, `routing_domain_id`, `address`, `status`, `reason`, `expires_at?`, `request_id?`, `reserved_by`, `released_by?`, `released_at?`, `reminded_at?` | Same partial unique pattern |
 | `change_requests` | `object_type`, `object_id`, `proposed jsonb`, `status`, `requested_by`, `decided_by?` | Used for reconciliation-driven changes |
 | `audit_logs` | `actor_id?`, `actor_type`, `action`, `object_type`, `object_id`, `old_values jsonb`, `new_values jsonb`, `occurred_at`, `source_ip`, `correlation_id`, `approval_ref?`, `result` | App role has `INSERT` and `SELECT` only; a trigger also blocks changes |
-| `notifications` | `event_type`, `severity`, `recipient_id?`, `channel`, `dedupe_key`, `payload jsonb`, `status`, `attempts`, `sent_at?`, `read_at?` | |
+| `notifications` | `event_type`, `severity`, `recipient_id?`, `channel`, `dedupe_key`, `payload jsonb`, `object_type?`, `object_id?`, `status`, `attempts`, `last_error?`, `next_attempt_at?`, `sent_at?`, `read_at?` | |
 | `notification_rules` | `event_type`, `severity`, `recipient_group`, `is_enabled` | Addition to the brief |
 | `report_jobs` | `report_type`, `format`, `filters jsonb`, `status`, `file_path?`, `data_as_of`, `requested_by` | |
 | `import_batches` | `file_name`, `file_hash`, `format`, `status`, `summary jsonb`, `approved_by?`, `reversed_at?`, `uploaded_by` | |
@@ -315,3 +351,16 @@ Standard audit columns and `id` are omitted.
 | B-tree on `ip_addresses (mac)`, `(lower(hostname))`, `(lower(fqdn))` | Explorer search |
 | B-tree on `discovery_observations (address, observed_at DESC)` | Evidence history |
 | B-tree on `audit_logs (object_type, object_id, occurred_at DESC)` | Record history |
+
+## Migration 12: integrations, change requests, reports
+
+No new tables, so existing row level security and grants apply.
+
+| Table | Added | Why |
+| --- | --- | --- |
+| `integration_connections` | `is_enabled`, `sync_interval_minutes`, `last_sync_at`, `last_error` | Scheduling and health |
+| `integration_sync_jobs` | `created_at`, `requested_by`, `contexts`, `error` | History, and the VDOMs and networks a sync saw. One active sync per connection |
+| `change_requests` | `finding_id`, `reason`, `decision_note`, `applied_at` | Nobody decides their own request, enforced by a check. One open request per finding |
+| `reconciliation_results` | `confidence_breakdown` | Explains the score |
+| `report_jobs` | `content`, `content_type`, `size_bytes`, `row_count`, `truncated`, `error`, `started_at`, `finished_at` | Files live with the job, and retention removes them |
+| `roles` | `is_customised` | The seed leaves edited roles alone |

@@ -49,6 +49,7 @@ func NewHandler(pool db.Conn, inviter Inviter) *Handler { return &Handler{pool, 
 func (h *Handler) Register(g *auth.Guard) {
 	g.Authenticated(http.MethodGet, "/auth/me", h.me)
 	g.Handle(http.MethodGet, "/users", h.list, auth.UsersManage)
+	g.Handle(http.MethodGet, "/people", h.people, auth.InventoryView, auth.IPRequest)
 	g.Handle(http.MethodPost, "/users/invite", h.invite, auth.UsersManage)
 	g.Handle(http.MethodGet, "/roles", h.roles, auth.UsersManage)
 	g.Handle(http.MethodPut, "/users/:id/roles", h.setRoles, auth.UsersManage)
@@ -71,8 +72,9 @@ func (h *Handler) me(c *gin.Context) {
 func (h *Handler) list(c *gin.Context) {
 	p := httpx.ParsePage(c)
 	ctx := c.Request.Context()
+	q := strings.TrimSpace(c.Query("q"))
 	var total int64
-	if err := h.pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&total); err != nil {
+	if err := h.pool.QueryRow(ctx, `SELECT count(*) FROM users u WHERE $1 = '' OR u.email ILIKE '%' || $1 || '%' OR u.display_name ILIKE '%' || $1 || '%'`, q).Scan(&total); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
@@ -80,7 +82,8 @@ func (h *Handler) list(c *gin.Context) {
 		SELECT u.id::text, u.email, u.display_name, u.is_active, u.last_login_at,
 		       COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}')
 		FROM users u LEFT JOIN user_roles ur ON ur.user_id = u.id LEFT JOIN roles r ON r.id = ur.role_id
-		GROUP BY u.id ORDER BY u.email, u.id LIMIT $1 OFFSET $2`, p.Size, p.Offset())
+		WHERE $3 = '' OR u.email ILIKE '%' || $3 || '%' OR u.display_name ILIKE '%' || $3 || '%'
+		GROUP BY u.id ORDER BY u.email, u.id LIMIT $1 OFFSET $2`, p.Size, p.Offset(), q)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -88,6 +91,41 @@ func (h *Handler) list(c *gin.Context) {
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (User, error) {
 		var u User
 		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName, &u.IsActive, &u.LastLoginAt, &u.Roles)
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.List(c, out, p, total)
+}
+
+// Person is the little a picker needs: no roles, no sign-in details.
+type Person struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+}
+
+// people lists active users for owner pickers. It reveals less than /users,
+// so anyone who can view inventory or make requests may use it.
+func (h *Handler) people(c *gin.Context) {
+	p := httpx.ParsePage(c)
+	q := strings.TrimSpace(c.Query("q"))
+	ctx := c.Request.Context()
+	const where = ` FROM users WHERE is_active AND ($1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%')`
+	var total int64
+	if err := h.pool.QueryRow(ctx, "SELECT count(*)"+where, q).Scan(&total); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	rows, err := h.pool.Query(ctx, "SELECT id::text, email, display_name"+where+" ORDER BY email LIMIT $2 OFFSET $3", q, p.Size, p.Offset())
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Person, error) {
+		var u Person
+		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName)
 	})
 	if err != nil {
 		httpx.Fail(c, err)

@@ -3,6 +3,7 @@
 package ipaddresses
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ type Address struct {
 	DeviceType            *string    `json:"deviceType"`
 	Vendor                *string    `json:"vendor"`
 	OS                    *string    `json:"operatingSystem"`
+	OSFamily              *string    `json:"osFamily"`
 	ApplicationID         *string    `json:"applicationId"`
 	ApplicationName       *string    `json:"applicationName"`
 	BusinessServiceID     *string    `json:"businessServiceId"`
@@ -63,7 +65,7 @@ type Address struct {
 
 const selectAddress = `SELECT i.id::text, host(i.address), family(i.address), i.subnet_id::text, s.name, s.cidr::text,
 	i.routing_domain_id::text, rd.name, s.environment, st.name, i.hostname, i.fqdn, i.mac::text,
-	i.device_id::text, d.name, d.device_type, NULLIF(d.vendor, ''), NULLIF(d.os_version, ''),
+	i.device_id::text, d.name, d.device_type, NULLIF(d.vendor, ''), NULLIF(d.os_version, ''), NULLIF(d.os_family, 'unknown'),
 	i.application_id::text, a.name, i.business_service_id::text, bs.name, i.owner_id::text, u.email,
 	i.allocation_state, i.observation_state, i.confidence_score, i.confidence_explanation, os.name,
 	i.first_seen, i.last_seen, i.last_verified, i.notes, i.updated_at`
@@ -81,7 +83,7 @@ const fromAddress = ` FROM ip_addresses i
 func scan(row pgx.CollectableRow) (Address, error) {
 	var a Address
 	err := row.Scan(&a.ID, &a.Address, &a.Family, &a.SubnetID, &a.SubnetName, &a.SubnetCIDR, &a.RoutingDomainID, &a.RoutingDomainName,
-		&a.Environment, &a.SiteName, &a.Hostname, &a.FQDN, &a.MAC, &a.DeviceID, &a.DeviceName, &a.DeviceType, &a.Vendor, &a.OS,
+		&a.Environment, &a.SiteName, &a.Hostname, &a.FQDN, &a.MAC, &a.DeviceID, &a.DeviceName, &a.DeviceType, &a.Vendor, &a.OS, &a.OSFamily,
 		&a.ApplicationID, &a.ApplicationName, &a.BusinessServiceID, &a.BusinessServiceName, &a.OwnerID, &a.OwnerEmail,
 		&a.AllocationState, &a.ObservationState, &a.ConfidenceScore, &a.ConfidenceExplanation, &a.DiscoverySource,
 		&a.FirstSeen, &a.LastSeen, &a.LastVerified, &a.Notes, &a.UpdatedAt)
@@ -99,6 +101,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPatch, "/ip-addresses/:id", h.update, auth.InventoryEdit)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/history", h.history, auth.InventoryView)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/evidence", h.evidence, auth.InventoryView)
+	g.Handle(http.MethodGet, "/ip-addresses/:id/device", h.device, auth.InventoryView)
 }
 
 var sorts = map[string]string{"address": "i.address", "hostname": "i.hostname", "updatedAt": "i.updated_at"}
@@ -463,4 +466,20 @@ func (h *Handler) evidence(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, http.StatusOK, append([]item{}, out...))
+}
+
+// ChangeFields lists what a change request may set on an address. Allocation state
+// isn't here: it moves only through the allocation workflow.
+var ChangeFields = []db.Field{
+	{Name: "hostname", Column: "hostname"}, {Name: "notes", Column: "notes"},
+	{Name: "mac", Column: "mac", Cast: "macaddr", Nullable: true},
+	{Name: "deviceId", Column: "device_id", Cast: "uuid", Nullable: true},
+	{Name: "applicationId", Column: "application_id", Cast: "uuid", Nullable: true},
+	{Name: "businessServiceId", Column: "business_service_id", Cast: "uuid", Nullable: true},
+	{Name: "ownerId", Column: "owner_id", Cast: "uuid", Nullable: true},
+}
+
+// ApplyChange applies an approved change request.
+func ApplyChange(ctx context.Context, tx pgx.Tx, id, actor string, changes map[string]string) (map[string]string, map[string]string, error) {
+	return db.ApplyFields(ctx, tx, "ip_addresses", id, actor, "", ChangeFields, changes)
 }

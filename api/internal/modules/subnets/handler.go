@@ -21,6 +21,8 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPost, "/subnets", h.create, auth.InventoryCreate)
 	g.Handle(http.MethodPost, "/subnets/calculate", h.calculate, auth.InventoryView)
 	g.Handle(http.MethodPost, "/subnets/check-overlap", h.checkOverlap, auth.InventoryView)
+	g.Handle(http.MethodPost, "/subnets/bulk", h.bulkCreate, auth.InventoryCreate)
+	g.Handle(http.MethodPost, "/subnets/bulk-archive", h.bulkArchive, auth.InventoryEdit)
 	g.Handle(http.MethodGet, "/subnets/:id", h.get, auth.InventoryView)
 	g.Handle(http.MethodPatch, "/subnets/:id", h.update, auth.InventoryEdit)
 	g.Handle(http.MethodPost, "/subnets/:id/archive", h.archive, auth.InventoryEdit)

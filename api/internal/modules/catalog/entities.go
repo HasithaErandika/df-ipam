@@ -1,6 +1,49 @@
 package catalog
 
-import "dfipam/api/internal/auth"
+import (
+	"time"
+
+	"dfipam/api/internal/auth"
+	"dfipam/api/internal/modules/discovery"
+	"dfipam/api/internal/platform/httpx"
+)
+
+// checkSchedule refuses a cron expression or timezone the scheduler can't use.
+func checkSchedule(body map[string]any) error {
+	if v, ok := body["cron"].(string); ok {
+		if _, err := discovery.ParseCron(v); err != nil {
+			return httpx.Validation("cron", err.Error())
+		}
+	}
+	if v, ok := body["timezone"].(string); ok && v != "" {
+		if _, err := time.LoadLocation(v); err != nil {
+			return httpx.Validation("timezone", "Use a timezone name such as Asia/Colombo.")
+		}
+	}
+	return nil
+}
+
+// checkBlackout refuses a blackout that ends before it starts.
+func checkBlackout(body map[string]any) error {
+	start, _ := body["startsAt"].(string)
+	end, _ := body["endsAt"].(string)
+	if start == "" || end == "" {
+		return nil
+	}
+	s, err1 := time.Parse(time.RFC3339, start)
+	e, err2 := time.Parse(time.RFC3339, end)
+	if err1 != nil || err2 != nil {
+		s, err1 = time.Parse("2006-01-02T15:04", start)
+		e, err2 = time.Parse("2006-01-02T15:04", end)
+	}
+	if err1 != nil || err2 != nil {
+		return httpx.Validation("startsAt", "Enter dates and times such as 2026-11-20T22:00.")
+	}
+	if !e.After(s) {
+		return httpx.Validation("endsAt", "The blackout must end after it starts.")
+	}
+	return nil
+}
 
 func name(table, col string) string {
 	return "(SELECT x.name FROM " + table + " x WHERE x.id = t." + col + ")"
@@ -47,7 +90,7 @@ var Entities = []Entity{
 		Filters: map[string]string{"siteId": "site_id", "businessServiceId": "business_service_id"},
 		Fields: []Field{{"name", "name", Text, true}, {"hostname", "hostname", Text, false}, {"managementIp", "management_ip", Inet, false},
 			{"vendor", "vendor", Text, false}, {"model", "model", Text, false}, {"serialNumber", "serial_number", Text, false},
-			{"deviceType", "device_type", Text, false}, {"osVersion", "os_version", Text, false}, {"siteId", "site_id", UUID, false},
+			{"deviceType", "device_type", Text, false}, {"osVersion", "os_version", Text, false}, {"osFamily", "os_family", Text, false}, {"siteId", "site_id", UUID, false},
 			{"environment", "environment", Text, false}, {"ownerId", "owner_id", UUID, false}, {"businessServiceId", "business_service_id", UUID, false},
 			{"status", "status", Text, false}, {"sensitivity", "sensitivity", Text, false}, {"notes", "notes", Text, false}},
 		Labels: []Label{{"siteName", name("sites", "site_id")}, {"businessServiceName", name("business_services", "business_service_id")}}},
@@ -66,6 +109,28 @@ var Entities = []Entity{
 		Filters: map[string]string{"subnetId": "subnet_id"},
 		Fields: []Field{{"subnetId", "subnet_id", UUID, true}, {"name", "name", Text, false}, {"rangeStart", "range_start", Inet, true},
 			{"rangeEnd", "range_end", Inet, true}}},
+	{Path: "/dns-records", Table: "dns_records", Object: "dns_record", Order: "name", Search: "name", ReadOnly: true,
+		Filters: map[string]string{"routingDomainId": "routing_domain_id", "ipAddressId": "ip_address_id"},
+		Fields: []Field{{"name", "name", Text, true}, {"recordType", "record_type", Text, true}, {"value", "value", Text, true},
+			{"ttl", "ttl", Int, false}, {"routingDomainId", "routing_domain_id", UUID, false}, {"ipAddressId", "ip_address_id", UUID, false}},
+		Labels: []Label{{"routingDomainName", name("routing_domains", "routing_domain_id")}, {"source", name("observation_sources", "source_id")},
+			{"lastSeen", "t.last_seen"}}},
+	{Path: "/discovery/exclusions", Table: "discovery_exclusions", Object: "discovery_exclusion", Order: "target", ActorCol: "created_by",
+		WritePermission: auth.DiscoveryManage, Filters: map[string]string{"routingDomainId": "routing_domain_id"},
+		Fields: []Field{{"target", "target", CIDR, true}, {"routingDomainId", "routing_domain_id", UUID, false}, {"reason", "reason", Text, true},
+			{"expiresAt", "expires_at", Text, false}},
+		Labels: []Label{{"routingDomainName", name("routing_domains", "routing_domain_id")}, {"createdAt", "t.created_at"}}},
+	{Path: "/discovery/blackouts", Table: "discovery_blackouts", Object: "discovery_blackout", Order: "starts_at", ActorCol: "created_by", Search: "name",
+		WritePermission: auth.DiscoveryManage, Check: checkBlackout,
+		Fields: []Field{{"name", "name", Text, true}, {"target", "target", CIDR, false}, {"startsAt", "starts_at", Text, true},
+			{"endsAt", "ends_at", Text, true}, {"reason", "reason", Text, false}}},
+	{Path: "/discovery/schedules", Table: "discovery_schedules", Object: "discovery_schedule", Order: "created_at",
+		WritePermission: auth.DiscoveryManage, Check: checkSchedule, Filters: map[string]string{"policyId": "policy_id", "subnetId": "subnet_id"},
+		Fields: []Field{{"policyId", "policy_id", UUID, true}, {"subnetId", "subnet_id", UUID, true}, {"cron", "cron", Text, true},
+			{"timezone", "timezone", Text, false}, {"agentId", "agent_id", UUID, false}, {"priority", "priority", Int, false},
+			{"isEnabled", "is_enabled", Bool, false}},
+		Labels: []Label{{"policyName", name("discovery_policies", "policy_id")}, {"subnetName", name("subnets", "subnet_id")},
+			{"agentName", name("discovery_agents", "agent_id")}, {"lastRunAt", "t.last_run_at"}}},
 	{Path: "/overlap-exceptions", Table: "overlap_exceptions", Object: "overlap_exception", Order: "approved_at", ActorCol: "approved_by",
 		WritePermission: auth.RequestsApprove,
 		Fields:          []Field{{"reason", "reason", Text, true}, {"expiresAt", "expires_at", Text, false}}},
