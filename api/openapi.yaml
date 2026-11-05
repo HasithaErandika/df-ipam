@@ -362,3 +362,34 @@ paths:
       summary: Switch an event on or off, or change its severity
       parameters: [{ name: eventType, in: path, required: true, schema: { type: string } }]
       responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } }
+  /organisations/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    patch: { summary: Rename an organisation or change its code, responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete an empty organisation and its empty Default routing domain, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /routing-domains/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    patch: { summary: Rename a routing domain or change its route distinguisher or isolation, responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a routing domain nothing refers to, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /subnets/bulk:
+    post:
+      summary: Create up to 500 subnets in one transaction. dryRun=true validates without saving; any failed row saves nothing
+      responses: { '200': { description: Validated or rejected, with a result per row }, '201': { description: Created } }
+  /subnets/bulk-archive:
+    post: { summary: Archive up to 500 subnets together, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+  /dns-records:
+    get: { summary: List DNS records from read-only sources. Supports routingDomainId, ipAddressId and q, responses: { '200': { description: OK } } }
+  /dns-records/{id}:
+    get: { summary: Get a DNS record, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /search:
+    get:
+      summary: Search subnets, IP records, devices and VLANs. An address finds the subnets holding it in every routing domain
+      parameters: [{ name: q, in: query, required: true, schema: { type: string, minLength: 2 } }]
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } }
+  /saved-filters:
+    get:
+      summary: Your saved filters for one page
+      parameters: [{ name: page, in: query, required: true, schema: { type: string, enum: [subnets, ip-addresses, requests, reservations, allocations, audit] } }]
+      responses: { '200': { description: OK } }
+    post: { summary: Save a filter, replacing one with the same name, responses: { '201': { description: Saved }, '422': { $ref: '#/components/responses/Error' } } }
+  /saved-filters/{id}:
+    delete: { summary: Delete one of your saved filters, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted } } }

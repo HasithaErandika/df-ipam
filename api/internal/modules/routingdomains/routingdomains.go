@@ -3,6 +3,7 @@
 package routingdomains
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -35,6 +36,111 @@ func NewHandler(pool db.Conn) *Handler { return &Handler{pool} }
 func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/routing-domains", h.list, auth.InventoryView)
 	g.Handle(http.MethodPost, "/routing-domains", h.create, auth.InventoryCreate)
+	g.Handle(http.MethodPatch, "/routing-domains/:id", h.update, auth.InventoryEdit)
+	g.Handle(http.MethodDelete, "/routing-domains/:id", h.remove, auth.InventoryDelete)
+}
+
+const selectDomain = `SELECT d.id::text, d.organisation_id::text, o.name, d.name, d.kind, d.route_distinguisher, d.is_isolated,
+	(SELECT count(*) FROM subnets s WHERE s.routing_domain_id = d.id AND s.archived_at IS NULL)
+	FROM routing_domains d JOIN organisations o ON o.id = d.organisation_id`
+
+func (h *Handler) one(c *gin.Context, tx pgx.Tx, id string) (RoutingDomain, error) {
+	var d RoutingDomain
+	err := tx.QueryRow(c.Request.Context(), selectDomain+` WHERE d.id = $1::uuid`, id).
+		Scan(&d.ID, &d.OrganisationID, &d.OrganisationName, &d.Name, &d.Kind, &d.RD, &d.IsIsolated, &d.SubnetCount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return d, httpx.ErrNotFound
+	}
+	return d, err
+}
+
+// update renames a routing domain or changes its route distinguisher or
+// isolation. Its organisation and type stay fixed, because subnets and
+// provider-reserved ranges depend on them.
+func (h *Handler) update(c *gin.Context) {
+	id, ok := httpx.PathID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Name       *string `json:"name"`
+		RD         *string `json:"routeDistinguisher"`
+		IsIsolated *bool   `json:"isIsolated"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrBadRequest)
+		return
+	}
+	ctx, actor := c.Request.Context(), auth.Current(c).UserID
+	var out RoutingDomain
+	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM routing_domains WHERE id = $1::uuid FOR UPDATE`, id); err != nil {
+			return err
+		}
+		old, err := h.one(c, tx, id)
+		if err != nil {
+			return err
+		}
+		next := old
+		if req.Name != nil {
+			if next.Name = strings.TrimSpace(*req.Name); next.Name == "" {
+				return httpx.Validation("name", "Enter a name.")
+			}
+		}
+		if req.RD != nil {
+			next.RD = req.RD
+			if strings.TrimSpace(*req.RD) == "" {
+				next.RD = nil
+			}
+		}
+		if req.IsIsolated != nil {
+			next.IsIsolated = *req.IsIsolated
+		}
+		if _, err := tx.Exec(ctx, `UPDATE routing_domains SET name = $2, route_distinguisher = $3, is_isolated = $4, updated_by = $5::uuid
+			WHERE id = $1::uuid`, id, next.Name, next.RD, next.IsIsolated, actor); err != nil {
+			return err
+		}
+		if out, err = h.one(c, tx, id); err != nil {
+			return err
+		}
+		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "routing_domain.update", ObjectType: "routing_domain", ObjectID: id, Old: old, New: out})
+	})
+	if db.ErrorCode(err) == db.CodeUnique {
+		err = httpx.NewError(http.StatusConflict, "ALREADY_EXISTS", "This organisation already has a routing domain with that name.")
+	}
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, http.StatusOK, out)
+}
+
+// remove deletes a routing domain nothing refers to. Archived subnets still
+// count, because their history refers to the domain.
+func (h *Handler) remove(c *gin.Context) {
+	id, ok := httpx.PathID(c)
+	if !ok {
+		return
+	}
+	ctx, actor := c.Request.Context(), auth.Current(c).UserID
+	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
+		old, err := h.one(c, tx, id)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM routing_domains WHERE id = $1::uuid`, id); err != nil {
+			return err
+		}
+		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "routing_domain.delete", ObjectType: "routing_domain", ObjectID: id, Old: old})
+	})
+	if db.ErrorCode(err) == db.CodeForeignKey {
+		err = httpx.NewError(http.StatusConflict, "ROUTING_DOMAIN_IN_USE", "Subnets, blocks or other records use this routing domain. Archive or move them first.")
+	}
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) list(c *gin.Context) {

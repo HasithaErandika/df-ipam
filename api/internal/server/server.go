@@ -16,6 +16,7 @@ import (
 	"dfipam/api/internal/modules/organisations"
 	"dfipam/api/internal/modules/reconciliation"
 	"dfipam/api/internal/modules/routingdomains"
+	"dfipam/api/internal/modules/search"
 	"dfipam/api/internal/modules/subnets"
 	"dfipam/api/internal/modules/users"
 	"dfipam/api/internal/platform/db"
@@ -65,5 +66,6 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	reconciliation.NewHandler(d.Conn).Register(guard)
 	allocation.NewHandler(allocation.NewService(d.Conn)).Register(guard)
 	notifications.NewHandler(d.Conn).Register(guard)
+	search.NewHandler(d.Conn).Register(guard)
 	return r, guard
 }

@@ -56,6 +56,8 @@ type Entity struct {
 	Stamped             bool   // has created_by and updated_by
 	ActorCol            string // set to the acting user on create
 	WritePermission     string
+	// ReadOnly entities come from read-only sources: DF-IPAM lists them but never writes them.
+	ReadOnly bool
 }
 
 func (e Entity) object() string {
@@ -149,8 +151,11 @@ func (h *Handler) Register(g *auth.Guard) {
 			create, edit, remove = e.WritePermission, e.WritePermission, e.WritePermission
 		}
 		g.Handle(http.MethodGet, e.Path, func(c *gin.Context) { h.list(c, e) }, auth.InventoryView)
-		g.Handle(http.MethodPost, e.Path, func(c *gin.Context) { h.create(c, e) }, create)
 		g.Handle(http.MethodGet, e.Path+"/:id", func(c *gin.Context) { h.get(c, e) }, auth.InventoryView)
+		if e.ReadOnly {
+			continue
+		}
+		g.Handle(http.MethodPost, e.Path, func(c *gin.Context) { h.create(c, e) }, create)
 		g.Handle(http.MethodPatch, e.Path+"/:id", func(c *gin.Context) { h.update(c, e) }, edit)
 		g.Handle(http.MethodDelete, e.Path+"/:id", func(c *gin.Context) { h.remove(c, e) }, remove)
 	}

@@ -3,6 +3,8 @@
 package organisations
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +32,106 @@ func NewHandler(pool db.Conn) *Handler { return &Handler{pool} }
 func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/organisations", h.list, auth.InventoryView)
 	g.Handle(http.MethodPost, "/organisations", h.create, auth.InventoryCreate)
+	g.Handle(http.MethodPatch, "/organisations/:id", h.update, auth.InventoryEdit)
+	g.Handle(http.MethodDelete, "/organisations/:id", h.remove, auth.InventoryDelete)
+}
+
+func (h *Handler) one(c *gin.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, id string, lock bool) (Organisation, error) {
+	sql := `SELECT id::text, name, code, created_at FROM organisations WHERE id = $1::uuid`
+	if lock {
+		sql += " FOR UPDATE"
+	}
+	var o Organisation
+	err := q.QueryRow(c.Request.Context(), sql, id).Scan(&o.ID, &o.Name, &o.Code, &o.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return o, httpx.ErrNotFound
+	}
+	return o, err
+}
+
+// update renames an organisation or changes its code.
+func (h *Handler) update(c *gin.Context) {
+	id, ok := httpx.PathID(c)
+	if !ok {
+		return
+	}
+	var req struct {
+		Name *string `json:"name"`
+		Code *string `json:"code"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrBadRequest)
+		return
+	}
+	ctx, actor := c.Request.Context(), auth.Current(c).UserID
+	var out Organisation
+	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
+		old, err := h.one(c, tx, id, true)
+		if err != nil {
+			return err
+		}
+		next := old
+		if req.Name != nil {
+			if next.Name = strings.TrimSpace(*req.Name); next.Name == "" {
+				return httpx.Validation("name", "Enter a name.")
+			}
+		}
+		if req.Code != nil {
+			if next.Code = strings.ToUpper(strings.TrimSpace(*req.Code)); next.Code == "" {
+				return httpx.Validation("code", "Enter a short code.")
+			}
+		}
+		if _, err := tx.Exec(ctx, `UPDATE organisations SET name = $2, code = $3, updated_by = $4::uuid WHERE id = $1::uuid`,
+			id, next.Name, next.Code, actor); err != nil {
+			return err
+		}
+		if out, err = h.one(c, tx, id, false); err != nil {
+			return err
+		}
+		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "organisation.update", ObjectType: "organisation", ObjectID: id, Old: old, New: out})
+	})
+	if db.ErrorCode(err) == db.CodeUnique {
+		err = httpx.NewError(http.StatusConflict, "ALREADY_EXISTS", "An organisation with this name or code already exists.")
+	}
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, http.StatusOK, out)
+}
+
+// remove deletes an organisation with nothing in it. Its empty Default routing
+// domain goes with it; anything else must be removed first.
+func (h *Handler) remove(c *gin.Context) {
+	id, ok := httpx.PathID(c)
+	if !ok {
+		return
+	}
+	ctx, actor := c.Request.Context(), auth.Current(c).UserID
+	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
+		old, err := h.one(c, tx, id, true)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM routing_domains rd WHERE rd.organisation_id = $1::uuid AND rd.kind = 'default'
+			AND NOT EXISTS (SELECT 1 FROM subnets s WHERE s.routing_domain_id = rd.id)`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM organisations WHERE id = $1::uuid`, id); err != nil {
+			return err
+		}
+		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "organisation.delete", ObjectType: "organisation", ObjectID: id, Old: old})
+	})
+	if db.ErrorCode(err) == db.CodeForeignKey {
+		err = httpx.NewError(http.StatusConflict, "ORGANISATION_IN_USE", "This organisation still has routing domains, sites or other records. Remove them first.")
+	}
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) list(c *gin.Context) {
