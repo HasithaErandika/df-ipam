@@ -400,3 +400,85 @@ paths:
       summary: The device behind an address, from inventory records and approved read-only sources only. Nothing is probed or guessed
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } }
+  /imports:
+    get: { summary: List import batches, responses: { '200': { description: OK } } }
+    post: { summary: Upload a production export. Every line is kept and checked; nothing is imported until approved, responses: { '201': { description: Validated }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /imports/enrichment-queue:
+    get: { summary: Lines waiting for a correction before approval, responses: { '200': { description: OK } } }
+  /imports/records/{id}:
+    patch: { summary: Correct one line's parsed fields. The raw line never changes, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /imports/{id}:
+    get: { summary: Get an import batch, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/preview:
+    get: { summary: The batch's lines with their status. Supports status, page and pageSize, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/approve:
+    post: { summary: Commit every valid line as a subnet. Someone other than the uploader must approve, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /imports/{id}/reverse:
+    post: { summary: Remove the subnets a batch created, while they are untouched, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+  /devices/duplicates:
+    get: { summary: Devices that look like one machine, grouped by serial, MAC, management address or hostname, responses: { '200': { description: OK } } }
+  /devices/{id}/merge:
+    post: { summary: Merge this device into another, moving its interfaces and address links, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Merged } } }
+  /discovery/status:
+    get: { summary: Emergency stop state and job and agent counts, responses: { '200': { description: OK } } }
+  /discovery/emergency-stop:
+    post: { summary: Turn the emergency stop on (stops every job) or off (needs the manage permission), responses: { '200': { description: OK } } }
+  /discovery/policies:
+    get: { summary: List discovery policies, responses: { '200': { description: OK } } }
+    post: { summary: Create a policy. It can't run until someone else approves it, responses: { '201': { description: Created }, '422': { $ref: '#/components/responses/Error' } } }
+  /discovery/policies/{id}:
+    put: { summary: Replace a policy. Saving clears its approval, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/policies/{id}/approve:
+    post: { summary: Approve a policy written by someone else, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' } } }
+  /discovery/jobs:
+    get: { summary: List discovery jobs, responses: { '200': { description: OK } } }
+    post: { summary: Start a job on subnets. Its scope is frozen from the approved policy minus exclusions, responses: { '201': { description: Queued }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /discovery/jobs/{id}:
+    get: { summary: Get a job with its frozen configuration, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/logs:
+    get: { summary: A job's log, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/pause:
+    post: { summary: Pause a job, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/resume:
+    post: { summary: Resume a paused job, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/jobs/{id}/cancel:
+    post: { summary: Cancel a job, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /discovery/exclusions:
+    get: { summary: Ranges discovery never touches, responses: { '200': { description: OK } } }
+    post: { summary: Add an exclusion, responses: { '201': { description: Created } } }
+  /discovery/exclusions/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get an exclusion, responses: { '200': { description: OK } } }
+    patch: { summary: Update an exclusion, responses: { '200': { description: OK } } }
+    delete: { summary: Delete an exclusion, responses: { '204': { description: Deleted } } }
+  /discovery/blackouts:
+    get: { summary: Maintenance periods with no active discovery, responses: { '200': { description: OK } } }
+    post: { summary: Add a blackout, responses: { '201': { description: Created } } }
+  /discovery/blackouts/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a blackout, responses: { '200': { description: OK } } }
+    patch: { summary: Update a blackout, responses: { '200': { description: OK } } }
+    delete: { summary: Delete a blackout, responses: { '204': { description: Deleted } } }
+  /discovery/schedules:
+    get: { summary: Discovery schedules, responses: { '200': { description: OK } } }
+    post: { summary: Add a schedule (five-field cron), responses: { '201': { description: Created }, '422': { $ref: '#/components/responses/Error' } } }
+  /discovery/schedules/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a schedule, responses: { '200': { description: OK } } }
+    patch: { summary: Update a schedule, responses: { '200': { description: OK } } }
+    delete: { summary: Delete a schedule, responses: { '204': { description: Deleted } } }
+  /agents:
+    get: { summary: List discovery agents, responses: { '200': { description: OK } } }
+    post: { summary: Create an agent and return its one-time registration token, responses: { '201': { description: Created } } }
+  /agents/{id}/rotate:
+    post: { summary: Issue a new registration token; re-registering replaces the credential, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /agents/{id}/revoke:
+    post: { summary: Revoke an agent at once, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /agent-api/register:
+    post: { summary: 'Agent: trade a registration token for a credential', security: [], responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Error' } } }
+  /agent-api/heartbeat:
+    post: { summary: 'Agent: report health; the reply carries the emergency stop flag', responses: { '200': { description: OK } } }
+  /agent-api/jobs:
+    get: { summary: 'Agent: claim the next job allowed to run now', responses: { '200': { description: A job }, '204': { description: Nothing to do } } }
+  /agent-api/jobs/{id}/results:
+    post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }

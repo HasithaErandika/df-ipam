@@ -11,6 +11,9 @@ import (
 	"dfipam/api/internal/modules/auditlog"
 	"dfipam/api/internal/modules/catalog"
 	"dfipam/api/internal/modules/dashboard"
+	"dfipam/api/internal/modules/devices"
+	"dfipam/api/internal/modules/discovery"
+	"dfipam/api/internal/modules/imports"
 	"dfipam/api/internal/modules/ipaddresses"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/organisations"
@@ -67,5 +70,13 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	allocation.NewHandler(allocation.NewService(d.Conn)).Register(guard)
 	notifications.NewHandler(d.Conn).Register(guard)
 	search.NewHandler(d.Conn).Register(guard)
+	imports.NewHandler(d.Conn).Register(guard)
+	devices.NewHandler(d.Conn).Register(guard)
+	disc := discovery.NewHandler(discovery.NewService(d.Conn))
+	disc.Register(guard)
+	// Agents use their own credential, checked inside the discovery module.
+	for key := range disc.RegisterAgentAPI(r.Group("/api/v1/agent-api")) {
+		guard.Registered[key] = true
+	}
 	return r, guard
 }

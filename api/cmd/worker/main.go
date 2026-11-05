@@ -1,5 +1,5 @@
 // Command worker runs background work: the hourly reconciliation run, and every
-// minute the allocation workflow's expiry jobs and email delivery. Several
+// minute the discovery scheduler, the allocation workflow's expiry jobs and email delivery. Several
 // workers can run at once, because every job locks its rows with SKIP LOCKED.
 package main
 
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"dfipam/api/internal/modules/allocation"
+	"dfipam/api/internal/modules/discovery"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/reconciliation"
 	"dfipam/api/internal/platform/db"
@@ -43,6 +44,7 @@ func main() {
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("APP_BASE_URL")), "/")
 	workflow := allocation.NewService(pool)
+	scheduler := discovery.NewService(pool)
 
 	reconcile := func() {
 		out, err := reconciliation.Run(ctx, pool, "")
@@ -53,6 +55,11 @@ func main() {
 		slog.Info("reconciliation finished", "detected", out.Detected, "resolved", out.Resolved)
 	}
 	minutely := func() {
+		if res, err := scheduler.RunScheduler(ctx, time.Now()); err != nil {
+			slog.Error("discovery scheduler failed", "error", err)
+		} else if res != (discovery.SchedulerResult{}) {
+			slog.Info("discovery scheduler finished", "started", res.Started, "failed", res.Failed, "agentsOffline", res.AgentsOffline)
+		}
 		res, err := workflow.RunJobs(ctx)
 		if err != nil {
 			slog.Error("allocation jobs failed", "error", err)

@@ -58,6 +58,8 @@ type Entity struct {
 	WritePermission     string
 	// ReadOnly entities come from read-only sources: DF-IPAM lists them but never writes them.
 	ReadOnly bool
+	// Check validates fields that need more than a type check, such as a schedule.
+	Check func(body map[string]any) error
 }
 
 func (e Entity) object() string {
@@ -234,6 +236,12 @@ func (h *Handler) create(c *gin.Context, e Entity) {
 		httpx.Fail(c, httpx.ErrBadRequest)
 		return
 	}
+	if e.Check != nil {
+		if err := e.Check(body); err != nil {
+			httpx.Fail(c, err)
+			return
+		}
+	}
 	var cols, marks []string
 	var args []any
 	add := func(col, cast string, v any) {
@@ -290,6 +298,12 @@ func (h *Handler) update(c *gin.Context, e Entity) {
 	if err := c.ShouldBindJSON(&body); err != nil {
 		httpx.Fail(c, httpx.ErrBadRequest)
 		return
+	}
+	if e.Check != nil {
+		if err := e.Check(body); err != nil {
+			httpx.Fail(c, err)
+			return
+		}
 	}
 	var sets []string
 	args := []any{id}
