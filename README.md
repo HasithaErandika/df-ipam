@@ -2,7 +2,7 @@
 
 Dialog Finance IP Address Management: the central platform for managing, discovering, auditing and governing IPv4 and IPv6 address infrastructure.
 
-**Status:** foundation complete. See [docs/development_phase.md](docs/development_phase.md).
+**Status:** Phases 0 to 2 complete, 3 to 7 built and awaiting checks against real systems. See [docs/development_phase.md](docs/development_phase.md).
 
 | Folder | Contents |
 | --- | --- |
@@ -14,16 +14,19 @@ Dialog Finance IP Address Management: the central platform for managing, discove
 
 - Go 1.26.10+
 - Node 24+ and pnpm
-- A Supabase project, which provides both the database and sign-in
+- Docker with the Compose plugin, for PostgreSQL, the API and the worker
+- A Supabase project, which provides sign-in. Its database is for testing only
 
 ## Getting started
 
 ```bash
 make setup       # install dependencies, create env files
 make env-check   # list any missing settings
-make db-setup    # apply migrations and seed roles to Supabase
-make dev         # run the API and the web app
+make docker-up   # start PostgreSQL, migrate, seed, start the API and worker
+make web         # run the web app
 ```
+
+`make docker-logs` follows the logs, and `make docker-down` stops everything. For a company install, see [docs/setup.md](docs/setup.md).
 
 The web app runs at <http://localhost:5173> and the API at <http://127.0.0.1:8080>.
 
@@ -36,7 +39,7 @@ The web app runs at <http://localhost:5173> and the API at <http://127.0.0.1:808
 
 Both are ignored by git. The Supabase `service_role` key goes in `api/.env` only, never in `web/`.
 
-Users start with no roles. Roles are managed in the Supabase database: see [docs/authentication.md](docs/authentication.md).
+Users start with no roles. Assign the first administrator in the local database with `make db-shell`: see [docs/authentication.md](docs/authentication.md).
 
 ## Contributing
 

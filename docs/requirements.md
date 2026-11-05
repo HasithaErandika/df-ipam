@@ -8,7 +8,7 @@ There are two sources: the main DF-IPAM brief, and a **supplement** numbered §4
 | --- | --- | --- | --- |
 | 1 | **The main brief is cut off at the heading `# 26.`** The supplement covers §4 to §22 of a different numbering, so it may not be the missing part. | Final scope sign-off | Project owner |
 | 2 | `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt` not yet provided (the supplement says attached, but they were not received) | Validating the import parser | Project owner |
-| 3 | Supabase holds the database and sign-in in the cloud. Data residency, connectivity, availability and compliance are not yet approved | Loading production data | Dialog Finance compliance / security |
+| 3 | Supabase still provides sign-in, so users need an internet path to it, and it holds their email addresses. The inventory itself stays in local PostgreSQL | Sign-in during an internet outage | Dialog Finance security |
 | 5 | Redis approval (the brief says "where approved") | Worker deployment | Infrastructure |
 | 6 | Company auth target and date | Auth migration | Project owner |
 | 7 | List of core banking and payment networks | Enabling any active discovery | Network / security |
@@ -23,7 +23,7 @@ There are two sources: the main DF-IPAM brief, and a **supplement** numbered §4
 | §18 Microsoft Entra ID, OIDC, PKCE, server-side sessions, Entra group-to-role mapping | **Simple Supabase Auth** for now | Project owner's decision; will move to company auth later. See [authentication.md](authentication.md) |
 | §17 `sessions` table | Created but unused | Supabase manages sessions for now; reserved for company auth |
 | §24 Optional dark theme (also Supplement §14) | **Light theme only** | Project owner's decision |
-| §2 Neon as the primary database | **Supabase PostgreSQL** for now | Project owner's decision. Standard PostgreSQL, so moving later is a connection and data change |
+| §2 Neon as the primary database | **Local PostgreSQL in Docker.** Supabase's database is for testing only | Project owner's decision |
 | §19 Secure cookies, CSRF protection (also Supplement §16) | Not applicable while the API uses bearer tokens | Revisit if the company auth uses cookies |
 | Supplement §15 Entra SSO, server-side sessions, group-to-role mapping; §13 SSO configuration page | Deferred, same as main §18 | Project owner chose simple Supabase Auth for now. Roles are assigned in DF-IPAM |
 | Supplement §21 PHP-FPM, Laravel queue workers, Laravel scheduler, Python services | **Not adopted.** Replaced by `df-ipam-api` and `df-ipam-worker` | Main brief §2 mandates Go. These lines look left over from an earlier stack |

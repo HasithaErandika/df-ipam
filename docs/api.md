@@ -82,3 +82,17 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 ## Key error codes
 
 `VALIDATION_FAILED`, `UNAUTHENTICATED`, `REQUEST_NOT_APPROVED`, `SEPARATION_OF_DUTIES`, `NOT_ELIGIBLE_APPROVER`, `APPROVAL_NOT_CURRENT`, `RELEASE_ALREADY_REQUESTED`, `RESERVATION_NOT_ACTIVE`, `FORBIDDEN`, `NOT_FOUND`, `STALE_VERSION`, `SUBNET_OVERLAP`, `ADDRESS_NOT_IN_SUBNET`, `ADDRESS_UNAVAILABLE`, `SUBNET_EXHAUSTED`, `SELF_APPROVAL_DENIED`, `TARGET_NOT_ALLOWED`, `DISCOVERY_STOPPED`, `RATE_LIMITED`, `INTERNAL_ERROR`.
+
+## Phases 5 to 7
+
+| Area | Routes | Permission |
+| --- | --- | --- |
+| Integrations | `/integrations/connections`, `/{id}/test`, `/{id}/sync`, `/{id}/syncs`, `/integrations/syncs/{id}/errors`, `/integrations/kinds` | `integrations:manage`; reading also `audit:view` |
+| Rule settings | `/reconciliation/rules`, `/reconciliation/rules/{classification}` | `inventory:view`; `discovery:manage` to change |
+| Change requests | `/reconciliation/results/{id}/change-requests`, `/change-requests`, `/{id}/approve`, `/{id}/reject` | `inventory:edit` to propose, `requests:approve` to decide |
+| Reports | `/reports`, `/reports/types`, `/reports/summary`, `/reports/{id}/download` | `reports:export` or `reports:export_scoped`. Audit reports need `audit:view` |
+| Dashboard | `/dashboard/trends`, `/dashboard/distribution` | `inventory:view` |
+| Roles | `/admin/permission-matrix`, `/roles`, `/roles/{id}`, `/roles/{id}/permissions` | `users:manage` |
+| System | `/system/health`, `/system/retention`, `/system/retention/{class}` | `system:manage`; reading also `audit:view` |
+
+New error codes: `ENCRYPTION_NOT_CONFIGURED`, `CONNECTOR_NOT_AVAILABLE`, `CREDENTIALS_MISSING`, `CONNECTION_HAS_HISTORY`, `SYNC_ACTIVE`, `NAME_TAKEN`, `FINDING_NOT_CHANGEABLE`, `CHANGE_ALREADY_OPEN`, `CHANGE_ALREADY_DECIDED`, `REPORT_LIMIT`, `REPORT_NOT_READY`, `ROLE_PROTECTED`, `LAST_ADMINISTRATOR`, `ROLE_IN_USE`, `ROLE_IS_SYSTEM`.

@@ -12,6 +12,12 @@
 - External objects link through `external_resource_mappings`, keyed by `(connection, resource type, external ID)`, which stops duplicates when sources report the same object.
 - Sync output is evidence. It never overwrites approved ownership or allocation data.
 
+## What has been checked
+
+**No connector has run against a real system yet.** FortiGate, AWS and Azure are tested against fixtures built from published API shapes, because there are no recordings. vCenter is tested against VMware's simulator. Expect some differences on first contact, and record real responses as fixtures once you have them.
+
+Each VDOM, VPC or VNet a sync finds is a context, and a person maps it to a routing domain on the Integrations screen. Connectors never guess this. Until it is mapped, evidence is kept with no routing domain and isn't matched to inventory.
+
 ## FortiGate
 
 FortiOS REST API with a read-only API profile. Supports multiple devices and HA.

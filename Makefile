@@ -1,6 +1,6 @@
 # DF-IPAM developer commands. Run `make help` to list them.
-# Settings come from api/.env and web/.env (see their .env.example files). Supabase provides the database and
-# sign-in, so nothing runs locally except the API and the web app.
+# Settings come from api/.env and web/.env (see their .env.example files). PostgreSQL, the API and the worker
+# run in Docker. Supabase provides sign-in, and its database is for testing only.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -9,8 +9,12 @@ SHELL := /bin/bash
 LOAD_ENV := set -a; [ -f api/.env ] && . api/.env; set +a;
 BIN := api/bin
 
+COMPOSE := docker compose
+
 .PHONY: help setup env-check dev api worker agent web \
-        migrate-up migrate-down migrate-version seed db-setup \
+        docker-build docker-up docker-down docker-restart docker-logs docker-ps docker-migrate docker-retention docker-rotate-secrets \
+        db-up db-down db-shell db-reset db-backup test-db-supabase migrate-supabase \
+        migrate-up migrate-down migrate-version seed db-setup retention rotate-secrets load-test \
         build build-api build-web test test-api test-db sql test-web lint lint-api lint-web vuln fmt clean
 
 help: ## List available commands
@@ -23,13 +27,55 @@ setup: ## Install dependencies and create env files if missing
 	cd web && pnpm install
 
 env-check: ## Show which required settings are missing
-	@$(LOAD_ENV) ok=1; for v in DATABASE_URL MIGRATION_DATABASE_URL SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY; do \
+	@$(LOAD_ENV) ok=1; for v in POSTGRES_PASSWORD DFIPAM_APP_PASSWORD DATABASE_URL MIGRATION_DATABASE_URL SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY; do \
 	  [ -n "$${!v}" ] || { echo "missing: $$v"; ok=0; }; done; \
 	[ -f web/.env ] || { echo "missing: web/.env"; ok=0; }; \
 	[ $$ok = 1 ] && echo "All required settings are present" || exit 1
 
-dev: env-check ## Run the API and the web app together
-	@$(MAKE) -j2 api web
+dev: env-check docker-up web ## Run everything: Docker backend, then the web app
+
+docker-build: ## Build the backend image
+	@$(LOAD_ENV) $(COMPOSE) build
+
+docker-up: ## Start PostgreSQL, migrate, seed, then start the API and worker
+	@$(LOAD_ENV) $(COMPOSE) up -d --build --wait db api worker
+
+docker-down: ## Stop the containers. Data stays in the volume
+	@$(LOAD_ENV) $(COMPOSE) down
+
+docker-restart: ## Restart the API and worker
+	@$(LOAD_ENV) $(COMPOSE) restart api worker
+
+docker-logs: ## Follow the API, worker and migration logs
+	@$(LOAD_ENV) $(COMPOSE) logs -f api worker migrate
+
+docker-ps: ## Show container status
+	@$(LOAD_ENV) $(COMPOSE) ps -a
+
+docker-migrate: ## Apply migrations and seed in the Docker database
+	@$(LOAD_ENV) $(COMPOSE) run --rm migrate
+
+docker-retention: ## Remove data older than its retention policy, in Docker
+	@$(LOAD_ENV) $(COMPOSE) run --rm migrate /app/retention
+
+docker-rotate-secrets: ## Re-encrypt integration credentials under the current key, in Docker
+	@$(LOAD_ENV) $(COMPOSE) run --rm --no-deps api /app/rotate-secrets
+
+db-up: ## Start only PostgreSQL
+	@$(LOAD_ENV) $(COMPOSE) up -d --wait db
+
+db-down: ## Stop only PostgreSQL. Data stays in the volume
+	@$(LOAD_ENV) $(COMPOSE) stop db
+
+db-shell: ## Open psql in the Docker database, as the owner
+	@$(LOAD_ENV) $(COMPOSE) exec db psql -U postgres -d "$${POSTGRES_DB:-dfipam}"
+
+db-reset: ## DELETE all local data and start empty. Needs CONFIRM=yes
+	@[ "$(CONFIRM)" = "yes" ] || { echo "This deletes the local database. Run: make db-reset CONFIRM=yes"; exit 1; }
+	@$(LOAD_ENV) $(COMPOSE) down -v
+
+db-backup: ## Write an encrypted backup. Needs BACKUP_GPG_RECIPIENT
+	@$(LOAD_ENV) deploy/scripts/backup.sh
 
 api: ## Run the API server
 	@$(LOAD_ENV) cd api && go run ./cmd/api
@@ -43,7 +89,7 @@ agent: ## Run the discovery agent
 web: ## Run the web app dev server
 	cd web && pnpm dev
 
-migrate-up: ## Apply all database migrations
+migrate-up: ## Apply migrations from this machine to DATABASE_URL's server
 	@$(LOAD_ENV) cd api && go run ./cmd/migrate up
 
 migrate-down: ## Roll back the latest migration
@@ -56,6 +102,15 @@ seed: ## Load roles, permissions and default settings (safe to repeat)
 	@$(LOAD_ENV) cd api && go run ./cmd/seed
 
 db-setup: migrate-up seed ## Migrate, then seed
+
+retention: ## Remove data older than its retention policy (owner role)
+	@$(LOAD_ENV) cd api && go run ./cmd/retention
+
+rotate-secrets: ## Re-encrypt integration credentials under the current key
+	@$(LOAD_ENV) cd api && go run ./cmd/rotate-secrets
+
+load-test: ## Measure read latency. Needs LOADTEST_TOKEN; use a test system
+	@$(LOAD_ENV) cd api && go run ./cmd/loadtest
 
 build: build-api build-web ## Build everything
 
@@ -70,8 +125,14 @@ test: test-api test-web ## Run all tests
 test-api: ## Run Go tests
 	cd api && go test ./...
 
-test-db: ## Run database tests: rule and API tests roll back; concurrency tests delete what they create
-	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$DATABASE_URL" go test -count=1 -v ./internal/dbrules ./internal/server ./internal/modules/allocation
+test-db: ## Run database tests on local PostgreSQL. Needs `make db-up` and migrations
+	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$DATABASE_URL" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/modules/allocation
+
+test-db-supabase: ## Run database tests on Supabase: rule and API tests roll back; concurrency tests delete what they create
+	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$SUPABASE_MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$SUPABASE_DATABASE_URL" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/modules/allocation
+
+migrate-supabase: ## Apply migrations and seed to the Supabase test database
+	@$(LOAD_ENV) cd api && MIGRATION_DATABASE_URL="$$SUPABASE_MIGRATION_DATABASE_URL" go run ./cmd/migrate up && MIGRATION_DATABASE_URL="$$SUPABASE_MIGRATION_DATABASE_URL" go run ./cmd/seed
 
 sql: ## Regenerate api/sql/supabase-setup.sql from the migrations and seed
 	cd api && go run ./cmd/sqlbundle > sql/supabase-setup.sql

@@ -55,10 +55,10 @@ The API derives the issuer and JWKS URL from `SUPABASE_URL`. It uses the anon ke
 ## User provisioning
 
 - A valid token with no `users` row creates an active row with **no roles**, so that user can see nothing until they are given a role.
-- Roles are managed in the Supabase database, or on the User Management page by a Super Administrator. There is no bootstrap setting.
+- Roles are managed in the database, or on the User Management page by a Super Administrator. There is no bootstrap setting.
 - Deactivating a user in DF-IPAM blocks them on their next request, because `users.is_active` is checked every time. A signed-out token otherwise stays valid until it expires.
 
-To make someone the first Super Administrator, have them sign in once, then run this in the Supabase SQL Editor:
+To make someone the first Super Administrator, have them sign in once, then run this in `make db-shell`:
 
 ```sql
 INSERT INTO user_roles (user_id, role_id)

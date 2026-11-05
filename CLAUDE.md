@@ -1,6 +1,6 @@
 # DF-IPAM
 
-Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web/`, design docs in `docs/`. Run `make help` for commands. Before finishing a change, run `make lint test`.
+Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web/`, design docs in `docs/`, Docker in `docker-compose.yml`. Run `make help` for commands. Before finishing a change, run `make lint test`.
 
 ## Read first
 
@@ -12,8 +12,8 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 ## Hard rules
 
 - **The Supabase `service_role` key stays in `api/.env`,** used only by `api/internal/auth/supabase_admin.go`. Never put it in `web/`, logs or responses.
-- **No local database.** Supabase provides the database and auth, set through `DATABASE_URL` and `MIGRATION_DATABASE_URL` in `api/.env`. Don't add Docker for Postgres.
-- **Every table stays closed to the Supabase Data API.** The browser never queries tables through `supabase-js`; all data goes through the Go API.
+- **PostgreSQL runs locally in Docker,** with the API and worker, through `docker-compose.yml`. Supabase provides sign-in. Its database is for testing only, through `SUPABASE_DATABASE_URL` and `SUPABASE_MIGRATION_DATABASE_URL`.
+- **Every table stays closed to the Supabase Data API,** because Supabase is still used for testing. The browser never queries tables through `supabase-js`; all data goes through the Go API.
 - **Env files are `api/.env` and `web/.env` only, none at the root.** Don't commit them, and don't put secrets in code, logs or API responses.
 - **Discovery never changes allocation state or ownership.** Evidence stays separate from inventory, and people approve authoritative changes.
 - **IPs are unique per routing domain,** never globally. Every subnet and IP query must respect routing context.

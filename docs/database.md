@@ -351,3 +351,16 @@ Standard audit columns and `id` are omitted.
 | B-tree on `ip_addresses (mac)`, `(lower(hostname))`, `(lower(fqdn))` | Explorer search |
 | B-tree on `discovery_observations (address, observed_at DESC)` | Evidence history |
 | B-tree on `audit_logs (object_type, object_id, occurred_at DESC)` | Record history |
+
+## Migration 12: integrations, change requests, reports
+
+No new tables, so existing row level security and grants apply.
+
+| Table | Added | Why |
+| --- | --- | --- |
+| `integration_connections` | `is_enabled`, `sync_interval_minutes`, `last_sync_at`, `last_error` | Scheduling and health |
+| `integration_sync_jobs` | `created_at`, `requested_by`, `contexts`, `error` | History, and the VDOMs and networks a sync saw. One active sync per connection |
+| `change_requests` | `finding_id`, `reason`, `decision_note`, `applied_at` | Nobody decides their own request, enforced by a check. One open request per finding |
+| `reconciliation_results` | `confidence_breakdown` | Explains the score |
+| `report_jobs` | `content`, `content_type`, `size_bytes`, `row_count`, `truncated`, `error`, `started_at`, `finished_at` | Files live with the job, and retention removes them |
+| `roles` | `is_customised` | The seed leaves edited roles alone |

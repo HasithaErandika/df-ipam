@@ -37,6 +37,8 @@ Specific to this system: DF-IPAM holds a detailed map of the bank's network, so 
 
 ## Supabase Data API
 
+The production database is local PostgreSQL, which has no Data API. These controls stay because the same migrations run on the Supabase test database.
+
 Supabase serves the `public` schema over a REST API to anyone holding the anon key, and that key is in the browser by design. Left open, it would bypass RBAC and the audit log entirely.
 
 - Every table has row level security on, with a policy only for `dfipam_app`.
@@ -101,7 +103,7 @@ Used before each release.
 **Data**
 - [ ] All SQL is parameterised
 - [ ] App database role can't modify audit logs or run DDL
-- [ ] Database connections use TLS with certificate verification
+- [ ] PostgreSQL is published on localhost only. If it moves to its own server, connections use TLS with certificate verification
 - [ ] Backups are encrypted and a restore has been tested
 
 **Secrets**

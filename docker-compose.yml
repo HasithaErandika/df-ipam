@@ -1,0 +1,101 @@
+# Local PostgreSQL plus the API and worker. Run it through make (see `make help`):
+# make loads api/.env and passes values through by name, so a `$` in a secret stays
+# literal. There is no env file at the repository root, by design.
+name: df-ipam
+
+x-backend: &backend
+  image: df-ipam-backend:local
+  build:
+    context: ./api
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+
+# A key with no value is copied from the shell that make prepared.
+x-backend-env: &backend-env
+  APP_ENV:
+  LOG_LEVEL:
+  CORS_ALLOWED_ORIGINS:
+  SUPABASE_URL:
+  SUPABASE_ANON_KEY:
+  SUPABASE_SERVICE_ROLE_KEY:
+  AUTH_AUDIENCE:
+  APP_BASE_URL:
+  SECRET_ENCRYPTION_KEY:
+  SECRET_ENCRYPTION_KEY_VERSION:
+  SECRET_ENCRYPTION_KEY_PREVIOUS:
+  INTEGRATION_ALLOWED_HOSTS:
+  INTEGRATION_ALLOWED_PRIVATE_RANGES:
+  INTEGRATION_CA_FILE:
+  SMTP_HOST:
+  SMTP_PORT:
+  SMTP_USERNAME:
+  SMTP_PASSWORD:
+  MAIL_FROM:
+  DATABASE_URL: postgres://dfipam_app:${DFIPAM_APP_PASSWORD:?use make, or set it in api/.env}@db:5432/${POSTGRES_DB:-dfipam}?sslmode=disable
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dfipam}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?use make, or set it in api/.env}
+      DFIPAM_APP_PASSWORD: ${DFIPAM_APP_PASSWORD:?use make, or set it in api/.env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    # Localhost only: the host's own tools can reach it, and no other machine can.
+    ports:
+      - 127.0.0.1:${POSTGRES_PORT:-5432}:5432
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Runs once and exits. The API and worker wait for it.
+  migrate:
+    <<: *backend
+    command: [sh, -c, /app/migrate up && /app/seed]
+    environment:
+      MIGRATION_DATABASE_URL: &owner-url postgres://postgres:${POSTGRES_PASSWORD:?use make, or set it in api/.env}@db:5432/${POSTGRES_DB:-dfipam}?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    command: [/app/api]
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+      API_LISTEN_ADDR: 0.0.0.0:8080
+      DB_MAX_CONNS: ${API_DB_MAX_CONNS:-20}
+    ports:
+      - 127.0.0.1:${API_PORT:-8080}:8080
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/ready]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend
+    command: [/app/worker]
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+      DB_MAX_CONNS: ${WORKER_DB_MAX_CONNS:-10}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:

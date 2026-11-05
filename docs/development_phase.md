@@ -18,13 +18,15 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Foundation | ✅ Complete |
-| 1 | Core IPAM | ✅ Complete, except live checks on Supabase |
+| 1 | Core IPAM | ✅ Complete |
 | 2 | Allocation workflow | ✅ Complete. Email waits for a mail provider |
 | 3 | Imports and devices | 🟨 Built. Parser needs checking against the real production files |
 | 4 | Discovery | 🟨 Built. Needs a lab run, the sensitive-networks list and SNMP credentials |
-| 5 | Integrations and reconciliation | 🟨 Findings engine done, integrations not started |
-| 6 | Reporting and dashboard | 🟨 Basic dashboard only |
-| 7 | Hardening | ⬜ Not started |
+| 5 | Integrations and reconciliation | 🟨 Built. Connectors need trying against real systems. DNS and DHCP servers blocked |
+| 6 | Reporting and dashboard | 🟨 Built. Not yet viewed in a browser |
+| 7 | Hardening | 🟨 Screens, Docker and runbooks built. Load test, security review and restore not yet run. Company auth blocked |
+
+**Testing status, 5 November 2026:** everything up to the role editing and report summary work passed on Supabase. That later work, and all tests on the local Docker database, have not been run: `make test test-db`.
 
 **Foundation exit check passed:** a real user signed in, roles were enforced, and creating an organisation through the screens wrote an audit row on Supabase.
 
@@ -37,7 +39,8 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Env files in `api/` and `web/` | ✅ Done | |
 | Go API, worker, agent, migrate and seed programs | ✅ Done | All start and connect. The agent stays idle until Phase 4. The worker runs reconciliation hourly, and allocation expiry and email every minute |
 | Config, structured logs, correlation IDs | ✅ Done | |
-| Migrations and seed | ✅ Done | 8 migrations live on Supabase. 9 and 10 (allocation workflow, device classes) are written and tested, not yet applied there |
+| Migrations and seed | ✅ Done | 12 migrations, applied to local PostgreSQL and to Supabase |
+| Docker | ✅ Done | PostgreSQL, API and worker through `docker-compose.yml`. `make docker-up` starts all of it |
 | Single-file SQL setup | ✅ Done | `api/sql/supabase-setup.sql` |
 | Supabase sign-in, token verification | ✅ Done | Tested with real ES256 signatures. MFA not set up |
 | Roles and permissions | ✅ Done | Every route is guarded, enforced by a test |
@@ -72,7 +75,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | DNS and DHCP records | ✅ Done | Read-only. DNS records list through the API and appear in the device view |
 | Saved filters, column visibility | ✅ Done | Saved filters on Subnets and the Explorer. Column choice on Subnets is kept in the browser |
 | Global search | ✅ Done | Subnets, addresses, hostnames, MACs, devices and VLANs. An address finds its subnet in every routing domain |
-| Live check on Supabase | ⬜ To do | Apply migrations 9 and 10, then run `make test-db` |
+| Live check on Supabase | ✅ Done | Migrations applied, and database tests passed on 5 November 2026 |
 
 ## Phase 2: Allocation workflow
 
@@ -93,7 +96,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Invite users | 🟨 Partial | Built, but no real invitation has been sent |
 | User role assignment | ✅ Done | Screen built. Not yet exercised with a second real user |
 
-**Phase 2 exit check:** concurrency tests and the no-self-approval tests pass on PostgreSQL 16. They still need one run on Supabase with `make test-db`.
+**Phase 2 exit check passed:** concurrency tests and the no-self-approval tests pass on PostgreSQL 16 and on Supabase.
 
 ## Phase 3: Imports and devices
 
@@ -123,33 +126,44 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Reconciliation engine, all 11 classifications | ✅ Done | Never changes inventory. Discovery-based rules have no evidence to work on yet |
+| Reconciliation engine, all 11 classifications | ✅ Done | Never changes inventory. Stale VMware evidence raises no findings |
 | Findings screen and review | ✅ Done | |
 | Hourly worker run | ✅ Done | Ran on Supabase and wrote a system audit row. Hourly repeats not yet observed |
-| Configurable source priority and confidence | ⬜ To do | Rules are in code today |
-| Change requests from findings | ⬜ To do | |
-| FortiGate, vCenter, AWS, Azure connectors | ⬜ To do | Tables exist |
-| DNS and DHCP connectors | ⛔ Blocked | Needs the server types |
-| Encrypted credential storage | ⬜ To do | |
-| Integrations screen | ⬜ To do | |
+| Configurable source priority and confidence | ✅ Done | Rules and confidence tab. Scores are capped and explained. Starting weights need review |
+| Change requests from findings | ✅ Done | Second person required, enforced in the service and database. Allocation state can't travel this way |
+| FortiGate connector | 🟨 Built | GET only. Tested against fixtures built from published API shapes, not a real device |
+| vCenter connector | 🟨 Built | Tested against VMware's simulator, not a real vCenter |
+| AWS connector | 🟨 Built | Assumes a read-only role. Tested with a fake EC2 client, not a real account. Cloud subnets are kept on evidence only |
+| Azure connector | 🟨 Built | Reader role. Tested with a fake client, not a real subscription. Public IPs, load balancers and application gateways aren't collected yet |
+| DNS and DHCP connectors | ⛔ Blocked | Needs the server types. FortiGate DHCP works through the FortiGate connector |
+| Encrypted credential storage | ✅ Done | AES-256-GCM envelope, tied to each connection, with key versions and `make docker-rotate-secrets` |
+| SSRF protection | ✅ Done | Allowlist, address checks after DNS, connects to the checked address, no redirects |
+| Integrations screen | 🟦 Built, not viewed | Connections, tests, syncs, history, routing map |
+| Read-only confirmed per connector | ⛔ Blocked | Exit criterion. Needs the real service accounts |
 
 ## Phase 6: Reporting and dashboard
 
 | Item | Status | Notes |
 | --- | --- | --- |
 | Dashboard totals, most utilised subnets, allocation state, recent changes | ✅ Done | |
-| Trend charts | ⬜ To do | Needs daily utilisation snapshots |
-| Excel, CSV and PDF reports | ⬜ To do | |
-| Audit log screen | ✅ Done | Filters still to add |
+| Trend and distribution charts | 🟦 Built, not viewed | Daily snapshots from the worker, so trends fill in over time. Hand-built SVG rather than Recharts |
+| Excel, CSV and PDF reports | ✅ Done | 13 reports, in the background. PDF stops at 5,000 rows and says so. Formulas are neutralised |
+| Reports screen and summary | 🟦 Built, not viewed | The summary hasn't had a test run |
+| Scoped reports | 🟨 Partial | Business Viewers get only their business services. Exit criterion "at volume" not yet measured |
+| Audit log screen and filters | 🟦 Built, not viewed | Actor, action, object, result and dates |
 
 ## Phase 7: Hardening
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Load tests and final sizing | ⬜ To do | |
-| Security review | ⬜ To do | Checklist in `docs/security.md` |
-| Nginx, systemd units, backups, runbooks | ⬜ To do | |
-| Roles and Permissions, System Administration screens | ⬜ To do | |
+| Roles and Permissions screen | 🟦 Built, not viewed | Edit permissions and details, create and delete roles. Keeps someone able to manage users. Editing details hasn't had a test run |
+| System Administration screen | 🟦 Built, not viewed | Health, queues, retention |
+| Retention pruning | 🟨 Built | `make docker-retention`, daily timer. Audit logs are never pruned automatically. Not yet run |
+| Docker, Nginx, timers, backup script | 🟨 Built | Docker checked locally. Nginx, timers and backup not yet run on a server |
+| Setup guide and runbooks | 🟨 Written | `docs/setup.md`, `docs/runbooks.md`. Not rehearsed |
+| Load tests and final sizing | ⬜ To do | Tool built (`make load-test`), not run. Needs a test system and the real inventory size |
+| Security review | ⬜ To do | Checklist in `docs/security.md`. `make vuln` and a secret scan not run for this work |
+| Restore test | ⬜ To do | Exit criterion |
 | Company auth migration | ⛔ Blocked | Needs company auth details |
 
 ## Waiting on others
@@ -162,7 +176,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | List of sensitive networks | Network and security | Active discovery |
 | Redis approval | Infrastructure | Job queue |
 | Mail provider (SMTP host or Microsoft Graph) and a sender address | Infrastructure | Email notifications |
-| Cloud data approval | Compliance | Production data |
+| Service accounts, confirmed read-only | Platform owners | Trying the connectors |
 | RPO, RTO, retention, inventory size | Business | Backups and sizing |
 
 ## Security to-do
