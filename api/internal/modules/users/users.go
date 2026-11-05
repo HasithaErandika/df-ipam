@@ -42,6 +42,7 @@ func NewHandler(pool db.Conn, inviter Inviter) *Handler { return &Handler{pool, 
 
 func (h *Handler) Register(g *auth.Guard) {
 	g.Authenticated(http.MethodGet, "/auth/me", h.me)
+	g.Authenticated(http.MethodGet, "/auth/me/profile", h.profile)
 	g.Handle(http.MethodGet, "/users", h.list, auth.UsersManage)
 	g.Handle(http.MethodGet, "/people", h.people, auth.InventoryView, auth.IPRequest)
 	g.Handle(http.MethodPost, "/users/invite", h.invite, auth.UsersManage)

@@ -119,6 +119,9 @@ func TestDiscoveryJobFromClaimToEvidence(t *testing.T) {
 	}
 
 	c.must(200, "POST", "/discovery/jobs/"+job+"/pause", nil)
+	if got := data(c.must(200, "GET", "/discovery/status", nil)); got["paused"].(float64) < 1 {
+		t.Fatalf("a paused job must count as active work: %v", got)
+	}
 	if got := data(c.must(200, "POST", "/agent-api/jobs/"+job+"/results", gin.H{}, s.agent...)); got["instruction"] != "pause" {
 		t.Fatalf("instruction: %v", got)
 	}

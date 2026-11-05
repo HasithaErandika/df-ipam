@@ -53,6 +53,8 @@ components:
 paths:
   /auth/me:
     get: { summary: Current user, roles and permissions, responses: { '200': { description: OK } } }
+  /auth/me/profile:
+    get: { summary: The signed-in user's own account details and role assignments, responses: { '200': { description: OK } } }
   /users:
     get: { summary: List users, responses: { '200': { description: OK } } }
   /roles:
@@ -143,6 +145,8 @@ paths:
     get: { summary: Raw evidence, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
   /reconciliation/results:
     get: { summary: List findings, responses: { '200': { description: OK } } }
+  /reconciliation/last-run:
+    get: { summary: When reconciliation last ran and what it found, responses: { '200': { description: OK } } }
   /reconciliation/summary:
     get: { summary: Open findings by classification, responses: { '200': { description: OK } } }
   /reconciliation/run:

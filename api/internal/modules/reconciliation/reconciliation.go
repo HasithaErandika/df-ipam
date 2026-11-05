@@ -37,6 +37,7 @@ func NewHandler(conn db.Conn, targets map[string]Target) *Handler { return &Hand
 func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/reconciliation/results", h.list, auth.InventoryView)
 	g.Handle(http.MethodGet, "/reconciliation/summary", h.summary, auth.InventoryView)
+	g.Handle(http.MethodGet, "/reconciliation/last-run", h.lastRun, auth.InventoryView)
 	g.Handle(http.MethodPost, "/reconciliation/run", h.run, auth.DiscoveryRun)
 	g.Handle(http.MethodPost, "/reconciliation/results/:id/review", h.review, auth.InventoryEdit)
 	g.Handle(http.MethodGet, "/reconciliation/rules", h.listSettings, auth.InventoryView)

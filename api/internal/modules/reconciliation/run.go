@@ -19,8 +19,10 @@ ON CONFLICT (fingerprint) DO UPDATE SET explanation = EXCLUDED.explanation, conf
 
 // Outcome summarises one run.
 type Outcome struct {
-	Detected int64 `json:"detected"`
+	Detected int64 `json:"detected"` // everything the rules matched, old and new
+	New      int64 `json:"new"`      // findings that didn't exist before this run
 	Resolved int64 `json:"resolved"`
+	Open     int64 `json:"open"` // findings needing review after this run
 }
 
 // Run applies every enabled rule, refreshes confidence, and resolves what no rule
@@ -40,9 +42,18 @@ func runRules(ctx context.Context, tx pgx.Tx, actorID string) (Outcome, error) {
 	if err != nil {
 		return out, err
 	}
+	before, err := countFindings(ctx, tx)
+	if err != nil {
+		return out, err
+	}
 	if out.Detected, err = detect(ctx, tx, settings); err != nil {
 		return out, err
 	}
+	after, err := countFindings(ctx, tx)
+	if err != nil {
+		return out, err
+	}
+	out.New = after - before
 	disabled := []string{}
 	for class, s := range settings {
 		if !s.IsEnabled {
@@ -60,11 +71,20 @@ func runRules(ctx context.Context, tx pgx.Tx, actorID string) (Outcome, error) {
 		return out, err
 	}
 	out.Resolved = tag.RowsAffected()
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM reconciliation_results WHERE review_status IN ('open', 'investigating')`).Scan(&out.Open); err != nil {
+		return out, err
+	}
 	entry := audit.Entry{ActorID: actorID, Action: "reconciliation.run", ObjectType: "reconciliation", New: out}
 	if actorID == "" {
 		entry.ActorType = "system"
 	}
 	return out, audit.Write(ctx, tx, entry)
+}
+
+func countFindings(ctx context.Context, tx pgx.Tx) (int64, error) {
+	var n int64
+	err := tx.QueryRow(ctx, `SELECT count(*) FROM reconciliation_results`).Scan(&n)
+	return n, err
 }
 
 func detect(ctx context.Context, tx pgx.Tx, settings map[string]Settings) (int64, error) {

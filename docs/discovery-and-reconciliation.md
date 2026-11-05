@@ -45,7 +45,7 @@ Every job passes all of these on the server. The limits that can change are chec
 3. Target is not classified as sensitive, at subnet level or through its business service. Core banking, payment switching and other sensitive systems are **passive/API-only** until explicitly authorised.
 4. Time is inside the policy's window and outside maintenance blackouts.
 5. Policy has the required approval.
-6. The global **emergency stop** is off. Turning it on stops queued, running and paused jobs, tells agents to halt at their next heartbeat (within 15 seconds), and blocks new scans until someone with `discovery:manage` lifts it.
+6. The global **emergency stop** is off. The button appears only while jobs are queued, running or paused, or if their status can't be read. Turning it on stops those jobs, tells agents to halt at their next heartbeat (within 15 seconds), and blocks new scans until someone with `discovery:manage` lifts it.
 
 Users can't get around scopes with their own input: manual runs can only select from approved scopes.
 

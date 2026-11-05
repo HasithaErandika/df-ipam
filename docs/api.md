@@ -56,7 +56,7 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 
 | Area | Endpoints |
 | --- | --- |
-| Auth | `GET /auth/me` (sign-in itself happens in Supabase) |
+| Auth | `GET /auth/me`, `GET /auth/me/profile` (sign-in itself happens in Supabase) |
 | Users and roles | `/users`, `/users/invite`, `/users/:id/roles`, `/roles`, `GET /people` (email and name only, for owner pickers) |
 | Subnets | CRUD on `/subnets`, plus `POST /subnets/:id/archive`, `POST /subnets/bulk` (all or nothing, `dryRun`), `POST /subnets/bulk-archive`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
 | Tools | `POST /tools/split`, `POST /tools/summarise`, `GET /tools/locate?address=`, `GET /network-blocks/:id/free-space` |
@@ -70,7 +70,7 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 | Discovery | `/discovery/policies`, `/discovery/schedules`, `/discovery/exclusions`, `/discovery/jobs`, `POST /discovery/jobs/:id/{pause,resume,cancel}`, `POST /discovery/emergency-stop` |
 | Agents (admin) | `/agents`, `POST /agents/:id/{revoke,rotate}` |
 | Agents (agent credential) | `POST /agent-api/register`, `POST /agent-api/heartbeat`, `GET /agent-api/jobs`, `POST /agent-api/jobs/:id/results`. A job's `maxPps` is what is left of the ceiling, not the policy's figure. The reply to results holds `instruction` (`continue`, `pause` or `stop`) and `skipTargets` |
-| Reconciliation | `GET /reconciliation/results`, `GET /reconciliation/summary`, `POST /reconciliation/run`, `POST /reconciliation/results/:id/review`, `/reconciliation/rules` |
+| Reconciliation | `GET /reconciliation/results`, `GET /reconciliation/summary`, `GET /reconciliation/last-run`, `POST /reconciliation/run`, `POST /reconciliation/results/:id/review`, `/reconciliation/rules` |
 | Imports | `POST /imports`, `GET /imports/:id/preview`, `POST /imports/:id/{approve,reverse}`, `GET /imports` |
 | Notifications | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`, `GET`/`PUT /notifications/preferences` (own), `GET /notifications/rules`, `PUT /notifications/rules/:eventType` |
 | Audit | `GET /audit-logs`, `GET /audit-logs/filters` |

@@ -51,6 +51,7 @@ func (h *Handler) status(c *gin.Context) {
 		StoppedAt     *time.Time `json:"changedAt"`
 		Queued        int64      `json:"queued"`
 		Running       int64      `json:"running"`
+		Paused        int64      `json:"paused"`
 		AgentsOnline  int64      `json:"agentsOnline"`
 		AgentsTotal   int64      `json:"agentsTotal"`
 	}
@@ -58,8 +59,9 @@ func (h *Handler) status(c *gin.Context) {
 		coalesce((SELECT value = 'true'::jsonb FROM system_settings WHERE key = 'discovery.emergency_stop'), false),
 		(SELECT updated_at FROM system_settings WHERE key = 'discovery.emergency_stop'),
 		(SELECT count(*) FROM discovery_jobs WHERE status = 'queued'), (SELECT count(*) FROM discovery_jobs WHERE status = 'running'),
+		(SELECT count(*) FROM discovery_jobs WHERE status = 'paused'),
 		(SELECT count(*) FROM discovery_agents WHERE status = 'active'), (SELECT count(*) FROM discovery_agents WHERE status <> 'revoked')`).
-		Scan(&out.EmergencyStop, &out.StoppedAt, &out.Queued, &out.Running, &out.AgentsOnline, &out.AgentsTotal)
+		Scan(&out.EmergencyStop, &out.StoppedAt, &out.Queued, &out.Running, &out.Paused, &out.AgentsOnline, &out.AgentsTotal)
 	respond(c, http.StatusOK, out, err)
 }
 
