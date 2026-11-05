@@ -1,4 +1,5 @@
-// Command api is the DF-IPAM HTTP server.
+// Command server is the DF-IPAM backend: the HTTP API and, unless WORKER_ENABLED is
+// false, the background worker, in one process.
 package main
 
 import (
@@ -17,14 +18,18 @@ import (
 	"dfipam/api/internal/platform/safehttp"
 	"dfipam/api/internal/platform/secrets"
 	"dfipam/api/internal/server"
+	"dfipam/api/internal/worker"
 
 	"github.com/gin-gonic/gin"
 )
 
+// shutdownWait stays under the 30 seconds Docker gives before it kills the process.
+const shutdownWait = 25 * time.Second
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if err := run(); err != nil {
-		slog.Error("api stopped", "error", err)
+		slog.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
 }
@@ -72,17 +77,33 @@ func run() error {
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
+	jobs := make(chan struct{})
+	if cfg.WorkerEnabled {
+		go func() {
+			defer close(jobs)
+			worker.Run(ctx, pool)
+		}()
+	} else {
+		close(jobs)
+	}
 	errs := make(chan error, 1)
 	go func() {
-		slog.Info("api listening", "addr", cfg.ListenAddr)
+		slog.Info("server listening", "addr", cfg.ListenAddr, "worker", cfg.WorkerEnabled)
 		errs <- srv.ListenAndServe()
 	}()
 	select {
 	case err := <-errs:
+		stop()
 		return err
 	case <-ctx.Done():
 	}
-	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdown, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
-	return srv.Shutdown(shutdown)
+	err = srv.Shutdown(shutdown)
+	select {
+	case <-jobs:
+	case <-shutdown.Done():
+		slog.Warn("background jobs were still running at shutdown")
+	}
+	return err
 }

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# One image holds the API, worker and admin commands. Compose picks which to run.
+# One image holds the server and the admin commands. Compose picks which to run.
 # The discovery agent isn't here: it runs on hosts inside the networks it covers.
 ARG GO_VERSION=1.26.10
 
@@ -11,7 +11,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/ \
-    ./cmd/api ./cmd/worker ./cmd/migrate ./cmd/seed ./cmd/retention ./cmd/rotate-secrets
+    ./cmd/server ./cmd/migrate ./cmd/seed ./cmd/retention ./cmd/rotate-secrets
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates \
@@ -19,4 +19,4 @@ RUN apk add --no-cache ca-certificates \
 COPY --from=build /out/ /app/
 USER dfipam
 EXPOSE 8080
-CMD ["/app/api"]
+CMD ["/app/server"]

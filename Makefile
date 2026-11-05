@@ -1,20 +1,20 @@
 # DF-IPAM developer commands. Run `make help` to list them.
-# Settings come from api/.env and web/.env (see their .env.example files). PostgreSQL, the API and the worker
-# run in Docker. Supabase provides sign-in, and its database is for testing only.
+# Settings come from api/.env and web/.env (see their .env.example files). PostgreSQL, the backend and the web
+# app run in Docker. Supabase provides sign-in, and its database is for testing only.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # Sourcing in the shell, not `include`, keeps `$` and `#` in passwords intact.
-LOAD_ENV := set -a; [ -f api/.env ] && . api/.env; set +a;
+LOAD_ENV := set -a; [ -f api/.env ] && . api/.env; [ -f web/.env ] && . web/.env; COMPOSE_FILE=$${COMPOSE_FILE:-docker-compose.yml:docker-compose.dev.yml}; set +a;
 BIN := api/bin
 
 COMPOSE := docker compose
 
-.PHONY: help setup env-check dev api worker agent web \
+.PHONY: help setup env-check dev backend agent web \
         docker-build docker-up docker-down docker-restart docker-logs docker-ps docker-migrate docker-retention docker-rotate-secrets \
         db-up db-down db-shell db-reset db-backup test-db-supabase migrate-supabase \
-        migrate-up migrate-down migrate-version seed db-setup retention rotate-secrets load-test \
+        migrate-up migrate-down migrate-version seed seed-demo db-setup retention rotate-secrets load-test \
         build build-api build-web test test-api test-db sql test-web lint lint-api lint-web vuln fmt clean
 
 help: ## List available commands
@@ -37,17 +37,17 @@ dev: env-check docker-up web ## Run everything: Docker backend, then the web app
 docker-build: ## Build the backend image
 	@$(LOAD_ENV) $(COMPOSE) build
 
-docker-up: ## Start PostgreSQL, migrate, seed, then start the API and worker
-	@$(LOAD_ENV) $(COMPOSE) up -d --build --wait db api worker
+docker-up: ## Start PostgreSQL, migrate, seed, then start the backend and web app
+	@$(LOAD_ENV) $(COMPOSE) up -d --build --wait --remove-orphans db backend web
 
 docker-down: ## Stop the containers. Data stays in the volume
 	@$(LOAD_ENV) $(COMPOSE) down
 
-docker-restart: ## Restart the API and worker
-	@$(LOAD_ENV) $(COMPOSE) restart api worker
+docker-restart: ## Restart the backend and web app
+	@$(LOAD_ENV) $(COMPOSE) restart backend web
 
-docker-logs: ## Follow the API, worker and migration logs
-	@$(LOAD_ENV) $(COMPOSE) logs -f api worker migrate
+docker-logs: ## Follow the backend, web and migration logs
+	@$(LOAD_ENV) $(COMPOSE) logs -f backend web migrate
 
 docker-ps: ## Show container status
 	@$(LOAD_ENV) $(COMPOSE) ps -a
@@ -59,7 +59,7 @@ docker-retention: ## Remove data older than its retention policy, in Docker
 	@$(LOAD_ENV) $(COMPOSE) run --rm migrate /app/retention
 
 docker-rotate-secrets: ## Re-encrypt integration credentials under the current key, in Docker
-	@$(LOAD_ENV) $(COMPOSE) run --rm --no-deps api /app/rotate-secrets
+	@$(LOAD_ENV) $(COMPOSE) run --rm --no-deps backend /app/rotate-secrets
 
 db-up: ## Start only PostgreSQL
 	@$(LOAD_ENV) $(COMPOSE) up -d --wait db
@@ -77,11 +77,8 @@ db-reset: ## DELETE all local data and start empty. Needs CONFIRM=yes
 db-backup: ## Write an encrypted backup. Needs BACKUP_GPG_RECIPIENT
 	@$(LOAD_ENV) deploy/scripts/backup.sh
 
-api: ## Run the API server
-	@$(LOAD_ENV) cd api && go run ./cmd/api
-
-worker: ## Run the background worker
-	@$(LOAD_ENV) cd api && go run ./cmd/worker
+backend: ## Run the API and worker without Docker
+	@$(LOAD_ENV) cd api && go run ./cmd/server
 
 agent: ## Run the discovery agent
 	@$(LOAD_ENV) cd api && go run ./cmd/agent
@@ -125,8 +122,11 @@ test: test-api test-web ## Run all tests
 test-api: ## Run Go tests
 	cd api && go test ./...
 
-test-db: ## Run database tests on local PostgreSQL. Needs `make db-up` and migrations
-	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$DATABASE_URL" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/modules/allocation
+test-db: ## Run database tests on a fresh dfipam_test database, leaving your data alone. Needs `make db-up`
+	@$(LOAD_ENV) $(COMPOSE) exec -T db psql -q -U postgres -c 'DROP DATABASE IF EXISTS dfipam_test' -c 'CREATE DATABASE dfipam_test'
+	@$(LOAD_ENV) db="$${POSTGRES_DB:-dfipam}"; owner="$${MIGRATION_DATABASE_URL/\/$$db\?/\/dfipam_test?}"; app="$${DATABASE_URL/\/$$db\?/\/dfipam_test?}"; \
+	cd api && MIGRATION_DATABASE_URL="$$owner" go run ./cmd/migrate up && MIGRATION_DATABASE_URL="$$owner" go run ./cmd/seed && \
+	TEST_DATABASE_URL="$$owner" TEST_APP_DATABASE_URL="$$app" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/modules/allocation
 
 test-db-supabase: ## Run database tests on Supabase: rule and API tests roll back; concurrency tests delete what they create
 	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$SUPABASE_MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$SUPABASE_DATABASE_URL" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/modules/allocation
@@ -158,3 +158,6 @@ fmt: ## Format Go code
 
 clean: ## Remove build output
 	rm -rf api/bin web/dist
+
+seed-demo: ## Load the sample network, through the API rules. Development only, once only
+	@$(LOAD_ENV) cd api && go run ./cmd/seed-demo

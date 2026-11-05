@@ -1,17 +1,16 @@
-// Command worker runs background work: hourly reconciliation and utilisation
+// Package worker runs the background work: hourly reconciliation and utilisation
 // snapshots; every minute the discovery scheduler, allocation expiry and email
 // delivery; and, in their own loops so a long run holds nothing else up, integration
 // syncs and reports. Several workers can run at once, because every job locks its
 // rows with SKIP LOCKED.
-package main
+package worker
 
 import (
 	"context"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
 
 	"dfipam/api/internal/modules/admin"
@@ -22,7 +21,6 @@ import (
 	"dfipam/api/internal/modules/reconciliation"
 	"dfipam/api/internal/modules/reports"
 	"dfipam/api/internal/modules/subnets"
-	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/mail"
 	"dfipam/api/internal/platform/safehttp"
 	"dfipam/api/internal/platform/secrets"
@@ -30,36 +28,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	pool, err := db.Connect(ctx, os.Getenv("DATABASE_URL"))
-	if err != nil {
-		slog.Error("worker stopped", "error", err)
-		os.Exit(1)
-	}
-	defer pool.Close()
+// Run works until ctx ends, and returns once every loop has finished.
+func Run(ctx context.Context, pool *pgxpool.Pool) {
 	w := &worker{pool: pool, mailer: newMailer(), workflow: allocation.NewService(pool), scheduler: discovery.NewService(pool),
 		baseURL: strings.TrimRight(strings.TrimSpace(os.Getenv("APP_BASE_URL")), "/")}
 	connectors := newConnectors(pool)
-	go every(ctx, time.Minute, func() { runSyncs(ctx, connectors) })
-	go every(ctx, 15*time.Second, func() { w.runReports(ctx) })
-	w.reconcile(ctx)
-	w.minutely(ctx)
-	hourly, everyMinute := time.NewTicker(time.Hour), time.NewTicker(time.Minute)
-	defer hourly.Stop()
-	defer everyMinute.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-hourly.C:
-			w.reconcile(ctx)
-		case <-everyMinute.C:
-			w.minutely(ctx)
-		}
-	}
+	var loops sync.WaitGroup
+	loops.Go(func() { every(ctx, "integration syncs", time.Minute, func() { runSyncs(ctx, connectors) }) })
+	loops.Go(func() { every(ctx, "reports", 15*time.Second, func() { w.runReports(ctx) }) })
+	loops.Go(func() { every(ctx, "reconciliation", time.Hour, func() { w.reconcile(ctx) }) })
+	loops.Go(func() { every(ctx, "minutely jobs", time.Minute, func() { w.minutely(ctx) }) })
+	loops.Wait()
 }
 
 // worker holds what the background jobs share.
@@ -157,8 +136,8 @@ func (w *worker) minutely(ctx context.Context) {
 
 // every runs fn now and then on a schedule. A run that overruns delays the next one
 // instead of overlapping it.
-func every(ctx context.Context, interval time.Duration, fn func()) {
-	fn()
+func every(ctx context.Context, name string, interval time.Duration, fn func()) {
+	safely(name, fn)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -166,7 +145,17 @@ func every(ctx context.Context, interval time.Duration, fn func()) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			fn()
+			safely(name, fn)
 		}
 	}
+}
+
+// safely keeps a failed job from taking the API down: they share one process.
+func safely(name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("background job panicked", "job", name, "panic", r)
+		}
+	}()
+	fn()
 }
