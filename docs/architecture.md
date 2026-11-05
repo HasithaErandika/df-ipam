@@ -9,13 +9,11 @@ flowchart LR
   N --> A[cmd/api]
   A -->|JWKS| S
   A --> P[(PostgreSQL)]
-  A --> R[(Redis)]
-  W[cmd/worker] --> R
-  W --> P
+  W[cmd/worker] --> P
   W -->|read-only| I[FortiGate / vCenter / AWS / Azure]
   W -->|email| M[Mail provider]
   G[cmd/agent] -->|HTTPS, agent credential| N
-  G -->|approved ICMP, ARP, SNMP, Nmap| T[Approved targets]
+  G -->|approved ICMP, ARP, DNS, Nmap| T[Approved targets]
 ```
 
 ## Executables
@@ -23,8 +21,8 @@ flowchart LR
 | Binary | Responsibility |
 | --- | --- |
 | `cmd/api` | Gin HTTP server, authentication, authorisation, validation, business logic orchestration |
-| `cmd/worker` | Discovery scheduling, integration sync, reconciliation, notifications, reports, imports |
-| `cmd/agent` | Runs inside network segments: approved ICMP, ARP/NDP, SNMP. Pulls jobs and posts results to the API. Never connects to the database |
+| `cmd/worker` | Discovery scheduling, integration sync, reconciliation, utilisation snapshots, reports, reservation and request expiry, email |
+| `cmd/agent` | Runs inside network segments: approved ICMP, ARP/NDP, reverse DNS, Nmap host discovery. Pulls jobs and posts results to the API. Never connects to the database |
 
 ## Repository layout
 
@@ -39,11 +37,10 @@ df-ipam/
 │   │   ├── netcalc/
 │   │   └── modules/
 │   │       └── subnets/       # one folder per module:
-│   │           ├── handler.go     # HTTP only
-│   │           ├── service.go     # business rules
-│   │           ├── repository.go  # SQL only
-│   │           ├── model.go       # domain types
-│   │           └── dto.go         # request/response types
+│   │           ├── handler*.go    # HTTP only
+│   │           ├── service.go     # business rules, split by topic
+│   │           ├── repo*.go       # SQL only
+│   │           └── model*.go      # domain types
 │   ├── migrations/
 │   └── openapi.yaml
 ├── web/                       # React app
@@ -57,6 +54,10 @@ Modules: organisations, sites, zones, routing domains, VDOMs, VLANs, network blo
 
 **Boundary rule:** a module calls another module's service, never its repository.
 
+**Size rule:** keep files under 200 lines and functions at a cognitive complexity of 15 or less. Split a module by topic, and keep the `store*` and connector file prefixes in `integrations`, because the read-only safety tests find files by them.
+
+**Query rule:** never run a query per row. Read a page with `= ANY($1)`, write a list with `unnest`, and use `pgx.Batch` where each row needs its own statement. Pass user-supplied IDs as `text[]` and cast them in SQL, so a bad ID is a validation error and not a client encoding failure.
+
 ## Technology choices
 
 | Need | Choice | Note |
@@ -64,20 +65,20 @@ Modules: organisations, sites, zones, routing domains, VDOMs, VLANs, network blo
 | HTTP | Gin | Required |
 | Database access | pgx v5 | Required |
 | Migrations | golang-migrate | Required |
-| Job queue | Asynq on Redis | Needs Redis approval; jobs are also recorded in Postgres so history survives Redis loss |
-| Logging | `log/slog` JSON | Standard library, with a redaction layer |
+| Job queue | PostgreSQL with `SKIP LOCKED` | Redis isn't in use: it was never approved |
+| Logging | `log/slog` JSON | Standard library |
 | IP maths | `net/netip` + `math/big` | IPv6 counts exceed 64 bits |
 | JWT and JWKS | `lestrrat-go/jwx` | Used only inside `internal/auth` |
-| SNMP / DNS / ICMP | `gosnmp`, `miekg/dns`, `pro-bing` | SNMPv3 by default |
+| ICMP | `golang.org/x/net/icmp` | Reverse DNS uses the standard library. SNMP isn't built |
 | Integrations | FortiOS REST via `net/http`, `govmomi`, AWS SDK v2, Azure SDK | All read-only |
-| Reports | `excelize`, `encoding/csv`, a Go PDF library | Chosen in Phase 6 |
+| Reports | `excelize`, `encoding/csv`, `go-pdf/fpdf` | |
 | Frontend | See [frontend.md](frontend.md) | |
 
 ## Background jobs
 
 - Every job has a row in Postgres (`discovery_jobs`, `integration_sync_jobs`, `report_jobs`, `import_batches`) recording status, progress and errors.
-- Jobs are idempotent, with bounded retries and backoff.
-- Jobs carry the initiating user or a named system actor, and authorisation is re-checked when they run.
+- Jobs are safe to repeat. Emails retry with backoff, and connector calls with bounded retries.
+- Jobs carry the initiating user or a named system actor. Report rights are checked again at download.
 
 ## Reliability and performance
 
@@ -103,22 +104,24 @@ flowchart LR
 | Built now | Event types |
 | --- | --- |
 | Allocation workflow | Approval requested, request approved, approved request ready to fulfil, request rejected, request fulfilled, request expired, reservation nearing expiry, reservation expired, reservation released by someone else |
-| Later phases | New unknown device, suspected conflict, utilisation threshold, agent offline, discovery failure, integration authentication failure, significant inventory change |
+| Other | Integration failed, report ready, change requested, change decided |
+| Later | New unknown device, suspected conflict, utilisation threshold, agent offline, discovery failure |
 
 - Notifications are written in the same transaction as the change, so a rolled-back change never notifies anyone.
 - Each event has a rule (on or off, severity) and each person chooses in-app and email per event. Everyone starts with everything on.
 - A dedupe key per event and object stops repeats reaching the same person twice. People aren't told about their own actions.
-- Email rows are an outbox in PostgreSQL, used instead of Redis until Redis is approved. The worker sends a batch every minute with `SKIP LOCKED`, retries with backoff (1, 4, 16, 64 minutes, then at most 4 hours) up to five times, and drops email still unsent after seven days. Without `SMTP_HOST`, email stays off and in-app alerts still work.
+- Email rows are an outbox in PostgreSQL. The worker sends a batch every minute with `SKIP LOCKED`, retries with backoff (1, 4, 16, 64 minutes, then at most 4 hours) up to five times, and drops email still unsent after seven days. Without `SMTP_HOST`, email stays off and in-app alerts still work.
 
 ## Background jobs in the worker
 
 | Every | Job |
 | --- | --- |
-| Hour | Reconciliation run |
-| Minute | Expire due reservations, remind holders a week before, expire stale requests, deliver email |
+| Hour | Reconciliation run, then the daily utilisation snapshot |
+| Minute | Worker heartbeat, discovery schedules, integration syncs, expire due reservations, remind holders a week before, expire stale requests, deliver email |
+| 15 seconds | Generate queued reports |
 
 All jobs lock their rows with `SKIP LOCKED`, so several workers can run at once, and audit as the `system` actor.
 
 ## Reports
 
-Small exports stream from the API. Large ones run as `report_jobs`. Every report records its generation timestamp, filters and data freshness, and is built using the requesting user's permissions.
+Every report runs as a `report_jobs` row in the worker. Every report records its generation timestamp, filters and data freshness, and is built using the requesting user's permissions.

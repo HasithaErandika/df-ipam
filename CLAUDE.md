@@ -29,6 +29,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 - Write the audit row in the same transaction as the change.
 - Return DTOs, never database rows. Use the shared error format with a stable error code.
 - All SQL is parameterised, and sort and filter fields are allowlisted.
+- Never run a query per row. Keep files under 200 lines, and function cognitive complexity at 15 or less.
 
 ## Database conventions
 
@@ -48,3 +49,5 @@ Supabase is temporary and will be replaced by company auth. Only `api/internal/a
 - Every data view needs loading, empty and error states.
 - Dialogs are centred with a blurred background (`Modal`). No side drawers.
 - Don't show fake data. Pages not built yet say so.
+- Screens live in `web/src/features/<screen>`. Tabs are paths, and the query string is for filters, paging and open dialogs.
+- Give each mutation a `meta.success` message, and confirm deletes and edit saves.

@@ -51,9 +51,10 @@ Run `make help` for the full list.
 
 | Command | Purpose |
 | --- | --- |
-| `make dev` | Run the API and the web app |
+| `make dev` | Start the Docker backend, then the web app |
 | `make test` | Run all tests |
-| `make lint` | Check formatting, types and lint rules |
+| `make test-db` | Run the database and API tests on local PostgreSQL |
+| `make lint` | Check Go formatting, `go vet` and web types |
 | `make build` | Build the binaries and web app |
 | `make migrate-up` / `migrate-down` | Apply or roll back migrations |
 | `make vuln` | Scan dependencies for known vulnerabilities |

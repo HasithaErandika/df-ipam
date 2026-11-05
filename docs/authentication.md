@@ -17,7 +17,7 @@ Supabase Row Level Security is not used. DF-IPAM data lives in its own PostgreSQ
 
 ## Supabase project setup
 
-- Turn **off** public sign-ups. Users are invited from the Supabase dashboard.
+- Turn **off** public sign-ups. Add users in the Supabase dashboard with a password. The app has no screen to set one, so an invitation alone isn't enough yet.
 - Use asymmetric JWT signing keys (ES256 or RS256), and confirm the JWKS URL returns keys. It returns none on the legacy HS256 secret.
 - Put only the project URL and anon key in the frontend. The `service_role` key stays in `api/.env`.
 

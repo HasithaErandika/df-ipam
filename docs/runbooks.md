@@ -85,7 +85,7 @@ If the server's certificate moved to a new CA, install that CA on agent hosts fi
 
 ## Emergency: stop all discovery
 
-Discovery Centre has an emergency stop, which takes effect on each agent's next heartbeat. If the app can't be reached, stop the agents on their hosts: `sudo systemctl stop df-ipam-agent`.
+Discovery Centre has an emergency stop, which reaches each agent at its next heartbeat, within 15 seconds. An agent that loses the server for 90 seconds stops its job by itself. If the app can't be reached, stop the agents on their hosts: `sudo systemctl stop df-ipam-agent`.
 
 ## Supabase or the internet is down
 

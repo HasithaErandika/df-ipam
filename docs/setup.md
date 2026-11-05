@@ -268,7 +268,7 @@ To keep the nftables rules after a reboot, add `include "/opt/df-ipam/deploy/nft
 
 **Offices behind one NAT address count as one client** at every layer that limits by address. If real people see "Too many requests", raise `rate` in the Nginx file and the nftables file. Limits per person aren't affected.
 
-The discovery budget is 500 packets a second across all agents, and two jobs can't scan the same network at once. Jobs over the budget wait in the queue. To change it, in `make db-shell`:
+The discovery budget is 100 packets a second across all agents (it can be raised to 500, never higher), and two jobs can't scan the same network at once. Jobs over the budget wait in the queue. To change it, in `make db-shell`:
 
 ```sql
 UPDATE system_settings SET value = '300' WHERE key = 'discovery.max_total_pps';
@@ -292,7 +292,7 @@ It must say `ready`. Then check the access model really works, **from each kind 
 
 ## Step 11: First administrator and structure
 
-1. Invite yourself from the Supabase dashboard, and sign in once. That creates your user in the local database. You see "Waiting for access".
+1. In the Supabase dashboard, under **Authentication, Users**, add your user with a password and auto-confirm on. Sign in to DF-IPAM once. That creates your user in the local database, and you see "Waiting for access". Do the same for other people: the app has no screen to set a password, so invitations aren't enough yet.
 2. On the server, run `sudo make db-shell`, then:
 
    ```sql
@@ -369,7 +369,7 @@ sudo cp df-ipam-agent.service /etc/systemd/system/
 The agent requires https, and uses the host's trust store, so the CA step above is needed for models A and B.
 
 1. In **Discovery Centre**, create an agent and copy its one-time token.
-2. Put the token and server URL in `/etc/df-ipam/agent.env`. Set group `dfipam-agent` and mode 640.
+2. Put the token and server URL in `/etc/df-ipam/agent.env`. Set group `dfipam-agent` and mode 640. On a fragile link, also set `AGENT_MAX_PPS`.
 3. Run `sudo systemctl enable --now df-ipam-agent`, and check it shows online.
 4. **Delete the token line** from the file. The agent now uses its own stored credential.
 
@@ -377,7 +377,7 @@ Then add discovery rules, in this order, and have a second person approve each p
 
 1. **Exclusions first:** every restricted network. Exclusions always win.
 2. **Blackout windows:** change freezes and busy periods.
-3. **A small policy:** one test subnet in a lab or low-risk VLAN, at low rate.
+3. **A small policy:** one test subnet in a lab or low-risk VLAN, at low rate. New subnets have discovery off, so tick **Discovery enabled** on the subnet first.
 4. **Test the emergency stop** while that job runs, and confirm it halts.
 5. Widen slowly.
 

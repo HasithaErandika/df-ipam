@@ -10,7 +10,6 @@ One dedicated on-premises Ubuntu Server. Agents run on separate hosts in the net
 | `df-ipam-api` | Docker container, published on localhost only |
 | `df-ipam-worker` | Docker container |
 | `df-ipam-agent` | systemd service on each agent host, `CAP_NET_RAW` only |
-| Redis | Local, bound to localhost, password protected, pending approval |
 | PostgreSQL | Docker container with a named volume, published on localhost only |
 
 Each service has its own account with minimal file permissions. Nothing runs as root. The supplement's PHP-FPM, Laravel and Python services are replaced by the Go services above: see [requirements.md](requirements.md).
@@ -24,13 +23,12 @@ Each service has its own account with minimal file permissions. Nothing runs as 
 | Agents | Nginx | 443/tcp | Jobs, results, heartbeats |
 | API | Supabase | 443/tcp | JWKS |
 | API, worker | PostgreSQL | 5432/tcp | Database, on Docker's private network |
-| API, worker | Redis | 6379/tcp | Localhost only |
 | Worker | FortiGate, vCenter | 443/tcp (or the configured admin port) | Read-only APIs |
 | Worker | AWS, Azure | 443/tcp | Read-only APIs |
 | Worker | Mail provider | 443/tcp (Graph) or 587/tcp (SMTP) | Notifications |
 | Agents | Approved targets | ICMP, 161/udp, 53/udp+tcp | Discovery |
 
-All other traffic is blocked. PostgreSQL and Redis are never reachable from untrusted networks.
+All other traffic is blocked. PostgreSQL is never reachable from untrusted networks.
 
 ## Agent privileges
 
@@ -133,6 +131,6 @@ See [runbooks.md](runbooks.md). They haven't been rehearsed yet.
 
 ## Monitoring
 
-- `/health` (process up) and `/ready` (database and Redis reachable)
+- `/health` (process up) and `/ready` (database reachable)
 - Structured JSON logs to journald, forwarded to the central log platform
 - Alerts: service down, queue backlog, agents offline, sync failures, backup failure, certificate expiry
