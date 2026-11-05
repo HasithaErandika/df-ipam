@@ -1176,6 +1176,39 @@ CREATE INDEX audit_logs_filter_idx ON audit_logs (action, occurred_at DESC);
 -- permission taken away doesn't quietly come back on the next deployment.
 ALTER TABLE roles ADD COLUMN is_customised boolean NOT NULL DEFAULT false;
 
+-- 000013_query_indexes.up.sql
+-- Indexes for the queries that run most often: every agent call reads its job's
+-- targets, each sync replaces a device's routes, and subnet pages and the daily
+-- snapshot read reserved ranges and DHCP scopes. No new tables, so the row level
+-- security and grants from earlier migrations still cover everything.
+
+CREATE INDEX discovery_job_targets_job_idx ON discovery_job_targets (job_id);
+CREATE INDEX discovery_job_targets_domain_idx ON discovery_job_targets (routing_domain_id);
+CREATE INDEX discovery_jobs_agent_idx ON discovery_jobs (agent_id, status);
+CREATE INDEX discovery_jobs_schedule_idx ON discovery_jobs (schedule_id) WHERE schedule_id IS NOT NULL;
+
+CREATE INDEX network_routes_device_idx ON network_routes (device_id, source_id);
+CREATE INDEX dhcp_scopes_subnet_idx ON dhcp_scopes (subnet_id);
+CREATE INDEX subnet_reserved_ranges_subnet_idx ON subnet_reserved_ranges (subnet_id);
+CREATE INDEX dns_records_ip_address_idx ON dns_records (ip_address_id);
+
+-- Permission and approver lookups start from the role.
+CREATE INDEX user_roles_role_idx ON user_roles (role_id);
+CREATE INDEX role_permissions_permission_idx ON role_permissions (permission_id);
+CREATE INDEX ip_requests_workflow_idx ON ip_requests (workflow_id);
+
+-- 000014_least_privilege.up.sql
+-- Least privilege for the application role. A SQL injection or stolen app password
+-- must not be able to rewrite migration history or erase people. Accounts are
+-- deactivated, never deleted, and the sessions table is unused: sign-in is token based.
+-- No new tables, so row level security from earlier migrations still covers everything.
+REVOKE ALL ON schema_migrations FROM dfipam_app;
+REVOKE ALL ON sessions FROM dfipam_app;
+REVOKE DELETE, TRUNCATE ON users FROM dfipam_app;
+
+-- A safer ceiling on all discovery traffic. A value someone chose is left alone.
+UPDATE system_settings SET value = '100' WHERE key = 'discovery.max_total_pps' AND value = '500';
+
 -- Seed data
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view') ON CONFLICT (resource, action) DO NOTHING;
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view_scoped') ON CONFLICT (resource, action) DO NOTHING;
@@ -1266,7 +1299,7 @@ INSERT INTO observation_sources (name, kind, reliability) VALUES ('ARP', 'active
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('ICMP', 'active', 40) ON CONFLICT (name) DO NOTHING;
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('Nmap', 'active', 40) ON CONFLICT (name) DO NOTHING;
 INSERT INTO system_settings (key, value) VALUES ('discovery.emergency_stop', 'false') ON CONFLICT (key) DO NOTHING;
-INSERT INTO system_settings (key, value) VALUES ('discovery.max_total_pps', '500') ON CONFLICT (key) DO NOTHING;
+INSERT INTO system_settings (key, value) VALUES ('discovery.max_total_pps', '100') ON CONFLICT (key) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_observations', 180) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_job_logs', 90) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('agent_heartbeats', 30) ON CONFLICT (data_class) DO NOTHING;
@@ -1298,6 +1331,6 @@ INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('
 INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_requested', 'info', 'People who can approve requests') ON CONFLICT (event_type) DO NOTHING;
 INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_decided', 'info', 'Person who proposed it') ON CONFLICT (event_type) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (12, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (14, false);
 
 COMMIT;
