@@ -6,11 +6,11 @@ The Go backend: Gin, pgx and golang-migrate. Run commands from the repository ro
 
 | Path | Purpose |
 | --- | --- |
-| `cmd/api` | HTTP server under `/api/v1` |
-| `cmd/worker` | Background jobs |
+| `cmd/server` | The API under `/api/v1`, and the background worker unless `WORKER_ENABLED=false` |
 | `cmd/agent` | Network discovery agent |
 | `cmd/migrate` | `up`, `down` and `version` for database migrations |
 | `cmd/seed` | Loads roles, permissions and default settings |
+| `cmd/seed-demo` | Loads a sample network through the real API. Development only |
 | `cmd/sqlbundle` | Prints the full setup SQL |
 | `cmd/retention` | Prunes data older than its retention policy |
 | `cmd/rotate-secrets` | Re-encrypts integration credentials on the current key |
@@ -31,6 +31,7 @@ api/
 │   ├── netcalc/          # IPv4 and IPv6 calculations
 │   ├── seed/             # seed data
 │   ├── server/           # route registration
+│   ├── worker/           # background job loops
 │   └── modules/          # one folder per domain module
 ├── migrations/           # SQL, embedded into the binaries
 └── openapi.yaml          # API contract

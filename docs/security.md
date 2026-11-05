@@ -80,7 +80,7 @@ Nothing in DF-IPAM changes firewalls, DNS, DHCP or cloud networks.
 - A cap on requests running at once, which refuses work instead of queueing it, and a bound on the limiter's memory
 - Nginx connection limits and timeouts for slow clients, and SYN cookies and per-source limits on the host
 - Discovery stays inside a budget across all agents, and two jobs can't scan one network at once
-- Volumetric floods are stopped upstream, not here: see [setup.md](setup.md), step 9a
+- Volumetric floods are stopped upstream, not here: see Flood protection in [setup.md](setup.md)
 - Request size limits: 1 MB on every route. The 5 MB import and 8 MB agent limits can't take effect yet
 - Errors return a generic message and a correlation ID, with detail only in the logs
 

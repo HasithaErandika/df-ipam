@@ -26,7 +26,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | 6 | Reporting and dashboard | 🟨 Built. Reports tested through the API. Screens not checked by hand |
 | 7 | Hardening | 🟨 Screens, Docker and runbooks built. Load test, security review and restore not yet run. Company auth blocked |
 
-**Testing status, 5 November 2026:** `make lint test` and all 46 database and API tests pass on local PostgreSQL, and on a fresh database built from all 14 migrations. Migrations 13 and 14 aren't on the Supabase test database yet: run `make migrate-supabase`. No screen has been checked by hand since the frontend restructure, and no agent has sent real packets.
+**Testing status, 5 November 2026:** `make lint test` and all 47 database and API tests pass, on a fresh `dfipam_test` database built from all 14 migrations. Migrations 13 and 14 aren't on the Supabase test database yet: run `make migrate-supabase`. No screen has been checked by hand since the frontend restructure, and no agent has sent real packets.
 
 **Foundation exit check passed:** a real user signed in, roles were enforced, and creating an organisation through the screens wrote an audit row on Supabase.
 
@@ -40,7 +40,8 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Go API, worker, agent, migrate and seed programs | ✅ Done | All start and connect. The agent stays idle until Phase 4. The worker runs reconciliation hourly, and allocation expiry and email every minute |
 | Config, structured logs, correlation IDs | ✅ Done | |
 | Migrations and seed | ✅ Done | 14 migrations on local PostgreSQL. Supabase has the first 12 |
-| Docker | ✅ Done | PostgreSQL, API and worker through `docker-compose.yml`. `make docker-up` starts all of it |
+| Docker | ✅ Done | `web`, `backend` and `db` through `docker-compose.yml`, with `dev` and `prod` overrides. `make docker-up` starts all of it. Production TLS config checked, not yet run on a server. The real client address needs checking from a second machine |
+| Sample network | ✅ Done | `make seed-demo` loads 190 subnets and full workflows through the real API. Development only |
 | Single-file SQL setup | ✅ Done | `api/sql/supabase-setup.sql` |
 | Supabase sign-in, token verification | ✅ Done | Tested with real ES256 signatures. MFA not set up |
 | Roles and permissions | ✅ Done | Every route is guarded, enforced by a test |

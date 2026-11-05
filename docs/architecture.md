@@ -6,10 +6,10 @@ A modular monolith. Modules keep clear boundaries so one can be split out later,
 flowchart LR
   B[Browser: React SPA] -->|sign in| S[Supabase Auth]
   B -->|HTTPS + bearer JWT| N[Nginx]
-  N --> A[cmd/api]
+  N --> A[cmd/server: API]
   A -->|JWKS| S
   A --> P[(PostgreSQL)]
-  W[cmd/worker] --> P
+  W[cmd/server: worker] --> P
   W -->|read-only| I[FortiGate / vCenter / AWS / Azure]
   W -->|email| M[Mail provider]
   G[cmd/agent] -->|HTTPS, agent credential| N
@@ -20,9 +20,11 @@ flowchart LR
 
 | Binary | Responsibility |
 | --- | --- |
-| `cmd/api` | Gin HTTP server, authentication, authorisation, validation, business logic orchestration |
-| `cmd/worker` | Discovery scheduling, integration sync, reconciliation, utilisation snapshots, reports, reservation and request expiry, email |
+| `cmd/server` | Gin HTTP server, authentication, authorisation, validation and business logic, with the background worker in the same process |
+| `internal/worker` | Discovery scheduling, integration sync, reconciliation, utilisation snapshots, reports, reservation and request expiry, email , run by `cmd/server` unless `WORKER_ENABLED=false` |
 | `cmd/agent` | Runs inside network segments: approved ICMP, ARP/NDP, reverse DNS, Nmap host discovery. Pulls jobs and posts results to the API. Never connects to the database |
+
+**Containers:** `web` is Nginx, and the only way in. `backend` runs `cmd/server`. `db` is PostgreSQL. `migrate` runs once and exits, so the database owner's password never sits in a running service. A panic in a background job is caught, so it can't stop the API.
 
 ## Repository layout
 
@@ -97,7 +99,7 @@ Target: thousands of subnets and hundreds of thousands of IP records.
 flowchart LR
   S[Service change] -->|same transaction| N[(notifications)]
   N -->|in_app rows| UI[Alerts page and header count]
-  N -->|email rows, every minute| W[cmd/worker]
+  N -->|email rows, every minute| W[Worker]
   W -->|SMTP with STARTTLS| M[Mail provider]
 ```
 

@@ -32,3 +32,7 @@ Sign-in, Dashboard, Network Management, Subnet Management, User Management and A
 - Never render a full address range. Use server-side pagination and range loading.
 
 See [docs/frontend.md](../docs/frontend.md) for pages and design rules.
+
+## Container
+
+`web/Dockerfile` builds the app and serves it from Nginx, with the settings in `web/nginx`. `make web` still runs Vite for development.
