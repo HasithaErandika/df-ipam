@@ -3,6 +3,7 @@
 package ipaddresses
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -465,4 +466,20 @@ func (h *Handler) evidence(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, http.StatusOK, append([]item{}, out...))
+}
+
+// ChangeFields lists what a change request may set on an address. Allocation state
+// isn't here: it moves only through the allocation workflow.
+var ChangeFields = []db.Field{
+	{Name: "hostname", Column: "hostname"}, {Name: "notes", Column: "notes"},
+	{Name: "mac", Column: "mac", Cast: "macaddr", Nullable: true},
+	{Name: "deviceId", Column: "device_id", Cast: "uuid", Nullable: true},
+	{Name: "applicationId", Column: "application_id", Cast: "uuid", Nullable: true},
+	{Name: "businessServiceId", Column: "business_service_id", Cast: "uuid", Nullable: true},
+	{Name: "ownerId", Column: "owner_id", Cast: "uuid", Nullable: true},
+}
+
+// ApplyChange applies an approved change request.
+func ApplyChange(ctx context.Context, tx pgx.Tx, id, actor string, changes map[string]string) (map[string]string, map[string]string, error) {
+	return db.ApplyFields(ctx, tx, "ip_addresses", id, actor, "", ChangeFields, changes)
 }

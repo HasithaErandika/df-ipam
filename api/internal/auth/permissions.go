@@ -20,4 +20,5 @@ const (
 	AuditView             = "audit:view"
 	ReportsExport         = "reports:export"
 	ReportsExportScoped   = "reports:export_scoped"
+	SystemManage          = "system:manage"
 )

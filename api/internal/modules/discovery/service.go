@@ -26,7 +26,9 @@ var (
 	errNotApproved = httpx.NewError(http.StatusConflict, "POLICY_NOT_APPROVED", "This policy hasn't been approved, so it can't run.")
 )
 
-func targetError(msg string) error { return httpx.NewError(http.StatusUnprocessableEntity, "TARGET_NOT_ALLOWED", msg) }
+func targetError(msg string) error {
+	return httpx.NewError(http.StatusUnprocessableEntity, "TARGET_NOT_ALLOWED", msg)
+}
 
 type Service struct{ conn db.Conn }
 
@@ -459,7 +461,10 @@ func Log(ctx context.Context, tx pgx.Tx, jobID, level, message string) error {
 }
 
 // Transitions people may make to a job.
-var transitions = map[string]struct{ from []string; to string }{
+var transitions = map[string]struct {
+	from []string
+	to   string
+}{
 	"pause":  {[]string{"queued", "running"}, "paused"},
 	"resume": {[]string{"paused"}, "queued"},
 	"cancel": {[]string{"queued", "running", "paused"}, "cancelled"},

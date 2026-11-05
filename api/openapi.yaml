@@ -57,6 +57,7 @@ paths:
     get: { summary: List users, responses: { '200': { description: OK } } }
   /roles:
     get: { summary: List roles, responses: { '200': { description: OK } } }
+    post: { summary: Create a role, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
   /users/{id}/roles:
     put:
       summary: Replace a user's roles
@@ -482,3 +483,58 @@ paths:
     get: { summary: 'Agent: claim the next job allowed to run now', responses: { '200': { description: A job }, '204': { description: Nothing to do } } }
   /agent-api/jobs/{id}/results:
     post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /roles/{id}/permissions:
+    put: { summary: Replace a role's permissions. Refused for a role you hold or if nobody could manage users afterwards, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Updated }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /roles/{id}:
+    put: { summary: Change a role's name and description. Default roles keep their names, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Updated }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete an unused custom role, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /admin/permission-matrix:
+    get: { summary: Every role with its permissions, responses: { '200': { description: OK } } }
+  /system/health:
+    get: { summary: 'Worker, queues, agents, integrations, encryption and backup status', responses: { '200': { description: OK } } }
+  /system/retention:
+    get: { summary: Retention policies, responses: { '200': { description: OK } } }
+  /system/retention/{class}:
+    put: { summary: Change how long a class of data is kept, parameters: [{ name: class, in: path, required: true, schema: { type: string } }], responses: { '204': { description: Updated } } }
+  /dashboard/trends:
+    get: { summary: Daily utilisation, findings and evidence. Counts are strings, parameters: [{ name: days, in: query, schema: { type: integer, minimum: 7, maximum: 365 } }], responses: { '200': { description: OK } } }
+  /dashboard/distribution:
+    get: { summary: 'Active subnets by environment, site and address family', responses: { '200': { description: OK } } }
+  /integrations/kinds:
+    get: { summary: Every connector and the settings it takes, responses: { '200': { description: OK } } }
+  /integrations/connections:
+    get: { summary: List connections. Credentials are never returned, responses: { '200': { description: OK } } }
+    post: { summary: Create a connection. Credentials are encrypted and write-only, responses: { '201': { description: Created }, '422': { $ref: '#/components/responses/Error' } } }
+  /integrations/connections/{id}:
+    get: { summary: Read a connection, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    put: { summary: Update a connection. Credentials change only when new ones are sent, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    delete: { summary: Delete a connection that has never synced, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /integrations/connections/{id}/test:
+    post: { summary: Make one read against the platform, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /integrations/connections/{id}/sync:
+    post: { summary: Queue a sync, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '202': { description: Queued }, '409': { $ref: '#/components/responses/Error' } } }
+  /integrations/connections/{id}/syncs:
+    get: { summary: Sync history, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /integrations/syncs/{id}/errors:
+    get: { summary: Problems recorded during a sync, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /reports/types:
+    get: { summary: Reports this person may run, responses: { '200': { description: OK } } }
+  /reports/summary:
+    get: { summary: Your report counts and, with full export rights, inventory totals, responses: { '200': { description: OK } } }
+  /reports:
+    get: { summary: Your reports, responses: { '200': { description: OK } } }
+    post: { summary: Queue a report, responses: { '202': { description: Queued }, '429': { $ref: '#/components/responses/Error' } } }
+  /reports/{id}/download:
+    get: { summary: 'Download your own finished report. Audited', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: The file }, '409': { $ref: '#/components/responses/Error' } } }
+  /reconciliation/rules:
+    get: { summary: Rule settings for each finding, responses: { '200': { description: OK } } }
+  /reconciliation/rules/{classification}:
+    put: { summary: 'Change source priority, confidence weights or whether a finding is detected', parameters: [{ name: classification, in: path, required: true, schema: { type: string } }], responses: { '200': { description: OK } } }
+  /reconciliation/results/{id}/change-requests:
+    post: { summary: Propose a change from a finding. Nothing changes until someone else approves, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
+  /change-requests:
+    get: { summary: List change requests, responses: { '200': { description: OK } } }
+  /change-requests/{id}/approve:
+    post: { summary: Approve and apply. Refused for your own proposal, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' } } }
+  /change-requests/{id}/reject:
+    post: { summary: Reject. A note is required, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }

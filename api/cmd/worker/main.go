@@ -1,6 +1,8 @@
-// Command worker runs background work: the hourly reconciliation run, and every
-// minute the discovery scheduler, the allocation workflow's expiry jobs and email delivery. Several
-// workers can run at once, because every job locks its rows with SKIP LOCKED.
+// Command worker runs background work: hourly reconciliation and utilisation
+// snapshots; every minute the discovery scheduler, allocation expiry and email
+// delivery; and, in their own loops so a long run holds nothing else up, integration
+// syncs and reports. Several workers can run at once, because every job locks its
+// rows with SKIP LOCKED.
 package main
 
 import (
@@ -12,12 +14,18 @@ import (
 	"syscall"
 	"time"
 
+	"dfipam/api/internal/modules/admin"
 	"dfipam/api/internal/modules/allocation"
 	"dfipam/api/internal/modules/discovery"
+	"dfipam/api/internal/modules/integrations"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/reconciliation"
+	"dfipam/api/internal/modules/reports"
+	"dfipam/api/internal/modules/subnets"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/mail"
+	"dfipam/api/internal/platform/safehttp"
+	"dfipam/api/internal/platform/secrets"
 )
 
 func main() {
@@ -46,6 +54,34 @@ func main() {
 	workflow := allocation.NewService(pool)
 	scheduler := discovery.NewService(pool)
 
+	keys, err := secrets.FromEnv()
+	if err != nil {
+		keys = nil
+		slog.Warn("integration credentials can't be read, so syncs that need them will fail", "reason", err)
+	}
+	outbound, err := safehttp.FromEnv()
+	if err != nil {
+		slog.Error("outbound policy is invalid, so every integration URL is refused", "error", err)
+		outbound = safehttp.Policy{}
+	}
+	connectors := integrations.NewService(pool, keys, outbound)
+	go every(ctx, time.Minute, func() {
+		res, err := connectors.RunSyncs(ctx)
+		if err != nil {
+			slog.Error("integration syncs failed", "error", err)
+		} else if res != (integrations.RunResult{}) {
+			slog.Info("integration syncs finished", "queued", res.Queued, "completed", res.Completed, "failed", res.Failed, "stuck", res.Stuck)
+		}
+	})
+	go every(ctx, 15*time.Second, func() {
+		res, err := reports.Run(ctx, pool)
+		if err != nil {
+			slog.Error("report generation failed", "error", err)
+		} else if res != (reports.RunResult{}) {
+			slog.Info("reports finished", "completed", res.Completed, "failed", res.Failed, "stuck", res.Stuck)
+		}
+	})
+
 	reconcile := func() {
 		out, err := reconciliation.Run(ctx, pool, "")
 		if err != nil {
@@ -53,8 +89,16 @@ func main() {
 			return
 		}
 		slog.Info("reconciliation finished", "detected", out.Detected, "resolved", out.Resolved)
+		if n, err := subnets.SnapshotDay(ctx, pool, time.Now()); err != nil {
+			slog.Error("utilisation snapshot failed", "error", err)
+		} else if n > 0 {
+			slog.Info("utilisation snapshot finished", "subnets", n)
+		}
 	}
 	minutely := func() {
+		if err := admin.Heartbeat(ctx, pool, time.Now()); err != nil {
+			slog.Error("worker heartbeat failed", "error", err)
+		}
 		if res, err := scheduler.RunScheduler(ctx, time.Now()); err != nil {
 			slog.Error("discovery scheduler failed", "error", err)
 		} else if res != (discovery.SchedulerResult{}) {
@@ -87,6 +131,22 @@ func main() {
 			reconcile()
 		case <-everyMinute.C:
 			minutely()
+		}
+	}
+}
+
+// every runs fn now and then on a schedule. A run that overruns delays the next one
+// instead of overlapping it.
+func every(ctx context.Context, interval time.Duration, fn func()) {
+	fn()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fn()
 		}
 	}
 }

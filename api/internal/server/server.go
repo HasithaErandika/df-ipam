@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/modules/admin"
 	"dfipam/api/internal/modules/allocation"
 	"dfipam/api/internal/modules/auditlog"
 	"dfipam/api/internal/modules/catalog"
@@ -14,16 +15,20 @@ import (
 	"dfipam/api/internal/modules/devices"
 	"dfipam/api/internal/modules/discovery"
 	"dfipam/api/internal/modules/imports"
+	"dfipam/api/internal/modules/integrations"
 	"dfipam/api/internal/modules/ipaddresses"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/organisations"
 	"dfipam/api/internal/modules/reconciliation"
+	"dfipam/api/internal/modules/reports"
 	"dfipam/api/internal/modules/routingdomains"
 	"dfipam/api/internal/modules/search"
 	"dfipam/api/internal/modules/subnets"
 	"dfipam/api/internal/modules/users"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
+	"dfipam/api/internal/platform/safehttp"
+	"dfipam/api/internal/platform/secrets"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,6 +40,26 @@ type Deps struct {
 	Resolver auth.PrincipalResolver
 	Inviter  users.Inviter
 	Origins  []string
+	// Keys may be nil: the API then refuses to store integration credentials.
+	Keys     *secrets.Keyring
+	Outbound safehttp.Policy
+}
+
+// changeTargets lists the records a change request can act on, and what each module
+// allows. Fields are derived from the owning module's list.
+func changeTargets() map[string]reconciliation.Target {
+	names := func(fields []db.Field) map[string]bool {
+		out := map[string]bool{}
+		for _, f := range fields {
+			out[f.Name] = true
+		}
+		return out
+	}
+	return map[string]reconciliation.Target{
+		"ip_address": {Fields: names(ipaddresses.ChangeFields), Apply: ipaddresses.ApplyChange},
+		"subnet":     {Fields: names(subnets.ChangeFields), Apply: subnets.ApplyChange},
+		"device":     {Fields: names(devices.ChangeFields), Apply: devices.ApplyChange},
+	}
 }
 
 // New returns the router and the guard holding every protected route.
@@ -66,12 +91,15 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	auditlog.NewHandler(d.Conn).Register(guard)
 	catalog.NewHandler(d.Conn).Register(guard)
 	ipaddresses.NewHandler(d.Conn).Register(guard)
-	reconciliation.NewHandler(d.Conn).Register(guard)
+	reconciliation.NewHandler(d.Conn, changeTargets()).Register(guard)
 	allocation.NewHandler(allocation.NewService(d.Conn)).Register(guard)
 	notifications.NewHandler(d.Conn).Register(guard)
 	search.NewHandler(d.Conn).Register(guard)
 	imports.NewHandler(d.Conn).Register(guard)
 	devices.NewHandler(d.Conn).Register(guard)
+	integrations.NewHandler(integrations.NewService(d.Conn, d.Keys, d.Outbound)).Register(guard)
+	reports.NewHandler(d.Conn).Register(guard)
+	admin.NewHandler(d.Conn, d.Keys != nil).Register(guard)
 	disc := discovery.NewHandler(discovery.NewService(d.Conn))
 	disc.Register(guard)
 	// Agents use their own credential, checked inside the discovery module.

@@ -71,7 +71,7 @@ func setupPeople(t *testing.T) (*people, pgx.Tx) {
 	t.Cleanup(func() { tx.Rollback(ctx) })
 	p := &people{t: t, tx: tx}
 	gin.SetMode(gin.TestMode)
-	engine, _ := New(Deps{Conn: tx, Verifier: stubVerifier{}, Resolver: actingResolver{&p.current}})
+	engine, _ := New(Deps{Conn: tx, Verifier: stubVerifier{}, Resolver: actingResolver{&p.current}, Keys: testKeys(t), Outbound: testPolicy})
 	p.client = client{t, engine}
 	return p, tx
 }

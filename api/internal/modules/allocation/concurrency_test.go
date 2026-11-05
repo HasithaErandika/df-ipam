@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -49,7 +50,11 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Supabase's session pooler allows 15 clients, so make test-db asks for fewer.
 	cfg.MaxConns = 25
+	if n, err := strconv.Atoi(os.Getenv("TEST_DB_MAX_CONNS")); err == nil && n > 0 {
+		cfg.MaxConns = int32(n)
+	}
 	app, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)

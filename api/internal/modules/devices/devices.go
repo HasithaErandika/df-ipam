@@ -4,6 +4,7 @@
 package devices
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -169,4 +170,16 @@ func (h *Handler) merge(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// ChangeFields lists what a change request may set on a device.
+var ChangeFields = []db.Field{
+	{Name: "ownerId", Column: "owner_id", Cast: "uuid", Nullable: true},
+	{Name: "businessServiceId", Column: "business_service_id", Cast: "uuid", Nullable: true},
+	{Name: "notes", Column: "notes"},
+}
+
+// ApplyChange applies an approved change request.
+func ApplyChange(ctx context.Context, tx pgx.Tx, id, actor string, changes map[string]string) (map[string]string, map[string]string, error) {
+	return db.ApplyFields(ctx, tx, "devices", id, actor, "", ChangeFields, changes)
 }

@@ -22,7 +22,7 @@ var AllPermissions = []string{
 	auth.InventoryView, auth.InventoryViewScoped, auth.InventoryCreate, auth.InventoryEdit, auth.InventoryEditAssigned,
 	auth.InventoryDelete, auth.IPRequest, auth.IPAllocate, auth.IPReserve, auth.RequestsApprove, auth.ImportsRun,
 	auth.DiscoveryRun, auth.DiscoveryManage, auth.IntegrationsManage, auth.UsersManage, auth.AuditView,
-	auth.ReportsExport, auth.ReportsExportScoped,
+	auth.ReportsExport, auth.ReportsExportScoped, auth.SystemManage,
 }
 
 var Roles = []Role{
@@ -58,7 +58,26 @@ var retention = []struct {
 	Days  int
 }{
 	{"discovery_observations", 180}, {"discovery_job_logs", 90}, {"agent_heartbeats", 30},
-	{"notifications", 365}, {"audit_logs", 2555},
+	{"notifications", 365}, {"report_jobs", 30}, {"audit_logs", 2555},
+}
+
+// Starting weights for an administrator to review. Classifications without weights
+// keep the fixed confidence in their rule, because they come from inventory alone.
+// The caps are safety rules: several MACs alone never reach high confidence.
+var findingPriority = `["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]`
+
+var findingRules = []struct{ Classification, Weights string }{
+	{"new_device", `{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":70,"freshnessDays":30}`},
+	{"unknown_ip", `{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":90,"freshnessDays":7}`},
+	{"ip_conflict_suspected", `{"reliability":0.4,"freshness":0.3,"agreement":0.3,"cap":50,"freshnessDays":1}`},
+	{"duplicate_mac", `{}`},
+	{"dns_mismatch", `{}`},
+	{"allocated_not_observed", `{}`},
+	{"observed_not_allocated", `{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":95,"freshnessDays":7}`},
+	{"subnet_overlap", `{}`},
+	{"ownership_missing", `{}`},
+	{"infrastructure_mismatch", `{}`},
+	{"stale_evidence", `{}`},
 }
 
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
@@ -71,10 +90,10 @@ func SQL() string {
 		fmt.Fprintf(&b, "INSERT INTO permissions (resource, action) VALUES (%s, %s) ON CONFLICT (resource, action) DO NOTHING;\n", quote(resource), quote(action))
 	}
 	for _, r := range Roles {
-		fmt.Fprintf(&b, "INSERT INTO roles (name, description, is_system) VALUES (%s, %s, true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description;\n", quote(r.Name), quote(r.Description))
+		fmt.Fprintf(&b, "INSERT INTO roles (name, description, is_system) VALUES (%s, %s, true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;\n", quote(r.Name), quote(r.Description))
 		for _, p := range r.Permissions {
 			resource, action, _ := strings.Cut(p, ":")
-			fmt.Fprintf(&b, "INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = %s AND p.resource = %s AND p.action = %s ON CONFLICT DO NOTHING;\n", quote(r.Name), quote(resource), quote(action))
+			fmt.Fprintf(&b, "INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = %s AND p.resource = %s AND p.action = %s AND NOT r.is_customised ON CONFLICT DO NOTHING;\n", quote(r.Name), quote(resource), quote(action))
 		}
 	}
 	for _, s := range sources {
@@ -83,6 +102,9 @@ func SQL() string {
 	b.WriteString("INSERT INTO system_settings (key, value) VALUES ('discovery.emergency_stop', 'false') ON CONFLICT (key) DO NOTHING;\n")
 	for _, r := range retention {
 		fmt.Fprintf(&b, "INSERT INTO retention_policies (data_class, retain_days) VALUES (%s, %d) ON CONFLICT (data_class) DO NOTHING;\n", quote(r.Class), r.Days)
+	}
+	for _, r := range findingRules {
+		fmt.Fprintf(&b, "INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES (%s, %s, %s) ON CONFLICT (classification) DO NOTHING;\n", quote(r.Classification), quote(findingPriority), quote(r.Weights))
 	}
 	// Every event starts switched on; administrators turn them off in the app.
 	for _, e := range notifications.EventTypes {

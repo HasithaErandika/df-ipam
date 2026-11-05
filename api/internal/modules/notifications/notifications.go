@@ -36,6 +36,10 @@ const (
 	ReservationExpiring = "reservation_expiring"
 	ReservationExpired  = "reservation_expired"
 	ReservationReleased = "reservation_released"
+	IntegrationFailed   = "integration_failed"
+	ReportReady         = "report_ready"
+	ChangeRequested     = "change_requested"
+	ChangeDecided       = "change_decided"
 )
 
 // EventType describes an event for rules, preferences and the seed.
@@ -54,6 +58,10 @@ var EventTypes = []EventType{
 	{ReservationExpiring, "Reservation nearing expiry", "warning", "Reservation holder"},
 	{ReservationExpired, "Reservation expired", "warning", "Reservation holder"},
 	{ReservationReleased, "Reservation released by someone else", "info", "Reservation holder"},
+	{IntegrationFailed, "Integration sync failed", "warning", "People who manage integrations"},
+	{ReportReady, "Report ready to download", "info", "Person who requested it"},
+	{ChangeRequested, "Inventory change needs a decision", "info", "People who can approve requests"},
+	{ChangeDecided, "Inventory change decided", "info", "Person who proposed it"},
 }
 
 func knownType(t string) (EventType, bool) {

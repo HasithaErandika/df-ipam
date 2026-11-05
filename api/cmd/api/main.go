@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/config"
 	"dfipam/api/internal/platform/db"
+	"dfipam/api/internal/platform/safehttp"
+	"dfipam/api/internal/platform/secrets"
 	"dfipam/api/internal/server"
 
 	"github.com/gin-gonic/gin"
@@ -52,6 +55,17 @@ func run() error {
 	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins}
 	if cfg.SupabaseServiceKey != "" {
 		deps.Inviter = admin
+	}
+	switch keys, err := secrets.FromEnv(); {
+	case err == nil:
+		deps.Keys = keys
+	case errors.Is(err, secrets.ErrNotConfigured):
+		slog.Warn("SECRET_ENCRYPTION_KEY is not set, so integration credentials can't be stored")
+	default:
+		return err
+	}
+	if deps.Outbound, err = safehttp.FromEnv(); err != nil {
+		return err
 	}
 	router, _ := server.New(deps)
 

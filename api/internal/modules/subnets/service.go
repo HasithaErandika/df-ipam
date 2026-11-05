@@ -427,3 +427,15 @@ func (s *Service) Delete(ctx context.Context, actor, id string) error {
 	}
 	return err
 }
+
+// ChangeFields lists what a change request may set on a subnet.
+var ChangeFields = []db.Field{
+	{Name: "technicalOwnerId", Column: "technical_owner_id", Cast: "uuid", Nullable: true},
+	{Name: "businessOwnerId", Column: "business_owner_id", Cast: "uuid", Nullable: true},
+}
+
+// ApplyChange applies an approved change request, moving the version on so anyone
+// editing the subnet at the same time gets a conflict.
+func ApplyChange(ctx context.Context, tx pgx.Tx, id, actor string, changes map[string]string) (map[string]string, map[string]string, error) {
+	return db.ApplyFields(ctx, tx, "subnets", id, actor, ", version = version + 1", ChangeFields, changes)
+}

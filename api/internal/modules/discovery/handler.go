@@ -125,23 +125,23 @@ func (h *Handler) approvePolicy(c *gin.Context) {
 
 // Job is a discovery job with its frozen scope.
 type Job struct {
-	ID            string          `json:"id"`
-	PolicyName    *string         `json:"policyName"`
-	AgentName     *string         `json:"agentName"`
-	Status        string          `json:"status"`
-	Priority      int16           `json:"priority"`
-	Progress      int16           `json:"progress"`
-	Error         *string         `json:"error"`
-	Snapshot      json.RawMessage `json:"config"`
-	InitiatedBy   *string         `json:"initiatedByEmail"`
-	Scheduled     bool            `json:"scheduled"`
-	SubnetName    *string         `json:"subnetName"`
-	Targets       int64           `json:"targets"`
-	TargetsDone   int64           `json:"targetsDone"`
-	Observations  int64           `json:"observations"`
-	CreatedAt     time.Time       `json:"createdAt"`
-	StartedAt     *time.Time      `json:"startedAt"`
-	FinishedAt    *time.Time      `json:"finishedAt"`
+	ID           string          `json:"id"`
+	PolicyName   *string         `json:"policyName"`
+	AgentName    *string         `json:"agentName"`
+	Status       string          `json:"status"`
+	Priority     int16           `json:"priority"`
+	Progress     int16           `json:"progress"`
+	Error        *string         `json:"error"`
+	Snapshot     json.RawMessage `json:"config"`
+	InitiatedBy  *string         `json:"initiatedByEmail"`
+	Scheduled    bool            `json:"scheduled"`
+	SubnetName   *string         `json:"subnetName"`
+	Targets      int64           `json:"targets"`
+	TargetsDone  int64           `json:"targetsDone"`
+	Observations int64           `json:"observations"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	StartedAt    *time.Time      `json:"startedAt"`
+	FinishedAt   *time.Time      `json:"finishedAt"`
 }
 
 const jobCols = `j.id::text, p.name, a.name, j.status, j.priority, j.progress, j.error, j.config_snapshot, u.email, j.schedule_id IS NOT NULL, s.name,

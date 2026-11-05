@@ -5,6 +5,16 @@ package reconciliation
 // routing domain, so the same private IP in two domains is never a conflict.
 type rule struct{ name, sql string }
 
+// classOf gives the classification a rule produces, so an administrator can switch
+// off a classification without touching the rules behind it.
+var classOf = map[string]string{
+	"subnet_overlap": "subnet_overlap", "subnet_ownership": "ownership_missing", "address_ownership": "ownership_missing",
+	"observed_not_allocated": "observed_not_allocated", "allocated_not_observed": "allocated_not_observed", "stale_evidence": "stale_evidence",
+	"unknown_ip": "unknown_ip", "conflict_suspected": "ip_conflict_suspected", "duplicate_mac": "duplicate_mac", "dns_mismatch": "dns_mismatch",
+	"vlan_site_mismatch": "infrastructure_mismatch", "interface_device_mismatch": "infrastructure_mismatch",
+	"cloud_space_missing": "infrastructure_mismatch", "new_device": "new_device",
+}
+
 var rules = []rule{
 	{"subnet_overlap", `
 	SELECT md5('overlap' || a.id || b.id) fingerprint, 'subnet_overlap' classification, 'subnet' object_type, a.id object_id,
@@ -57,6 +67,7 @@ var rules = []rule{
 	  host(o.address) || ' was observed but has no IP record.', 'Review the evidence, then add a record if it is legitimate.'
 	FROM discovery_observations o JOIN observation_sources os ON os.id = o.source_id
 	WHERE o.address IS NOT NULL AND o.routing_domain_id IS NOT NULL AND o.observed_at > now() - interval '7 days'
+	  AND COALESCE(o.payload->>'stale', 'false') <> 'true'
 	  AND NOT EXISTS (SELECT 1 FROM ip_addresses i WHERE i.routing_domain_id = o.routing_domain_id AND i.address = o.address)
 	GROUP BY o.routing_domain_id, o.address`},
 
@@ -67,6 +78,7 @@ var rules = []rule{
 	  'Rule out HA pairs, virtual IPs and load balancers before treating this as a conflict.'
 	FROM discovery_observations o JOIN observation_sources os ON os.id = o.source_id
 	WHERE o.address IS NOT NULL AND o.mac IS NOT NULL AND o.routing_domain_id IS NOT NULL AND o.observed_at > now() - interval '1 day'
+	  AND COALESCE(o.payload->>'stale', 'false') <> 'true'
 	GROUP BY o.routing_domain_id, o.address HAVING count(DISTINCT o.mac) > 1`},
 
 	{"duplicate_mac", `
@@ -93,6 +105,15 @@ var rules = []rule{
 	  host(i.address) || ' links to an interface on a different device.', 'Correct the device or interface on this address.'
 	FROM ip_addresses i JOIN device_interfaces d ON d.id = i.interface_id
 	WHERE i.device_id IS NOT NULL AND d.device_id <> i.device_id`},
+
+	{"cloud_space_missing", `
+	SELECT md5('cloud-space' || n.id || sp.space), 'infrastructure_mismatch', 'cloud_network', n.id, n.routing_domain_id, NULL::inet, ARRAY[initcap(a.provider)],
+	  n.last_seen, n.last_seen, 90, 80,
+	  sp.space || ' on ' || CASE WHEN n.name = '' THEN n.external_id ELSE n.name END || ' has no subnet in inventory.',
+	  'Add the subnets of this network to inventory, or confirm it is out of scope.'
+	FROM cloud_networks n JOIN cloud_accounts a ON a.id = n.cloud_account_id CROSS JOIN LATERAL unnest(n.address_spaces) AS sp(space)
+	WHERE n.routing_domain_id IS NOT NULL AND n.last_seen > now() - interval '7 days' AND NOT EXISTS (
+	  SELECT 1 FROM subnets s WHERE s.routing_domain_id = n.routing_domain_id AND s.archived_at IS NULL AND s.cidr && sp.space)`},
 
 	{"new_device", `
 	SELECT md5('device' || d.id), 'new_device', 'device', d.id, NULL::uuid, d.management_ip, ARRAY[d.source_system], d.first_discovered, d.last_discovered, 70, 70,
