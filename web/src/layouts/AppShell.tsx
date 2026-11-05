@@ -1,6 +1,6 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, ChevronDown, ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
+import { Bell, ChevronDown, GitCompareArrows, ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { get } from '../lib/api'
@@ -119,15 +119,29 @@ function GlobalSearch() {
   )
 }
 
-function FindingsBell() {
+function FindingsLink() {
   const canView = useCan('inventory:view')
   const { data } = useQuery({ queryKey: ['summary'], enabled: canView, queryFn: () => get<Summary>('/dashboard/summary') })
   const open = data?.openFindings ?? 0
+  if (!canView) return null
   return (
     <Link to="/reconciliation" aria-label={`${open} open findings`} title="Open findings"
       className="relative grid size-8 place-items-center rounded-[5px] text-ink-2 hover:bg-bg hover:text-ink">
+      <GitCompareArrows size={16} strokeWidth={1.75} />
+      {open > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-warn px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums">{open > 99 ? '99+' : open}</span>}
+    </Link>
+  )
+}
+
+/** Unread alerts for the signed-in user, refreshed every minute. */
+function AlertsBell() {
+  const { data } = useQuery({ queryKey: ['notifications', 'unread'], refetchInterval: 60_000, queryFn: () => get<{ unread: number }>('/notifications/unread-count') })
+  const unread = data?.unread ?? 0
+  return (
+    <Link to="/alerts" aria-label={`${unread} unread alerts`} title="Alerts"
+      className="relative grid size-8 place-items-center rounded-[5px] text-ink-2 hover:bg-bg hover:text-ink">
       <Bell size={16} strokeWidth={1.75} />
-      {open > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums">{open > 99 ? '99+' : open}</span>}
+      {unread > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums">{unread > 99 ? '99+' : unread}</span>}
     </Link>
   )
 }
@@ -184,7 +198,8 @@ export function AppShell() {
           </nav>
           <GlobalSearch />
           <div className="flex items-center justify-end gap-2">
-            <FindingsBell />
+            <FindingsLink />
+            <AlertsBell />
             <UserMenu />
           </div>
         </header>

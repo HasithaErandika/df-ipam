@@ -41,12 +41,9 @@ export const nav: { group: string; items: NavItem[] }[] = [
   {
     group: 'Governance',
     items: [
-      { to: '/requests', label: 'IP Allocation Requests', icon: ClipboardList, phase: 2, summary: 'Request, approve and track IP allocations.',
-        features: ['Multi-level approval workflows', 'Separation of duties', 'Concurrency-safe allocation'] },
-      { to: '/reservations', label: 'Reservations', icon: BookCheck, phase: 2, summary: 'Hold addresses for planned work.',
-        features: ['Expiry and reminders', 'Reservation history'] },
-      { to: '/alerts', label: 'Alerts and Notifications', icon: Bell, phase: 2, summary: 'What needs attention, without the noise.',
-        features: ['Conflicts, utilisation and discovery failures', 'Per-event rules and recipient groups', 'Alert deduplication'] },
+      { to: '/requests', label: 'IP Allocation Requests', icon: ClipboardList },
+      { to: '/reservations', label: 'Reservations', icon: BookCheck },
+      { to: '/alerts', label: 'Alerts and Notifications', icon: Bell },
       { to: '/reports', label: 'Reports', icon: FileBarChart, phase: 6, summary: 'Registers and evidence in Excel, CSV and PDF.',
         features: ['Allocation, subnet and device registers', 'Utilisation trends and ownership gaps', 'Large exports run in the background'] },
       { to: '/audit', label: 'Audit Logs', icon: ScrollText },

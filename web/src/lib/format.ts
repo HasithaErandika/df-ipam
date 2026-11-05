@@ -66,3 +66,48 @@ export function humanAction(action: string): string {
   const noun = object.replaceAll('_', ' ')
   return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} ${(verb ?? '').replaceAll('_', ' ')}`.trim()
 }
+
+export const requestTypes: Record<string, string> = { allocation: 'Allocation', reservation: 'Reservation', release: 'Release' }
+
+export const requestStatuses: Record<string, string> = {
+  draft: 'Draft', submitted: 'Submitted', pending_approval: 'Pending approval', approved: 'Approved', rejected: 'Rejected',
+  allocated: 'Allocated', reserved: 'Reserved', released: 'Released', cancelled: 'Cancelled', expired: 'Expired',
+}
+
+export type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'
+
+export function requestTone(status: string): Tone {
+  switch (status) {
+    case 'pending_approval': return 'warn'
+    case 'approved': return 'accent'
+    case 'allocated': case 'reserved': case 'released': return 'ok'
+    case 'rejected': return 'danger'
+    default: return 'neutral'
+  }
+}
+
+/** Short date for date-only values such as YYYY-MM-DD, read as calendar dates. */
+export function formatDate(value: string): string {
+  const [y, m, d] = value.slice(0, 10).split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { dateStyle: 'medium', timeZone: 'UTC' })
+}
+
+/** Today as YYYY-MM-DD in UTC, plus a number of days. */
+export function isoDate(addDays = 0): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() + addDays)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Whole days from now until an instant; negative once it has passed. */
+export function daysUntil(iso: string, now = Date.now()): number {
+  return Math.ceil((new Date(iso).getTime() - now) / 86_400_000)
+}
+
+/**
+ * A reservation runs to the end of its chosen day in UTC, stored as midnight
+ * that follows it. Showing the day itself avoids an apparent off-by-one.
+ */
+export function formatEndOfDay(iso: string): string {
+  return `End of ${formatDate(new Date(Date.parse(iso) - 1000).toISOString())}`
+}

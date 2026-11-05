@@ -77,6 +77,10 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
   return res.status === 204 ? (undefined as T) : (await res.json()).data
 }
 
+export async function del(path: string): Promise<void> {
+  await send(path, { method: 'DELETE' })
+}
+
 export async function put(path: string, body: unknown): Promise<void> {
   await send(path, { method: 'PUT', body: JSON.stringify(body) })
 }

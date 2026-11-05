@@ -30,6 +30,7 @@ type Notification struct {
 
 type Preference struct {
 	EventType string `json:"eventType"`
+	Label     string `json:"label,omitempty"` // filled in on reads
 	Channel   string `json:"channel"`
 	IsEnabled bool   `json:"isEnabled"`
 }
@@ -165,7 +166,7 @@ func MergePreferences(stored []Preference) []Preference {
 	for _, e := range EventTypes {
 		for _, ch := range Channels {
 			enabled, ok := set[[2]string{e.Type, ch}]
-			out = append(out, Preference{e.Type, ch, !ok || enabled})
+			out = append(out, Preference{EventType: e.Type, Label: e.Label, Channel: ch, IsEnabled: !ok || enabled})
 		}
 	}
 	return out

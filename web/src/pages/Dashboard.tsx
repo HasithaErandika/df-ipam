@@ -121,6 +121,11 @@ export function Dashboard() {
             <Stat label="Open findings" value={data.openFindings} to="/reconciliation" alert />
             <Stat label="Devices" value={data.devices} />
           </div>
+          <div className="grid grid-cols-1 divide-y divide-line overflow-hidden rounded-md border border-line bg-surface md:grid-cols-3 md:divide-x md:divide-y-0">
+            <Stat label="Pending approvals" value={data.pendingApprovals} to="/requests?tab=all" alert />
+            <Stat label="Approved, waiting to be fulfilled" value={data.readyToFulfil} to="/requests?tab=all" />
+            <Stat label="Reservations ending within 7 days" value={data.reservationsExpiringSoon} to="/reservations" alert />
+          </div>
           <div className="grid gap-4 xl:grid-cols-3">
             <Card title="Most utilised subnets" className="xl:col-span-2"><BusiestSubnets /></Card>
             <div className="space-y-4">

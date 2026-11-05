@@ -14,12 +14,15 @@ func TestUniqueSkipsActorAndDuplicates(t *testing.T) {
 }
 
 func TestMergePreferencesDefaultsOn(t *testing.T) {
-	got := MergePreferences([]Preference{{ApprovalRequested, "email", false}})
+	got := MergePreferences([]Preference{{EventType: ApprovalRequested, Channel: "email", IsEnabled: false}})
 	if len(got) != len(EventTypes)*len(Channels) {
 		t.Fatalf("got %d entries", len(got))
 	}
 	for _, p := range got {
 		want := !(p.EventType == ApprovalRequested && p.Channel == "email")
+		if p.Label == "" {
+			t.Errorf("%s has no label", p.EventType)
+		}
 		if p.IsEnabled != want {
 			t.Errorf("%s/%s: got %v", p.EventType, p.Channel, p.IsEnabled)
 		}
