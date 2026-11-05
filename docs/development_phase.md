@@ -18,8 +18,8 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 0 | Foundation | ✅ Complete |
-| 1 | Core IPAM | 🟨 Backend mostly done, screens remain |
-| 2 | Allocation workflow | ⬜ Schema only |
+| 1 | Core IPAM | ✅ Complete, except live checks on Supabase |
+| 2 | Allocation workflow | ✅ Complete. Email waits for a mail provider |
 | 3 | Imports and devices | ⛔ Device API done, imports need the production files |
 | 4 | Discovery | ⬜ Schema only |
 | 5 | Integrations and reconciliation | 🟨 Findings engine done, integrations not started |
@@ -35,9 +35,9 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Project documentation | ✅ Done | `docs/` |
 | Repository, Makefile, gitignores, `CLAUDE.md` | ✅ Done | |
 | Env files in `api/` and `web/` | ✅ Done | |
-| Go API, worker, agent, migrate and seed programs | ✅ Done | All start and connect. The agent stays idle until Phase 4. The worker runs reconciliation only |
+| Go API, worker, agent, migrate and seed programs | ✅ Done | All start and connect. The agent stays idle until Phase 4. The worker runs reconciliation hourly, and allocation expiry and email every minute |
 | Config, structured logs, correlation IDs | ✅ Done | |
-| Migrations and seed | ✅ Done | 8 migrations live on Supabase |
+| Migrations and seed | ✅ Done | 8 migrations live on Supabase. 9 and 10 (allocation workflow, device classes) are written and tested, not yet applied there |
 | Single-file SQL setup | ✅ Done | `api/sql/supabase-setup.sql` |
 | Supabase sign-in, token verification | ✅ Done | Tested with real ES256 signatures. MFA not set up |
 | Roles and permissions | ✅ Done | Every route is guarded, enforced by a test |
@@ -54,43 +54,46 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Organisations, routing domains | ✅ Done | List and create, used with real data. No edit or delete yet |
-| Sites, zones, VDOMs, VLANs, business units, services, applications, teams | 🟦 API done | Used by the New subnet form where relevant, but no management screens |
-| Network blocks | 🟦 API done | Includes free-space analysis |
-| Subnet create, view, archive, filter, search | ✅ Done | |
-| Subnet edit | 🟦 API done | Version-checked. No edit form yet |
-| Subnet delete | 🟦 API done | Blocked when records depend on it |
-| Bulk subnet operations | ⬜ To do | |
-| Subnet mapping to site, VLAN, block, service | ✅ Done | Contradictions are rejected |
-| Subnet mapping to VDOM, zone, owners, business unit | 🟦 API done | Not in the form yet |
+| Organisations, routing domains | ✅ Done | Create, edit and delete. Delete only when nothing uses them |
+| Sites, zones, VDOMs, VLANs, business units, services, applications, teams | ✅ Done | One management screen for each, under Network Management |
+| Network blocks | ✅ Done | Management screen with free-space view |
+| Subnet create, view, edit, archive, delete, filter, search | ✅ Done | Edit is version-checked. Delete is blocked when records depend on the subnet |
+| Bulk subnet operations | ✅ Done | Bulk create (all or nothing, with a dry run per row) and bulk archive |
+| Subnet mapping to site, VLAN, block, service, VDOM, zone, owners, business unit | ✅ Done | Contradictions are rejected |
 | Overlap prevention | ✅ Done | Enforced by the database |
-| Overlap exceptions | 🟦 API done | Enforced by the database, no screen |
+| Overlap exceptions | ✅ Done | Management screen for approvers; chosen when creating a subnet |
 | IPv4 and IPv6 calculations, `/31`, `/32`, `/127`, `/128` | ✅ Done | |
-| Utilisation breakdown | ✅ Done | Subnet detail view |
-| Free ranges | ✅ Done | Subnet detail view |
-| Provider-reserved ranges | 🟦 API done | Counted in utilisation. Not created automatically yet |
-| Split, summarise, locate tools | 🟦 API done | |
-| Address grid data | 🟦 API done | Range-based, safe for IPv6 |
-| IP records: create, edit, search, history, evidence | 🟦 API done | |
-| IP Address Explorer screen | ⬜ To do | Grid, table and detail view |
-| DNS and DHCP records | 🟨 Partial | DHCP scopes have an API. `dns_records` is read by findings but has no API |
-| Saved filters, column visibility | ⬜ To do | Table exists |
-| Global search | 🟨 Partial | Subnets only |
+| Utilisation breakdown, free ranges | ✅ Done | Subnet detail view |
+| Provider-reserved ranges | ✅ Done | AWS and Azure reservations are recorded when a subnet is created in a VPC or VNet routing domain |
+| Split, summarise, locate tools | ✅ Done | Tools dialog on Subnet Management |
+| IP Address Explorer | ✅ Done | Table and colour-coded grid, filters, record detail with history and evidence, create and edit |
+| Device view per address | ✅ Done | Device, interface, MAC flags, DNS, DHCP and reporting sources, from inventory and approved read-only sources only |
+| Device types and OS family, with icons | ✅ Done | Laptops, desktops, phones, access points, servers, VMs, firewalls and more. Filled by people, imports and, later, discovery |
+| DNS and DHCP records | ✅ Done | Read-only. DNS records list through the API and appear in the device view |
+| Saved filters, column visibility | ✅ Done | Saved filters on Subnets and the Explorer. Column choice on Subnets is kept in the browser |
+| Global search | ✅ Done | Subnets, addresses, hostnames, MACs, devices and VLANs. An address finds its subnet in every routing domain |
+| Live check on Supabase | ⬜ To do | Apply migrations 9 and 10, then run `make test-db` |
 
 ## Phase 2: Allocation workflow
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Direct allocate, reserve, release by an authorised user | 🟦 API done | Release needs a reason. Keeps allocation history |
-| Allocation requests | ⬜ To do | Tables exist |
-| Multi-level approvals, separation of duties | 🟨 Partial | Self-approval is blocked by the database. No workflow yet |
-| Automatic next-free selection | ⬜ To do | Approach tested during design |
-| Concurrent allocation and reservation test | ⬜ To do | Design test covered allocations only |
-| Reservation expiry and reminders | ⬜ To do | |
-| Notifications | ⬜ To do | Needs a mail provider |
-| Alerts page | ⬜ To do | Findings count shows in the header |
+| Allocation, reservation and release requests | ✅ Done | Draft, submit, cancel. Release and conversion requests point at their allocation or reservation |
+| Multi-level approvals, separation of duties | ✅ Done | Workflows choose role-based steps by request type, environment and sensitivity. No self-approval, one step per person, steps in order. Enforced in the service and the database |
+| Approval workflow administration | ✅ Done | Workflows tab on IP Allocation Requests. Submitted requests keep their steps |
+| Fulfilment: allocate, reserve, release | ✅ Done | Only approved requests. Repeating a call returns the same result |
+| Automatic next-free selection | ✅ Done | Range-based, safe for IPv6. Skips held, observed, reserved-range, DHCP, gateway and more-specific-subnet addresses |
+| Concurrent allocation and reservation tests | ✅ Done | Real database, separate connections: 40 allocations 20 at a time, exhaustion, allocation against reservation for one address, racing approvers, repeated fulfilment |
+| Direct allocate, reserve, release by an authorised user | ✅ Done | From the Explorer's edit dialog. Release needs a reason |
+| Reservation expiry, extension and reminders | ✅ Done | Reminder a week before; expiry returns the address to the candidate pool. Extend needs a reason, at most a year ahead |
+| Stale request expiry | ✅ Done | Approved but unfulfilled after 30 days, or a reservation whose end date passed first |
+| Notifications | 🟨 Partial | In-app alerts, rules, per-person preferences and deduplication work. Email is built (SMTP, STARTTLS) but waits for a mail provider |
+| Alerts page | ✅ Done | Inbox, settings, event rules, and what needs attention. Unread count in the header |
+| Requests, Reservations screens | ✅ Done | |
 | Invite users | 🟨 Partial | Built, but no real invitation has been sent |
 | User role assignment | ✅ Done | Screen built. Not yet exercised with a second real user |
+
+**Phase 2 exit check:** concurrency tests and the no-self-approval tests pass on PostgreSQL 16. They still need one run on Supabase with `make test-db`.
 
 ## Phase 3: Imports and devices
 
@@ -156,6 +159,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | DNS and DHCP server types | Network team | Connectors |
 | List of sensitive networks | Network and security | Active discovery |
 | Redis approval | Infrastructure | Job queue |
+| Mail provider (SMTP host or Microsoft Graph) and a sender address | Infrastructure | Email notifications |
 | Cloud data approval | Compliance | Production data |
 | RPO, RTO, retention, inventory size | Business | Backups and sizing |
 

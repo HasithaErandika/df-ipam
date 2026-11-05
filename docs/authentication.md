@@ -95,7 +95,7 @@ Stored in `roles`, `permissions`, `role_permissions` and `user_roles`. Checked b
 | View audit history | ✓ | ✓ | | | ✓ | |
 | Export reports | ✓ | ✓ | ✓ | ✓ | ✓ | Scoped |
 
-The role purposes come from the brief. The ticks are a proposed default, and administrators can change them. The code checks permissions, never role names. Separation of duties is enforced regardless: nobody approves their own request.
+The role purposes come from the brief. The ticks are a proposed default, and administrators can change them. The code checks permissions, never role names. Separation of duties is enforced regardless: nobody approves their own request, and a person decides at most one step of a request. Approval workflows and notification rules are administration, so they need `users:manage`. Anyone signed in reads their own notifications and preferences.
 
 `user_roles` has optional scope columns (organisation, business unit, site, business service). Business Viewers see only explicitly permitted business services, and infrastructure details stay hidden unless a permission allows them.
 

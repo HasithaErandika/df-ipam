@@ -92,11 +92,32 @@ Target: thousands of subnets and hundreds of thousands of IP records.
 
 ## Notifications
 
-**Events:** new unknown device, suspected IP conflict, utilisation threshold exceeded, agent offline, scheduled discovery failure, integration authentication failure, approval requested, request approved or rejected, reservation nearing expiry, significant inventory change.
+```mermaid
+flowchart LR
+  S[Service change] -->|same transaction| N[(notifications)]
+  N -->|in_app rows| UI[Alerts page and header count]
+  N -->|email rows, every minute| W[cmd/worker]
+  W -->|SMTP with STARTTLS| M[Mail provider]
+```
 
-Each event has its own on/off switch, severity and recipient groups, and alerts are deduplicated so people aren't flooded.
+| Built now | Event types |
+| --- | --- |
+| Allocation workflow | Approval requested, request approved, approved request ready to fulfil, request rejected, request fulfilled, request expired, reservation nearing expiry, reservation expired, reservation released by someone else |
+| Later phases | New unknown device, suspected conflict, utilisation threshold, agent offline, discovery failure, integration authentication failure, significant inventory change |
 
-The worker consumes events, applies `notification_rules`, deduplicates on a key per event and object, then sends through a `Mailer` interface. The first implementation is SMTP or Microsoft Graph, depending on what the company approves. Delivery status and retries are stored in `notifications`.
+- Notifications are written in the same transaction as the change, so a rolled-back change never notifies anyone.
+- Each event has a rule (on or off, severity) and each person chooses in-app and email per event. Everyone starts with everything on.
+- A dedupe key per event and object stops repeats reaching the same person twice. People aren't told about their own actions.
+- Email rows are an outbox in PostgreSQL, used instead of Redis until Redis is approved. The worker sends a batch every minute with `SKIP LOCKED`, retries with backoff (1, 4, 16, 64 minutes, then at most 4 hours) up to five times, and drops email still unsent after seven days. Without `SMTP_HOST`, email stays off and in-app alerts still work.
+
+## Background jobs in the worker
+
+| Every | Job |
+| --- | --- |
+| Hour | Reconciliation run |
+| Minute | Expire due reservations, remind holders a week before, expire stale requests, deliver email |
+
+All jobs lock their rows with `SKIP LOCKED`, so several workers can run at once, and audit as the `system` actor.
 
 ## Reports
 

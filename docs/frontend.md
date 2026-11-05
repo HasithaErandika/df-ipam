@@ -34,6 +34,8 @@ Professional financial-enterprise interface. Light theme only. Built for desktop
 
 Allocation and observation are always shown as two separate badges. "Available candidate" is never shortened to "Free".
 
+**Device types and operating systems** have icons (firewall, router, switch, access point, server, virtual machine, laptop, desktop, phone, tablet, printer, camera and more; Windows, Linux, macOS, iOS, Android, network OS). An OS is shown only when a record or reliable source states it, never guessed.
+
 ## Dialogs
 
 Every dialog is centred over a blurred background, using `Modal` and `ConfirmDialog` in `web/src/components/ui.tsx`. Don't add side drawers.

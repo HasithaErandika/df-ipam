@@ -87,7 +87,10 @@ In development, settings live in `api/.env` and `web/.env`. On the server, envir
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Sign-in checks and invitations |
 | `CORS_ALLOWED_ORIGINS` | Web origins allowed to call the API |
 | `SECRET_ENCRYPTION_KEY` | Master key for integration credentials (Phase 5) |
-| `APP_BASE_URL` | Public URL, used in emails and CORS |
+| `APP_BASE_URL` | Public URL of the web app, used for links in emails |
+| `SMTP_HOST`, `SMTP_PORT` | Mail server for the worker. Empty host means email is off. Port 465 uses TLS; other ports must offer STARTTLS |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | Mail server sign-in, if it needs one. Secret |
+| `MAIL_FROM` | Sender address for notifications |
 
 ## Database roles
 

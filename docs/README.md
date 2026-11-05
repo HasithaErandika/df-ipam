@@ -2,7 +2,7 @@
 
 **DF-IPAM** is the Dialog Finance IP Address Management platform: the central system for managing, discovering, auditing and governing IPv4 and IPv6 address infrastructure.
 
-**Status:** foundation complete. See [development_phase.md](development_phase.md) for what is done and what remains.
+**Status:** Phases 0 to 2 complete: foundation, core IPAM and the allocation workflow. See [development_phase.md](development_phase.md) for what is done and what remains.
 
 | Document | Covers |
 | --- | --- |

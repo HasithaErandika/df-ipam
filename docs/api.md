@@ -57,28 +57,28 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 | Area | Endpoints |
 | --- | --- |
 | Auth | `GET /auth/me` (sign-in itself happens in Supabase) |
-| Users and roles | `/users`, `/users/:id/roles`, `/roles`, `/permissions` |
-| Subnets | CRUD on `/subnets`, plus `POST /subnets/:id/archive`, `POST /subnets/bulk`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
+| Users and roles | `/users`, `/users/:id/roles`, `/roles`, `/permissions`, `GET /people` (email and name only, for owner pickers) |
+| Subnets | CRUD on `/subnets`, plus `POST /subnets/:id/archive`, `POST /subnets/bulk` (all or nothing, `dryRun`), `POST /subnets/bulk-archive`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
 | Tools | `POST /tools/split`, `POST /tools/summarise`, `GET /tools/locate?address=`, `GET /network-blocks/:id/free-space` |
-| IP addresses | `GET /ip-addresses`, `POST /ip-addresses`, `GET /ip-addresses/:id`, `PATCH /ip-addresses/:id`, `GET /ip-addresses/:id/history`, `GET /ip-addresses/:id/evidence`, `POST /ip-addresses/bulk` |
+| IP addresses | `GET /ip-addresses`, `POST /ip-addresses`, `GET /ip-addresses/:id`, `PATCH /ip-addresses/:id`, `GET /ip-addresses/:id/history`, `GET /ip-addresses/:id/evidence`, `GET /ip-addresses/:id/device` (inventory and read-only sources only), `POST /ip-addresses/bulk` |
 | DNS and DHCP (read-only inventory) | `GET /dns-records`, `GET /dhcp-scopes`, `GET /dhcp-scopes/:id/reservations` |
 | Imports enrichment | `GET /imports/enrichment-queue`, `PATCH /imports/records/:id` |
-| Requests | CRUD on `/requests`, plus `POST /requests/:id/submit`, `POST /requests/:id/cancel` |
-| Approvals | `GET /approvals`, `POST /approvals/:id/approve`, `POST /approvals/:id/reject` |
-| Allocations | `GET /allocations`, `POST /allocations`, `POST /allocations/:id/release` |
-| Reservations | CRUD on `/reservations`, plus `POST /reservations/:id/extend` |
+| Requests | CRUD on `/requests` (edit and delete drafts only, by the requester), plus `POST /requests/:id/submit`, `POST /requests/:id/cancel`. Without a wider permission, people see only their own |
+| Approvals | `GET /approvals` (steps the caller may decide now), `POST /approvals/:id/approve`, `POST /approvals/:id/reject`; `GET`, `POST`, `PUT /:id`, `DELETE /:id` on `/approval-workflows` |
+| Allocations | `GET /allocations`, `GET /allocations/:id`, `POST /allocations` and `POST /allocations/:id/release` (fulfil an approved request; repeats return the same result) |
+| Reservations | `GET /reservations`, `GET /reservations/:id`, `POST /reservations` (fulfil an approved request), `POST /reservations/:id/extend`, `POST /reservations/:id/release`. History is kept, so there is no delete |
 | Discovery | `/discovery/policies`, `/discovery/schedules`, `/discovery/exclusions`, `/discovery/jobs`, `POST /discovery/jobs/:id/{pause,resume,cancel}`, `POST /discovery/emergency-stop` |
 | Agents (admin) | `/agents`, `POST /agents/:id/{revoke,rotate}` |
 | Agents (agent credential) | `POST /agent-api/register`, `POST /agent-api/heartbeat`, `GET /agent-api/jobs`, `POST /agent-api/jobs/:id/results` |
 | Reconciliation | `GET /reconciliation/results`, `GET /reconciliation/summary`, `POST /reconciliation/run`, `POST /reconciliation/results/:id/review`, `/reconciliation/rules` |
 | Integrations | CRUD on `/integrations`, plus `POST /integrations/:id/{test,sync}`, `GET /integrations/:id/sync-jobs` |
 | Imports | `POST /imports`, `GET /imports/:id/preview`, `POST /imports/:id/{approve,reverse}`, `GET /imports` |
-| Notifications | `GET /notifications`, `POST /notifications/:id/read`, `/notifications/rules`, `/notifications/preferences` |
+| Notifications | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`, `GET`/`PUT /notifications/preferences` (own), `GET /notifications/rules`, `PUT /notifications/rules/:eventType` |
 | Reports | `GET /reports/types`, `POST /reports`, `GET /reports/:id`, `GET /reports/:id/download` |
 | Audit | `GET /audit-logs`, `GET /audit-logs/:id` |
-| Dashboard and search | `GET /dashboard/summary`, `GET /dashboard/trends`, `GET /search?q=` |
+| Dashboard and search | `GET /dashboard/summary`, `GET /dashboard/trends`, `GET /search?q=`, `GET`/`POST /saved-filters`, `DELETE /saved-filters/:id` (own) |
 | Administration | `/administration/settings`, `GET /administration/health` |
 
 ## Key error codes
 
-`VALIDATION_FAILED`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `STALE_VERSION`, `SUBNET_OVERLAP`, `ADDRESS_NOT_IN_SUBNET`, `ADDRESS_UNAVAILABLE`, `SUBNET_EXHAUSTED`, `SELF_APPROVAL_DENIED`, `TARGET_NOT_ALLOWED`, `DISCOVERY_STOPPED`, `RATE_LIMITED`, `INTERNAL_ERROR`.
+`VALIDATION_FAILED`, `UNAUTHENTICATED`, `REQUEST_NOT_APPROVED`, `SEPARATION_OF_DUTIES`, `NOT_ELIGIBLE_APPROVER`, `APPROVAL_NOT_CURRENT`, `RELEASE_ALREADY_REQUESTED`, `RESERVATION_NOT_ACTIVE`, `FORBIDDEN`, `NOT_FOUND`, `STALE_VERSION`, `SUBNET_OVERLAP`, `ADDRESS_NOT_IN_SUBNET`, `ADDRESS_UNAVAILABLE`, `SUBNET_EXHAUSTED`, `SELF_APPROVAL_DENIED`, `TARGET_NOT_ALLOWED`, `DISCOVERY_STOPPED`, `RATE_LIMITED`, `INTERNAL_ERROR`.
