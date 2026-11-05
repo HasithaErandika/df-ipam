@@ -1,0 +1,11 @@
+# Build output
+bin/
+*.exe
+*.test
+
+# Test output
+*.out
+coverage.*
+
+# Local tools
+tmp/

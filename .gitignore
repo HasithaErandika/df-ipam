@@ -1,0 +1,21 @@
+# Secrets: every env file except the examples
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Local Claude Code settings
+.claude/settings.local.json
+CLAUDE.local.md

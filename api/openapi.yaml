@@ -1,0 +1,268 @@
+openapi: 3.1.0
+info:
+  title: DF-IPAM API
+  version: 0.1.0
+  description: Every implemented route. A test fails if a route is missing. See docs/api.md for the full plan.
+servers:
+  - url: /api/v1
+security:
+  - bearer: []
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    page: { name: page, in: query, schema: { type: integer, minimum: 1 } }
+    pageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message, correlationId]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            correlationId: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties: { field: { type: string }, issue: { type: string } }
+    SubnetCreate:
+      type: object
+      required: [routingDomainId, cidr, name, environment]
+      properties:
+        routingDomainId: { type: string, format: uuid }
+        cidr: { type: string, example: 10.0.0.0/24 }
+        name: { type: string }
+        gateway: { type: [string, 'null'] }
+        environment: { type: string, enum: [production, disaster_recovery, uat, development, testing] }
+        securityZone: { type: string }
+        description: { type: string }
+        discoveryEnabled: { type: boolean }
+        warnThreshold: { type: integer }
+        criticalThreshold: { type: integer }
+  responses:
+    Error:
+      description: Failure in the shared error format
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+paths:
+  /auth/me:
+    get: { summary: Current user, roles and permissions, responses: { '200': { description: OK } } }
+  /users:
+    get: { summary: List users, responses: { '200': { description: OK } } }
+  /roles:
+    get: { summary: List roles, responses: { '200': { description: OK } } }
+  /users/{id}/roles:
+    put:
+      summary: Replace a user's roles
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '204': { description: Updated }, '403': { $ref: '#/components/responses/Error' } }
+  /organisations:
+    get: { summary: List organisations, responses: { '200': { description: OK } } }
+    post: { summary: Create an organisation and its Default routing domain, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
+  /routing-domains:
+    get: { summary: List routing domains, responses: { '200': { description: OK } } }
+    post: { summary: Create a routing domain, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
+  /subnets:
+    get:
+      summary: List subnets
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: routingDomainId, in: query, schema: { type: string, format: uuid } }
+        - { name: environment, in: query, schema: { type: string } }
+        - { name: family, in: query, schema: { type: integer, enum: [4, 6] } }
+        - { name: includeArchived, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string, example: -updatedAt } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Create a subnet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubnetCreate' }
+      responses:
+        '201': { description: Created }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /subnets/calculate:
+    post: { summary: Calculate details for a CIDR, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+  /subnets/check-overlap:
+    post: { summary: List subnets a CIDR would overlap, responses: { '200': { description: OK } } }
+  /subnets/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a subnet, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch:
+      summary: Update a subnet. Send the record version in If-Match
+      parameters: [{ name: If-Match, in: header, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '412': { $ref: '#/components/responses/Error' } }
+    delete: { summary: Delete an unused subnet, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /subnets/{id}/archive:
+    post:
+      summary: Archive a subnet
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '204': { description: Archived } }
+  /subnets/{id}/utilisation:
+    get: { summary: Capacity breakdown, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /subnets/{id}/free-ranges:
+    get: { summary: Free ranges and their CIDRs, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /subnets/{id}/addresses:
+    get:
+      summary: One page of the address grid. Offset is a string-safe integer, limit is 1 to 1024
+      parameters:
+        - { $ref: '#/components/parameters/id' }
+        - { name: offset, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 1024 } }
+      responses: { '200': { description: OK } }
+  /network-blocks/{id}/free-space:
+    get: { summary: Space left in a block, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /tools/split:
+    post: { summary: Split a CIDR into smaller subnets, responses: { '200': { description: OK } } }
+  /tools/summarise:
+    post: { summary: Reduce CIDRs to the fewest covering prefixes, responses: { '200': { description: OK } } }
+  /tools/locate:
+    get: { summary: Find the subnet holding an address in each routing domain, responses: { '200': { description: OK } } }
+  /ip-addresses:
+    get: { summary: Search IP records, responses: { '200': { description: OK } } }
+    post: { summary: Create a record in the most specific subnet, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /ip-addresses/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a record, responses: { '200': { description: OK } } }
+    patch: { summary: Update a record. Releasing needs a reason, responses: { '200': { description: OK } } }
+  /ip-addresses/{id}/history:
+    get: { summary: Change history, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /ip-addresses/{id}/evidence:
+    get: { summary: Raw evidence, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /reconciliation/results:
+    get: { summary: List findings, responses: { '200': { description: OK } } }
+  /reconciliation/summary:
+    get: { summary: Open findings by classification, responses: { '200': { description: OK } } }
+  /reconciliation/run:
+    post: { summary: Run every rule. Never changes inventory, responses: { '200': { description: OK } } }
+  /reconciliation/results/{id}/review:
+    post: { summary: Record a review decision, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Saved } } }
+  /business-units:
+    get: { summary: List business unit records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a business unit, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /business-units/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a business unit, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a business unit, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a business unit, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /sites:
+    get: { summary: List site records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a site, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /sites/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a site, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a site, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a site, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /network-zones:
+    get: { summary: List network zone records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a network zone, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /network-zones/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a network zone, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a network zone, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a network zone, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /vdoms:
+    get: { summary: List vdom records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a vdom, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /vdoms/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a vdom, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a vdom, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a vdom, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /vlans:
+    get: { summary: List vlan records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a vlan, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /vlans/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a vlan, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a vlan, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a vlan, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /network-blocks:
+    get: { summary: List network block records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a network block, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /network-blocks/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a network block, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a network block, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a network block, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /business-services:
+    get: { summary: List business service records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a business service, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /business-services/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a business service, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a business service, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a business service, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /applications:
+    get: { summary: List application records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a application, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /applications/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a application, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a application, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a application, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /teams:
+    get: { summary: List team records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a team, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /teams/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a team, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a team, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a team, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /devices:
+    get: { summary: List device records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a device, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /devices/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a device, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a device, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a device, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /interfaces:
+    get: { summary: List device interface records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a device interface, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /interfaces/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a device interface, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a device interface, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a device interface, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /reserved-ranges:
+    get: { summary: List reserved range records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a reserved range, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /reserved-ranges/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a reserved range, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a reserved range, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a reserved range, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /dhcp-scopes:
+    get: { summary: List dhcp scope records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a dhcp scope, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /dhcp-scopes/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a dhcp scope, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a dhcp scope, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a dhcp scope, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /overlap-exceptions:
+    get: { summary: List overlap exception records. Supports page, pageSize and q, responses: { '200': { description: OK } } }
+    post: { summary: Create a overlap exception, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /overlap-exceptions/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a overlap exception, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a overlap exception, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a overlap exception, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /users/invite:
+    post: { summary: Send a sign-up invitation, responses: { '204': { description: Sent }, '409': { $ref: '#/components/responses/Error' } } }
+  /dashboard/summary:
+    get: { summary: Inventory counts, responses: { '200': { description: OK } } }
+  /audit-logs:
+    get: { summary: Read the audit trail, responses: { '200': { description: OK } } }

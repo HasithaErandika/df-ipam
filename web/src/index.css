@@ -1,0 +1,118 @@
+@import 'tailwindcss';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+:root {
+  color-scheme: light;
+  --bg: #f2f4f8;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --line: #e2e6ec;
+  --line-strong: #cdd3dc;
+  --ink: #131a26;
+  --ink-2: #4d586a;
+  --ink-3: #6f7a8c;
+  --accent: #2257c9;
+  --accent-hover: #1b47a6;
+  --accent-soft: #e8effc;
+  --danger: #c02f2f;
+  --danger-soft: #fcebea;
+  --warn: #a15c00;
+  --warn-soft: #fdf1dc;
+  --ok: #17794f;
+  --ok-soft: #e2f4ec;
+  --track: #e6ebf3;
+  --meter-warning: #d68a00;
+  --state-allocated: #2a78d6;
+  --state-reserved: #eb6834;
+  --state-available: #1baf7a;
+  --state-quarantined: #eda100;
+  --state-retired: #e87ba4;
+  --side: #ffffff;
+  --side-hover: #eff3fa;
+  --side-border: #e2e6ec;
+  --side-ink: #131a26;
+  --side-ink-2: #3f4a5c;
+  --side-ink-3: #6f7a8c;
+  --side-active: #e8effc;
+  --side-active-ink: #1b47a6;
+  --logo-soft: #b9c6dc;
+  --map-bg: #f0f4fa;
+  --map-1: #e1e8f3;
+  --map-2: #e9eef6;
+  --map-a: #8fb1f0;
+  --map-b: #f4c49c;
+  --map-c: #93dcc1;
+  --map-ink: #131a26;
+  --map-accent: #2257c9;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-track: var(--track);
+  --color-side: var(--side);
+  --color-side-hover: var(--side-hover);
+  --color-side-border: var(--side-border);
+  --color-side-ink: var(--side-ink);
+  --color-side-ink-2: var(--side-ink-2);
+  --color-side-ink-3: var(--side-ink-3);
+  --color-side-active: var(--side-active);
+  --color-side-active-ink: var(--side-active-ink);
+  --color-map: var(--map-bg);
+  --color-map-ink: var(--map-ink);
+  --color-map-accent: var(--map-accent);
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes modal-in {
+  from { transform: translateY(6px) scale(.985); opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+.modal { animation: modal-in 160ms ease-out; }
+.overlay { animation: fade-in 160ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .modal, .overlay { animation: none; }
+}
