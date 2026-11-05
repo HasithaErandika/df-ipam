@@ -31,8 +31,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
       { to: '/discovery', label: 'Discovery Centre', icon: Radar },
       { to: '/imports', label: 'Imports', icon: FileUp },
       { to: '/reconciliation', label: 'Reconciliation Centre', icon: GitCompareArrows },
-      { to: '/integrations', label: 'Integrations', icon: Plug, phase: 5, summary: 'Read-only connections to infrastructure platforms.',
-        features: ['FortiGate, VMware, AWS, Azure, DNS and DHCP', 'Connection health and sync history'] },
+      { to: '/integrations', label: 'Integrations', icon: Plug },
     ],
   },
   {
@@ -41,8 +40,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
       { to: '/requests', label: 'IP Allocation Requests', icon: ClipboardList },
       { to: '/reservations', label: 'Reservations', icon: BookCheck },
       { to: '/alerts', label: 'Alerts and Notifications', icon: Bell },
-      { to: '/reports', label: 'Reports', icon: FileBarChart, phase: 6, summary: 'Registers and evidence in Excel, CSV and PDF.',
-        features: ['Allocation, subnet and device registers', 'Utilisation trends and ownership gaps', 'Large exports run in the background'] },
+      { to: '/reports', label: 'Reports', icon: FileBarChart },
       { to: '/audit', label: 'Audit Logs', icon: ScrollText },
     ],
   },
@@ -50,10 +48,8 @@ export const nav: { group: string; items: NavItem[] }[] = [
     group: 'Administration',
     items: [
       { to: '/users', label: 'User Management', icon: Users },
-      { to: '/roles', label: 'Roles and Permissions', icon: ShieldCheck, phase: 7, summary: 'Review and adjust the permission matrix.',
-        features: ['Six default roles', 'Granular permissions and scopes'] },
-      { to: '/system', label: 'System Administration', icon: Settings, phase: 7, summary: 'Platform settings and health.',
-        features: ['Security policies and retention', 'Imports and enrichment queue', 'Notifications and backup settings'] },
+      { to: '/roles', label: 'Roles and Permissions', icon: ShieldCheck },
+      { to: '/system', label: 'System Administration', icon: Settings },
     ],
   },
 ]

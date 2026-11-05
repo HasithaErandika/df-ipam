@@ -12,15 +12,19 @@ import { Dashboard } from './pages/Dashboard'
 import { Devices, Interfaces } from './pages/Devices'
 import { Discovery } from './pages/Discovery'
 import { Imports } from './pages/Imports'
+import { Integrations } from './pages/Integrations'
 import { Explorer } from './pages/Explorer'
 import { Network } from './pages/Network'
 import { Planned } from './pages/Planned'
 import { Reconciliation } from './pages/Reconciliation'
+import { Reports } from './pages/Reports'
 import { Requests } from './pages/Requests'
+import { Roles } from './pages/Roles'
 import { SearchResults } from './pages/SearchResults'
 import { Reservations } from './pages/Reservations'
 import { SignIn } from './pages/SignIn'
 import { Subnets } from './pages/Subnets'
+import { System } from './pages/System'
 import { Users } from './pages/Users'
 
 const router = createBrowserRouter([
@@ -43,6 +47,10 @@ const router = createBrowserRouter([
       { path: 'interfaces', element: <Interfaces /> },
       { path: 'discovery', element: <Discovery /> },
       { path: 'imports', element: <Imports /> },
+      { path: 'integrations', element: <Integrations /> },
+      { path: 'reports', element: <Reports /> },
+      { path: 'roles', element: <Roles /> },
+      { path: 'system', element: <System /> },
       ...allItems.filter((i) => i.phase).map((item) => ({ path: item.to.slice(1), element: <Planned item={item} /> })),
       { path: '*', element: <Navigate to="/" replace /> },
     ],

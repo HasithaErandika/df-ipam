@@ -90,6 +90,18 @@ export async function put(path: string, body: unknown): Promise<void> {
   await send(path, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+/** Fetches a file with the sign-in token and saves it, since a plain link can't send one. */
+export async function download(path: string, fallbackName: string): Promise<void> {
+  const res = await send(path)
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName
+  const url = URL.createObjectURL(await res.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 /** PATCH for records without a version, such as reference data. */
 export async function patchPlain<T>(path: string, body: unknown): Promise<T> {
   const res = await send(path, { method: 'PATCH', body: JSON.stringify(body) })
