@@ -155,6 +155,10 @@ func (h *Handler) list(c *gin.Context) {
 		args = append(args, v)
 		where = append(where, fmt.Sprintf("r.classification = $%d", len(args)))
 	}
+	if v := strings.TrimSpace(c.Query("q")); v != "" {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf("(host(r.address) ILIKE '%%' || $%d || '%%' OR r.explanation ILIKE '%%' || $%d || '%%')", len(args), len(args)))
+	}
 	clause := ""
 	if len(where) > 0 {
 		clause = " WHERE " + strings.Join(where, " AND ")

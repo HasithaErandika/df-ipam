@@ -72,8 +72,9 @@ func (h *Handler) me(c *gin.Context) {
 func (h *Handler) list(c *gin.Context) {
 	p := httpx.ParsePage(c)
 	ctx := c.Request.Context()
+	q := strings.TrimSpace(c.Query("q"))
 	var total int64
-	if err := h.pool.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&total); err != nil {
+	if err := h.pool.QueryRow(ctx, `SELECT count(*) FROM users u WHERE $1 = '' OR u.email ILIKE '%' || $1 || '%' OR u.display_name ILIKE '%' || $1 || '%'`, q).Scan(&total); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
@@ -81,7 +82,8 @@ func (h *Handler) list(c *gin.Context) {
 		SELECT u.id::text, u.email, u.display_name, u.is_active, u.last_login_at,
 		       COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}')
 		FROM users u LEFT JOIN user_roles ur ON ur.user_id = u.id LEFT JOIN roles r ON r.id = ur.role_id
-		GROUP BY u.id ORDER BY u.email, u.id LIMIT $1 OFFSET $2`, p.Size, p.Offset())
+		WHERE $3 = '' OR u.email ILIKE '%' || $3 || '%' OR u.display_name ILIKE '%' || $3 || '%'
+		GROUP BY u.id ORDER BY u.email, u.id LIMIT $1 OFFSET $2`, p.Size, p.Offset(), q)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

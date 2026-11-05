@@ -2,6 +2,7 @@ package integrations
 
 import (
 	"net/http"
+	"strings"
 
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/httpx"
@@ -34,7 +35,7 @@ func (h *Handler) kinds(c *gin.Context) { httpx.OK(c, http.StatusOK, Kinds) }
 
 func (h *Handler) list(c *gin.Context) {
 	p := httpx.ParsePage(c)
-	out, total, err := h.svc.List(c.Request.Context(), p)
+	out, total, err := h.svc.List(c.Request.Context(), p, strings.TrimSpace(c.Query("q")))
 	if err != nil {
 		httpx.Fail(c, err)
 		return

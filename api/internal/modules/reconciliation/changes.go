@@ -3,6 +3,7 @@ package reconciliation
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -72,6 +73,11 @@ func (h *Handler) validateChanges(objectType string, changes map[string]string) 
 		}
 		if strings.HasSuffix(field, "Id") && value != "" && !httpx.IsUUID(value) {
 			return httpx.Validation(field, "Choose a valid record.")
+		}
+		if field == "mac" && value != "" {
+			if _, err := net.ParseMAC(value); err != nil {
+				return httpx.Validation(field, "Enter a valid MAC address.")
+			}
 		}
 		if len(value) > 2000 {
 			return httpx.Validation(field, "Use at most 2000 characters.")

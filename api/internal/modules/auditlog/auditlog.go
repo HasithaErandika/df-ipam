@@ -38,6 +38,34 @@ func NewHandler(pool db.Conn) *Handler { return &Handler{pool} }
 
 func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/audit-logs", h.list, auth.AuditView)
+	g.Handle(http.MethodGet, "/audit-logs/filters", h.filterValues, auth.AuditView)
+}
+
+// filterValues lists the actions and object types that exist, for the filter pickers.
+func (h *Handler) filterValues(c *gin.Context) {
+	ctx := c.Request.Context()
+	values := func(sql string) ([]string, error) {
+		rows, err := h.pool.Query(ctx, sql)
+		if err != nil {
+			return nil, err
+		}
+		out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if out == nil {
+			out = []string{}
+		}
+		return out, err
+	}
+	actions, err := values(`SELECT DISTINCT action FROM audit_logs ORDER BY action LIMIT 500`)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	objects, err := values(`SELECT DISTINCT object_type FROM audit_logs ORDER BY object_type LIMIT 500`)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, http.StatusOK, gin.H{"actions": actions, "objectTypes": objects})
 }
 
 // filters builds the WHERE clause from fixed fragments. Values are always parameters.

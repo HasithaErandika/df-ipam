@@ -483,6 +483,8 @@ paths:
     get: { summary: 'Agent: claim the next job allowed to run now', responses: { '200': { description: A job }, '204': { description: Nothing to do } } }
   /agent-api/jobs/{id}/results:
     post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /audit-logs/filters:
+    get: { summary: Actions and object types that exist, for filter pickers, responses: { '200': { description: OK } } }
   /roles/{id}/permissions:
     put: { summary: Replace a role's permissions. Refused for a role you hold or if nobody could manage users afterwards, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Updated }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
   /roles/{id}:

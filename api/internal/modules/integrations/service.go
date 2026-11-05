@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -120,6 +121,9 @@ func (s *Service) validate(in *Input, k Kind, creating bool) error {
 			return httpx.Validation(key, "This setting isn't used by this connector.")
 		}
 	}
+	if err := checkSettings(in.Kind, in.Config); err != nil {
+		return err
+	}
 	for context, id := range in.RoutingDomains {
 		if context == "" || (id != "" && !httpx.IsUUID(id)) {
 			return httpx.Validation("routingDomains", "Choose a valid routing domain.")
@@ -145,6 +149,38 @@ func (s *Service) validate(in *Input, k Kind, creating bool) error {
 	for key := range in.Credentials {
 		if !allowed[key] {
 			return httpx.Validation(key, "This credential isn't used by this connector.")
+		}
+	}
+	return nil
+}
+
+var (
+	roleARN   = regexp.MustCompile(`^arn:aws[\w-]*:iam::\d{12}:role/[\w+=,.@/-]+$`)
+	awsRegion = regexp.MustCompile(`^[a-z]{2}(-[a-z]+)+-\d$`)
+)
+
+// checkSettings refuses values a connector could never use, so the mistake shows
+// when saving instead of at the first sync.
+func checkSettings(kind string, config map[string]string) error {
+	switch kind {
+	case KindAWS:
+		if !roleARN.MatchString(strings.TrimSpace(config["roleArn"])) {
+			return httpx.Validation("roleArn", "Use a role ARN such as arn:aws:iam::123456789012:role/df-ipam-read.")
+		}
+		regions := splitRegions(config["regions"])
+		if len(regions) == 0 {
+			return httpx.Validation("regions", "List at least one region.")
+		}
+		for _, r := range regions {
+			if !awsRegion.MatchString(r) {
+				return httpx.Validation("regions", "List regions such as ap-south-1, separated by commas.")
+			}
+		}
+	case KindAzure:
+		for _, key := range []string{"tenantId", "clientId", "subscriptionId"} {
+			if !httpx.IsUUID(strings.TrimSpace(config[key])) {
+				return httpx.Validation(key, "Use the ID in its GUID form.")
+			}
 		}
 	}
 	return nil
@@ -176,13 +212,14 @@ func scanConnection(row pgx.Row) (Connection, error) {
 	return c, nil
 }
 
-// List returns one page of connections.
-func (s *Service) List(ctx context.Context, p httpx.Page) ([]Connection, int64, error) {
+// List returns one page of connections, optionally matching a name or URL.
+func (s *Service) List(ctx context.Context, p httpx.Page, q string) ([]Connection, int64, error) {
+	const match = ` WHERE $1 = '' OR c.name ILIKE '%' || $1 || '%' OR c.base_url ILIKE '%' || $1 || '%'`
 	var total int64
-	if err := s.conn.QueryRow(ctx, `SELECT count(*) FROM integration_connections`).Scan(&total); err != nil {
+	if err := s.conn.QueryRow(ctx, `SELECT count(*) FROM integration_connections c`+match, q).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.conn.Query(ctx, `SELECT `+columns+` FROM integration_connections c ORDER BY c.name, c.id LIMIT $1 OFFSET $2`, p.Size, p.Offset())
+	rows, err := s.conn.Query(ctx, `SELECT `+columns+` FROM integration_connections c`+match+` ORDER BY c.name, c.id LIMIT $2 OFFSET $3`, q, p.Size, p.Offset())
 	if err != nil {
 		return nil, 0, err
 	}

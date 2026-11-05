@@ -448,3 +448,30 @@ func TestContexts(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestCheckSettings(t *testing.T) {
+	guid := "11111111-2222-3333-4444-555555555555"
+	good := map[string]string{"roleArn": "arn:aws:iam::123456789012:role/df-ipam-read", "externalId": "x", "regions": "ap-south-1, ap-southeast-1"}
+	if err := checkSettings(KindAWS, good); err != nil {
+		t.Fatal(err)
+	}
+	for key, bad := range map[string]string{"roleArn": "arn:aws:iam::12:role/x", "regions": "ap south 1"} {
+		c := map[string]string{"roleArn": good["roleArn"], "regions": good["regions"]}
+		c[key] = bad
+		if checkSettings(KindAWS, c) == nil {
+			t.Errorf("%s accepted %q", key, bad)
+		}
+	}
+	if checkSettings(KindAWS, map[string]string{"roleArn": good["roleArn"], "regions": " , "}) == nil {
+		t.Error("no regions accepted")
+	}
+	if err := checkSettings(KindAzure, map[string]string{"tenantId": guid, "clientId": guid, "subscriptionId": guid}); err != nil {
+		t.Fatal(err)
+	}
+	if checkSettings(KindAzure, map[string]string{"tenantId": "contoso", "clientId": guid, "subscriptionId": guid}) == nil {
+		t.Error("a tenant name was accepted as an ID")
+	}
+	if err := checkSettings(KindFortiGate, nil); err != nil {
+		t.Fatal(err)
+	}
+}
