@@ -9,10 +9,12 @@ import { MeProvider, useMeQuery, useSignedIn } from './lib/session'
 import { Alerts } from './pages/Alerts'
 import { Audit } from './pages/Audit'
 import { Dashboard } from './pages/Dashboard'
+import { Explorer } from './pages/Explorer'
 import { Network } from './pages/Network'
 import { Planned } from './pages/Planned'
 import { Reconciliation } from './pages/Reconciliation'
 import { Requests } from './pages/Requests'
+import { SearchResults } from './pages/SearchResults'
 import { Reservations } from './pages/Reservations'
 import { SignIn } from './pages/SignIn'
 import { Subnets } from './pages/Subnets'
@@ -32,6 +34,8 @@ const router = createBrowserRouter([
       { path: 'requests', element: <Requests /> },
       { path: 'reservations', element: <Reservations /> },
       { path: 'alerts', element: <Alerts /> },
+      { path: 'ip-addresses', element: <Explorer /> },
+      { path: 'search', element: <SearchResults /> },
       ...allItems.filter((i) => i.phase).map((item) => ({ path: item.to.slice(1), element: <Planned item={item} /> })),
       { path: '*', element: <Navigate to="/" replace /> },
     ],

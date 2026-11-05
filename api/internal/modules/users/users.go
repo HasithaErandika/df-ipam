@@ -49,6 +49,7 @@ func NewHandler(pool db.Conn, inviter Inviter) *Handler { return &Handler{pool, 
 func (h *Handler) Register(g *auth.Guard) {
 	g.Authenticated(http.MethodGet, "/auth/me", h.me)
 	g.Handle(http.MethodGet, "/users", h.list, auth.UsersManage)
+	g.Handle(http.MethodGet, "/people", h.people, auth.InventoryView, auth.IPRequest)
 	g.Handle(http.MethodPost, "/users/invite", h.invite, auth.UsersManage)
 	g.Handle(http.MethodGet, "/roles", h.roles, auth.UsersManage)
 	g.Handle(http.MethodPut, "/users/:id/roles", h.setRoles, auth.UsersManage)
@@ -88,6 +89,41 @@ func (h *Handler) list(c *gin.Context) {
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (User, error) {
 		var u User
 		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName, &u.IsActive, &u.LastLoginAt, &u.Roles)
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.List(c, out, p, total)
+}
+
+// Person is the little a picker needs: no roles, no sign-in details.
+type Person struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+}
+
+// people lists active users for owner pickers. It reveals less than /users,
+// so anyone who can view inventory or make requests may use it.
+func (h *Handler) people(c *gin.Context) {
+	p := httpx.ParsePage(c)
+	q := strings.TrimSpace(c.Query("q"))
+	ctx := c.Request.Context()
+	const where = ` FROM users WHERE is_active AND ($1 = '' OR email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%')`
+	var total int64
+	if err := h.pool.QueryRow(ctx, "SELECT count(*)"+where, q).Scan(&total); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	rows, err := h.pool.Query(ctx, "SELECT id::text, email, display_name"+where+" ORDER BY email LIMIT $2 OFFSET $3", q, p.Size, p.Offset())
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Person, error) {
+		var u Person
+		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName)
 	})
 	if err != nil {
 		httpx.Fail(c, err)

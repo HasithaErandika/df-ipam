@@ -87,6 +87,33 @@ func TestPhaseOneCompletion(t *testing.T) {
 	}
 	c.must(422, "GET", "/search?q=x", nil)
 
+	// The device view gathers inventory and read-only evidence for an address.
+	var ip, device, iface, scope string
+	tx.QueryRow(ctx, `SELECT id::text FROM ip_addresses WHERE address = '172.31.0.10' AND routing_domain_id = $1::uuid`, vpc).Scan(&ip)
+	device = id(c.must(201, "POST", "/devices", gin.H{"name": "app01", "vendor": "Dell", "model": "R650", "deviceType": "physical_server", "osVersion": "RHEL 9.4"}))
+	iface = id(c.must(201, "POST", "/interfaces", gin.H{"deviceId": device, "name": "eno1", "mac": "02:42:ac:1f:00:0a"}))
+	c.must(200, "PATCH", "/ip-addresses/"+ip, gin.H{"deviceId": device})
+	if _, err := tx.Exec(ctx, `UPDATE ip_addresses SET interface_id = $2::uuid WHERE id = $1::uuid`, ip, iface); err != nil {
+		t.Fatal(err)
+	}
+	scope = id(c.must(201, "POST", "/dhcp-scopes", gin.H{"subnetId": sub["id"], "name": "pool", "rangeStart": "172.31.0.100", "rangeEnd": "172.31.0.200"}))
+	if _, err := tx.Exec(ctx, `INSERT INTO dhcp_reservations (scope_id, address, hostname) VALUES ($1::uuid, '172.31.0.10', 'app01')`, scope); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO discovery_observations (source_id, routing_domain_id, address, payload, observed_at)
+		SELECT id, $1::uuid, '172.31.0.10', '{}', now() FROM observation_sources WHERE name = 'DNS'`, vpc); err != nil {
+		t.Fatal(err)
+	}
+	info := data(c.must(200, "GET", "/ip-addresses/"+ip+"/device", nil))
+	dev := info["device"].(map[string]any)
+	if dev["name"] != "app01" || dev["osVersion"] != "RHEL 9.4" || info["interface"].(map[string]any)["name"] != "eno1" {
+		t.Fatalf("device view: %v", info)
+	}
+	if info["mac"].(map[string]any)["locallyAdministered"] != true || len(info["dnsRecords"].([]any)) != 1 ||
+		len(info["dhcpReservations"].([]any)) != 1 || info["hasEvidence"] != true {
+		t.Fatalf("device view sources: %v", info)
+	}
+
 	// Saved filters belong to their owner.
 	saved := data(c.must(201, "POST", "/saved-filters", gin.H{"page": "subnets", "name": "Prod", "filters": gin.H{"environment": "production"}}))
 	if list := c.must(200, "GET", "/saved-filters?page=subnets", nil)["data"].([]any); len(list) != 1 {

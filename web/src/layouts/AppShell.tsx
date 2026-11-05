@@ -79,7 +79,6 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   )
 }
 
-const looksLikeAddress = (v: string) => /^[0-9a-f:.]+$/i.test(v) && (v.includes('.') || v.includes(':')) && !v.includes('/')
 
 function GlobalSearch() {
   const navigate = useNavigate()
@@ -100,7 +99,7 @@ function GlobalSearch() {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const q = value.trim()
-    if (q) navigate(`/subnets?q=${encodeURIComponent(looksLikeAddress(q) ? q.split('.').slice(0, 3).join('.') : q)}`)
+    if (q) navigate(`/search?q=${encodeURIComponent(q)}`)
   }
 
   return (
@@ -110,8 +109,8 @@ function GlobalSearch() {
         ref={input}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        aria-label="Search subnets"
-        placeholder="Search subnets by name or CIDR"
+        aria-label="Search the inventory"
+        placeholder="Search IPs, subnets, hostnames, MACs, devices"
         className="h-[34px] w-full rounded-[5px] border border-transparent bg-bg pr-16 pl-8.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-accent focus:bg-surface focus:outline-none"
       />
       <kbd className="absolute top-1/2 right-2 -translate-y-1/2 rounded-[3px] border border-line-strong bg-surface px-1.5 font-sans text-[10.5px] text-ink-3 max-lg:hidden">Ctrl K</kbd>

@@ -43,6 +43,7 @@ type Address struct {
 	DeviceType            *string    `json:"deviceType"`
 	Vendor                *string    `json:"vendor"`
 	OS                    *string    `json:"operatingSystem"`
+	OSFamily              *string    `json:"osFamily"`
 	ApplicationID         *string    `json:"applicationId"`
 	ApplicationName       *string    `json:"applicationName"`
 	BusinessServiceID     *string    `json:"businessServiceId"`
@@ -63,7 +64,7 @@ type Address struct {
 
 const selectAddress = `SELECT i.id::text, host(i.address), family(i.address), i.subnet_id::text, s.name, s.cidr::text,
 	i.routing_domain_id::text, rd.name, s.environment, st.name, i.hostname, i.fqdn, i.mac::text,
-	i.device_id::text, d.name, d.device_type, NULLIF(d.vendor, ''), NULLIF(d.os_version, ''),
+	i.device_id::text, d.name, d.device_type, NULLIF(d.vendor, ''), NULLIF(d.os_version, ''), NULLIF(d.os_family, 'unknown'),
 	i.application_id::text, a.name, i.business_service_id::text, bs.name, i.owner_id::text, u.email,
 	i.allocation_state, i.observation_state, i.confidence_score, i.confidence_explanation, os.name,
 	i.first_seen, i.last_seen, i.last_verified, i.notes, i.updated_at`
@@ -81,7 +82,7 @@ const fromAddress = ` FROM ip_addresses i
 func scan(row pgx.CollectableRow) (Address, error) {
 	var a Address
 	err := row.Scan(&a.ID, &a.Address, &a.Family, &a.SubnetID, &a.SubnetName, &a.SubnetCIDR, &a.RoutingDomainID, &a.RoutingDomainName,
-		&a.Environment, &a.SiteName, &a.Hostname, &a.FQDN, &a.MAC, &a.DeviceID, &a.DeviceName, &a.DeviceType, &a.Vendor, &a.OS,
+		&a.Environment, &a.SiteName, &a.Hostname, &a.FQDN, &a.MAC, &a.DeviceID, &a.DeviceName, &a.DeviceType, &a.Vendor, &a.OS, &a.OSFamily,
 		&a.ApplicationID, &a.ApplicationName, &a.BusinessServiceID, &a.BusinessServiceName, &a.OwnerID, &a.OwnerEmail,
 		&a.AllocationState, &a.ObservationState, &a.ConfidenceScore, &a.ConfidenceExplanation, &a.DiscoverySource,
 		&a.FirstSeen, &a.LastSeen, &a.LastVerified, &a.Notes, &a.UpdatedAt)
@@ -99,6 +100,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPatch, "/ip-addresses/:id", h.update, auth.InventoryEdit)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/history", h.history, auth.InventoryView)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/evidence", h.evidence, auth.InventoryView)
+	g.Handle(http.MethodGet, "/ip-addresses/:id/device", h.device, auth.InventoryView)
 }
 
 var sorts = map[string]string{"address": "i.address", "hostname": "i.hostname", "updatedAt": "i.updated_at"}

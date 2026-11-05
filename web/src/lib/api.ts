@@ -57,6 +57,11 @@ export async function get<T>(path: string): Promise<T> {
   return (await (await send(path)).json()).data
 }
 
+/** The whole response body, for endpoints whose metadata isn't a page. */
+export async function getBody<T>(path: string): Promise<T> {
+  return (await send(path)).json()
+}
+
 export async function list<T>(path: string): Promise<ListResult<T>> {
   return (await send(path)).json()
 }
@@ -83,6 +88,12 @@ export async function del(path: string): Promise<void> {
 
 export async function put(path: string, body: unknown): Promise<void> {
   await send(path, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/** PATCH for records without a version, such as reference data. */
+export async function patchPlain<T>(path: string, body: unknown): Promise<T> {
+  const res = await send(path, { method: 'PATCH', body: JSON.stringify(body) })
+  return (await res.json()).data
 }
 
 export async function patch<T>(path: string, body: unknown, version: number): Promise<T> {

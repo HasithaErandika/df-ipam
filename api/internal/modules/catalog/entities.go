@@ -47,7 +47,7 @@ var Entities = []Entity{
 		Filters: map[string]string{"siteId": "site_id", "businessServiceId": "business_service_id"},
 		Fields: []Field{{"name", "name", Text, true}, {"hostname", "hostname", Text, false}, {"managementIp", "management_ip", Inet, false},
 			{"vendor", "vendor", Text, false}, {"model", "model", Text, false}, {"serialNumber", "serial_number", Text, false},
-			{"deviceType", "device_type", Text, false}, {"osVersion", "os_version", Text, false}, {"siteId", "site_id", UUID, false},
+			{"deviceType", "device_type", Text, false}, {"osVersion", "os_version", Text, false}, {"osFamily", "os_family", Text, false}, {"siteId", "site_id", UUID, false},
 			{"environment", "environment", Text, false}, {"ownerId", "owner_id", UUID, false}, {"businessServiceId", "business_service_id", UUID, false},
 			{"status", "status", Text, false}, {"sensitivity", "sensitivity", Text, false}, {"notes", "notes", Text, false}},
 		Labels: []Label{{"siteName", name("sites", "site_id")}, {"businessServiceName", name("business_services", "business_service_id")}}},

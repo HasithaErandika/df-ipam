@@ -393,3 +393,10 @@ paths:
     post: { summary: Save a filter, replacing one with the same name, responses: { '201': { description: Saved }, '422': { $ref: '#/components/responses/Error' } } }
   /saved-filters/{id}:
     delete: { summary: Delete one of your saved filters, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted } } }
+  /people:
+    get: { summary: Active people for owner pickers. Email and name only. Supports q, responses: { '200': { description: OK } } }
+  /ip-addresses/{id}/device:
+    get:
+      summary: The device behind an address, from inventory records and approved read-only sources only. Nothing is probed or guessed
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } }

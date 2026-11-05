@@ -1082,6 +1082,18 @@ CREATE INDEX notifications_outbox_idx ON notifications (next_attempt_at, created
   WHERE status = 'pending' AND channel = 'email';
 CREATE INDEX notifications_unread_idx ON notifications (recipient_id) WHERE channel = 'in_app' AND read_at IS NULL;
 
+-- 000010_device_classes.up.sql
+-- More device types, so endpoints and wireless gear can be told apart, and an
+-- operating system family recorded separately from the free-text version.
+-- os_family is set from a record or a reliable source, never guessed.
+ALTER TABLE devices DROP CONSTRAINT devices_device_type_check;
+ALTER TABLE devices ADD CONSTRAINT devices_device_type_check CHECK (device_type IN
+  ('firewall','router','switch','physical_server','virtual_machine','load_balancer','network_appliance','cloud_interface',
+   'access_point','wireless_controller','laptop','desktop','mobile_phone','tablet','printer','ip_phone','camera','storage','iot','other'));
+ALTER TABLE devices ADD COLUMN os_family text NOT NULL DEFAULT 'unknown' CHECK (os_family IN
+  ('unknown','windows','windows_server','linux','macos','ios','android','network_os','hypervisor','other'));
+CREATE INDEX devices_type_idx ON devices (device_type);
+
 -- Seed data
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view') ON CONFLICT (resource, action) DO NOTHING;
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view_scoped') ON CONFLICT (resource, action) DO NOTHING;
@@ -1185,6 +1197,6 @@ INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('
 INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_expired', 'warning', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
 INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_released', 'info', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (9, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (10, false);
 
 COMMIT;

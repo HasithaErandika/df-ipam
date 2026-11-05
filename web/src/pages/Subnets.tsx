@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search } from 'lucide-react'
+import { Columns3, Layers, Plus, Search, Wrench } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { useSearchParams } from 'react-router'
@@ -9,11 +9,13 @@ import {
   Badge, Button, Card, ConfirmDialog, Modal, EmptyState, ErrorState, Field, FormError, Input, Meter, Mono, PageHeader,
   Pagination, Select, SkeletonRows, Td, Th,
 } from '../components/ui'
-import { ApiError, get, list, listAll, post, queryString } from '../lib/api'
+import { ApiError, del, get, list, listAll, post, queryString } from '../lib/api'
 import { environments, formatCapacity, formatDateTime } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
 import type { FreeRanges, NetInfo, RoutingDomain, Subnet, Utilisation } from '../lib/types'
+import { SavedFilters } from '../components/filters'
+import { BulkCreateModal, EditSubnetModal, ToolsModal } from './SubnetTools'
 
 function useDebounced<T>(value: T, ms = 300): T {
   const [debounced, setDebounced] = useState(value)
@@ -28,6 +30,9 @@ interface Option { id: string; name: string; code?: string; vlanId?: number; cid
 
 const useOptions = (path: string, enabled = true) =>
   useQuery({ queryKey: ['options', path], enabled, queryFn: () => listAll<Option>(path) })
+
+const usePeople = (enabled = true) =>
+  useQuery({ queryKey: ['options', '/people'], enabled, queryFn: () => listAll<{ id: string; email: string }>('/people') })
 
 const useRoutingDomains = () =>
   useQuery({ queryKey: ['routing-domains', 'all'], queryFn: () => listAll<RoutingDomain>('/routing-domains') })
@@ -67,6 +72,12 @@ const schema = z.object({
   vlanId: z.string(),
   businessServiceId: z.string(),
   networkBlockId: z.string(),
+  networkZoneId: z.string(),
+  vdomId: z.string(),
+  businessUnitId: z.string(),
+  technicalOwnerId: z.string(),
+  businessOwnerId: z.string(),
+  overlapExceptionId: z.string(),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -79,9 +90,14 @@ function CreateModal({ open, onClose }: { open: boolean; onClose: () => void }) 
   const vlans = useOptions('/vlans', open)
   const services = useOptions('/business-services', open)
   const blocks = useOptions('/network-blocks', open)
+  const zones = useOptions('/network-zones', open)
+  const vdoms = useOptions('/vdoms', open)
+  const units = useOptions('/business-units', open)
+  const people = usePeople(open)
+  const exceptions = useQuery({ queryKey: ['options', '/overlap-exceptions'], enabled: open, queryFn: () => listAll<{ id: string; reason: string }>('/overlap-exceptions') })
   const { register, handleSubmit, watch, reset, setError, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', cidr: '', routingDomainId: '', environment: '', gateway: '', securityZone: '', description: '', siteId: '', vlanId: '', businessServiceId: '', networkBlockId: '' },
+    defaultValues: { name: '', cidr: '', routingDomainId: '', environment: '', gateway: '', securityZone: '', description: '', siteId: '', vlanId: '', businessServiceId: '', networkBlockId: '', networkZoneId: '', vdomId: '', businessUnitId: '', technicalOwnerId: '', businessOwnerId: '', overlapExceptionId: '' },
   })
   const cidr = useDebounced(watch('cidr').trim())
   const routingDomainId = watch('routingDomainId')
@@ -106,6 +122,12 @@ function CreateModal({ open, onClose }: { open: boolean; onClose: () => void }) 
       vlanId: v.vlanId || null,
       businessServiceId: v.businessServiceId || null,
       networkBlockId: v.networkBlockId || null,
+      networkZoneId: v.networkZoneId || null,
+      vdomId: v.vdomId || null,
+      businessUnitId: v.businessUnitId || null,
+      technicalOwnerId: v.technicalOwnerId || null,
+      businessOwnerId: v.businessOwnerId || null,
+      overlapExceptionId: v.overlapExceptionId || null,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subnets'] })
@@ -171,8 +193,28 @@ function CreateModal({ open, onClose }: { open: boolean; onClose: () => void }) 
             <Field label="Network block (optional)" htmlFor="networkBlockId" error={errors.networkBlockId?.message}>
               <Select id="networkBlockId" {...register('networkBlockId')}><option value="">None</option>{blocks.data?.map((o) => <option key={o.id} value={o.id}>{o.cidr} {o.name}</option>)}</Select>
             </Field>
+            <Field label="Network zone (optional)" htmlFor="networkZoneId" error={errors.networkZoneId?.message}>
+              <Select id="networkZoneId" {...register('networkZoneId')}><option value="">None</option>{zones.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+            </Field>
+            <Field label="VDOM (optional)" htmlFor="vdomId" error={errors.vdomId?.message}>
+              <Select id="vdomId" {...register('vdomId')}><option value="">None</option>{vdoms.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+            </Field>
+            <Field label="Business unit (optional)" htmlFor="businessUnitId">
+              <Select id="businessUnitId" {...register('businessUnitId')}><option value="">None</option>{units.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+            </Field>
+            <Field label="Technical owner (optional)" htmlFor="technicalOwnerId">
+              <Select id="technicalOwnerId" {...register('technicalOwnerId')}><option value="">None</option>{people.data?.map((o) => <option key={o.id} value={o.id}>{o.email}</option>)}</Select>
+            </Field>
+            <Field label="Business owner (optional)" htmlFor="businessOwnerId">
+              <Select id="businessOwnerId" {...register('businessOwnerId')}><option value="">None</option>{people.data?.map((o) => <option key={o.id} value={o.id}>{o.email}</option>)}</Select>
+            </Field>
             <Field label="Security zone (optional)" htmlFor="securityZone"><Input id="securityZone" {...register('securityZone')} /></Field>
             <Field label="Description (optional)" htmlFor="description"><Input id="description" {...register('description')} /></Field>
+            {(exceptions.data?.length ?? 0) > 0 && (
+              <Field label="Overlap exception (optional)" htmlFor="overlapExceptionId" hint="Only for an approved, documented overlap.">
+                <Select id="overlapExceptionId" {...register('overlapExceptionId')}><option value="">None</option>{exceptions.data?.map((o) => <option key={o.id} value={o.id}>{o.reason}</option>)}</Select>
+              </Field>
+            )}
           </div>
           {!fieldLevel && <FormError error={create.error} />}
         </div>
@@ -192,10 +234,24 @@ function CreateModal({ open, onClose }: { open: boolean; onClose: () => void }) 
 
 const heading = 'mb-1 text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase'
 
-function DetailModal({ subnet, onClose }: { subnet: Subnet | null; onClose: () => void }) {
+function DetailModal({ subnet: initial, onClose }: { subnet: Subnet | null; onClose: () => void }) {
   const queryClient = useQueryClient()
   const canEdit = useCan('inventory:edit')
+  const canDelete = useCan('inventory:delete')
   const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [saved, setSaved] = useState<Subnet | null>(null)
+  const subnet = saved?.id === initial?.id ? saved : initial
+  const remove = useMutation({
+    mutationFn: (id: string) => del(`/subnets/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subnets'] })
+      queryClient.invalidateQueries({ queryKey: ['summary'] })
+      setDeleting(false)
+      onClose()
+    },
+  })
   const archive = useMutation({
     mutationFn: (id: string) => post<void>(`/subnets/${id}/archive`),
     onSuccess: () => {
@@ -216,7 +272,11 @@ function DetailModal({ subnet, onClose }: { subnet: Subnet | null; onClose: () =
         onClose={onClose}
         title={subnet.name}
         subtitle={<Mono>{subnet.calculated.cidr}</Mono>}
-        footer={canEdit && !subnet.archived ? <Button variant="secondary" onClick={() => setConfirming(true)}>Archive subnet</Button> : undefined}
+        footer={!subnet.archived && (canEdit || canDelete) ? <>
+          {canDelete && <Button onClick={() => { remove.reset(); setDeleting(true) }}>Delete</Button>}
+          {canEdit && <Button onClick={() => setConfirming(true)}>Archive subnet</Button>}
+          {canEdit && <Button variant="primary" onClick={() => setEditing(true)}>Edit subnet</Button>}
+        </> : undefined}
       >
         <div className="grid gap-5 md:grid-cols-2">
           <section>
@@ -279,12 +339,60 @@ function DetailModal({ subnet, onClose }: { subnet: Subnet | null; onClose: () =
         onConfirm={() => archive.mutate(subnet.id)}
         onCancel={() => setConfirming(false)}
       />
+      <ConfirmDialog
+        open={deleting}
+        title="Delete this subnet?"
+        body={`${subnet.calculated.cidr} is removed for good. Subnets with IP records or other links can't be deleted: archive them instead.`}
+        confirmLabel="Delete"
+        busy={remove.isPending}
+        error={remove.error}
+        onConfirm={() => remove.mutate(subnet.id)}
+        onCancel={() => setDeleting(false)}
+      />
+      {editing && <EditSubnetModal subnet={subnet} onClose={() => setEditing(false)} onSaved={setSaved} />}
     </>
   )
 }
 
+const columnLabels = { routingDomain: 'Routing domain', environment: 'Environment', site: 'Site', vlan: 'VLAN', gateway: 'Gateway', usable: 'Usable', utilisation: 'Utilisation' }
+type Column = keyof typeof columnLabels
+
+function useColumns(): [Set<Column>, (c: Column) => void] {
+  const [shown, setShown] = useState<Set<Column>>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('dfipam.subnetColumns') ?? 'null')
+      if (Array.isArray(stored)) return new Set(stored as Column[])
+    } catch { /* fall back to defaults */ }
+    return new Set<Column>(['routingDomain', 'environment', 'site', 'gateway', 'usable', 'utilisation'])
+  })
+  const toggle = (c: Column) => setShown((prev) => {
+    const next = new Set(prev)
+    if (next.has(c)) next.delete(c)
+    else next.add(c)
+    try { localStorage.setItem('dfipam.subnetColumns', JSON.stringify([...next])) } catch { /* not stored */ }
+    return next
+  })
+  return [shown, toggle]
+}
+
 export function Subnets() {
   const canCreate = useCan('inventory:create')
+  const canEdit = useCan('inventory:edit')
+  const queryClient = useQueryClient()
+  const [columns, toggleColumn] = useColumns()
+  const [choosingColumns, setChoosingColumns] = useState(false)
+  const [tool, setTool] = useState<'bulk' | 'tools' | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [archiving, setArchiving] = useState(false)
+  const bulkArchive = useMutation({
+    mutationFn: () => post('/subnets/bulk-archive', { ids: [...picked] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subnets'] })
+      queryClient.invalidateQueries({ queryKey: ['summary'] })
+      setPicked(new Set())
+      setArchiving(false)
+    },
+  })
   const [params, setParams] = useSearchParams()
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Subnet | null>(null)
@@ -329,7 +437,11 @@ export function Subnets() {
       <PageHeader
         title="Subnet Management"
         description="IPv4 and IPv6 subnets by routing domain."
-        actions={canCreate && <Button variant="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden /> New subnet</Button>}
+        actions={<>
+          <Button onClick={() => setTool('tools')}><Wrench size={14} aria-hidden /> Tools</Button>
+          {canCreate && <Button onClick={() => setTool('bulk')}><Layers size={14} aria-hidden /> Bulk create</Button>}
+          {canCreate && <Button variant="primary" onClick={() => setCreating(true)}><Plus size={16} aria-hidden /> New subnet</Button>}
+        </>}
       />
       <Card>
         <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
@@ -348,7 +460,26 @@ export function Subnets() {
             <option value="">All routing domains</option>
             {domains.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </Select>
+          <SavedFilters page="subnets" current={{ q: params.get('q') ?? '', family, environment, routingDomainId }}
+            onApply={(f) => setParams(new URLSearchParams(f))} />
+          <div className="relative ml-auto">
+            <Button variant="ghost" aria-expanded={choosingColumns} onClick={() => setChoosingColumns((v) => !v)}><Columns3 size={14} aria-hidden /> Columns</Button>
+            {choosingColumns && (
+              <div className="absolute right-0 z-20 mt-1 w-48 rounded-md border border-line-strong/70 bg-surface p-2 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+                {(Object.keys(columnLabels) as Column[]).map((c) => (
+                  <label key={c} className="flex items-center gap-2 py-0.5 text-[13px] text-ink"><input type="checkbox" checked={columns.has(c)} onChange={() => toggleColumn(c)} /> {columnLabels[c]}</label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+        {canEdit && picked.size > 0 && (
+          <div className="flex items-center gap-2 border-b border-line bg-accent-soft/40 px-3 py-1.5 text-[13px]">
+            <span>{picked.size} selected</span>
+            <Button className="h-7" onClick={() => { bulkArchive.reset(); setArchiving(true) }}>Archive selected</Button>
+            <Button variant="ghost" className="h-7" onClick={() => setPicked(new Set())}>Clear</Button>
+          </div>
+        )}
         {isPending && <SkeletonRows rows={8} />}
         {error && <ErrorState error={error} onRetry={refetch} />}
         {data && data.data.length === 0 && (
@@ -361,20 +492,36 @@ export function Subnets() {
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr><Th>Name</Th><Th>CIDR</Th><Th>Routing domain</Th><Th>Environment</Th><Th>Gateway</Th><Th className="text-right">Usable</Th><Th>Utilisation</Th></tr>
+                  <tr>
+                    {canEdit && <Th className="w-8"><input type="checkbox" aria-label="Select all on this page"
+                      checked={data.data.length > 0 && data.data.every((s) => picked.has(s.id))}
+                      onChange={(e) => setPicked(e.target.checked ? new Set([...picked, ...data.data.filter((s) => !s.archived).map((s) => s.id)]) : new Set([...picked].filter((id) => !data.data.some((s) => s.id === id))))} /></Th>}
+                    <Th>Name</Th><Th>CIDR</Th>
+                    {columns.has('routingDomain') && <Th>Routing domain</Th>}
+                    {columns.has('environment') && <Th>Environment</Th>}
+                    {columns.has('site') && <Th>Site</Th>}
+                    {columns.has('vlan') && <Th>VLAN</Th>}
+                    {columns.has('gateway') && <Th>Gateway</Th>}
+                    {columns.has('usable') && <Th className="text-right">Usable</Th>}
+                    {columns.has('utilisation') && <Th>Utilisation</Th>}
+                  </tr>
                 </thead>
                 <tbody>
                   {data.data.map((s) => {
                     const pct = Number(s.utilisationPct)
                     return (
                       <tr key={s.id} className="hover:bg-surface-2">
+                        {canEdit && <Td><input type="checkbox" aria-label={`Select ${s.name}`} disabled={s.archived} checked={picked.has(s.id)}
+                          onChange={(e) => setPicked((prev) => { const next = new Set(prev); if (e.target.checked) next.add(s.id); else next.delete(s.id); return next })} /></Td>}
                         <Td><button type="button" className="cursor-pointer text-left font-medium text-ink hover:text-accent" onClick={() => setSelected(s)}>{s.name}</button></Td>
                         <Td><Mono>{s.calculated.cidr}</Mono></Td>
-                        <Td className="text-ink-2">{s.routingDomainName}</Td>
-                        <Td><Badge tone={s.environment === 'production' ? 'accent' : 'neutral'}>{environments[s.environment]}</Badge></Td>
-                        <Td className="text-ink-2">{s.gateway ? <Mono>{s.gateway}</Mono> : '—'}</Td>
-                        <Td className="text-right text-ink-2 tabular-nums">{formatCapacity(s.calculated.usableAddresses, s.calculated.family, s.calculated.prefixLength)}</Td>
-                        <Td><Meter pct={pct} level={s.utilisationLevel} label={`${s.name} utilisation`} /></Td>
+                        {columns.has('routingDomain') && <Td className="text-ink-2">{s.routingDomainName}</Td>}
+                        {columns.has('environment') && <Td><Badge tone={s.environment === 'production' ? 'accent' : 'neutral'}>{environments[s.environment]}</Badge></Td>}
+                        {columns.has('site') && <Td className="text-ink-2">{s.site?.name ?? '—'}</Td>}
+                        {columns.has('vlan') && <Td className="text-ink-2">{s.vlan?.name ?? '—'}</Td>}
+                        {columns.has('gateway') && <Td className="text-ink-2">{s.gateway ? <Mono>{s.gateway}</Mono> : '—'}</Td>}
+                        {columns.has('usable') && <Td className="text-right text-ink-2 tabular-nums">{formatCapacity(s.calculated.usableAddresses, s.calculated.family, s.calculated.prefixLength)}</Td>}
+                        {columns.has('utilisation') && <Td><Meter pct={pct} level={s.utilisationLevel} label={`${s.name} utilisation`} /></Td>}
                       </tr>
                     )
                   })}
@@ -387,6 +534,11 @@ export function Subnets() {
       </Card>
       <CreateModal open={creating} onClose={() => setCreating(false)} />
       <DetailModal subnet={selected} onClose={() => setSelected(null)} />
+      {tool === 'bulk' && <BulkCreateModal onClose={() => setTool(null)} />}
+      {tool === 'tools' && <ToolsModal onClose={() => setTool(null)} onOpenSubnet={async (id) => { setTool(null); setSelected(await get<Subnet>(`/subnets/${id}`)) }} />}
+      <ConfirmDialog open={archiving} title={`Archive ${picked.size} subnets?`}
+        body="They leave the active inventory together, and their ranges can be used again. History is kept."
+        confirmLabel="Archive" busy={bulkArchive.isPending} error={bulkArchive.error} onConfirm={() => bulkArchive.mutate()} onCancel={() => setArchiving(false)} />
     </>
   )
 }
