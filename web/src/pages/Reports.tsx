@@ -2,11 +2,13 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Download, FileBarChart } from 'lucide-react'
 import { useState } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, Modal, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
-import { download, get, list, listAll, post } from '../lib/api'
+import { download, get, list, post } from '../lib/api'
 import { environments, formatCount, formatDateTime } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
-import type { ReportJob, ReportSummary, ReportType, RoutingDomain } from '../lib/types'
+import type { ReportJob, ReportSummary, ReportType } from '../lib/types'
+import { RoutingDomainSelect } from '../components/SearchSelect'
+import { dateOrder } from '../lib/validation'
 
 const formatNames = { xlsx: 'Excel', csv: 'CSV', pdf: 'PDF' }
 const statusTone = { queued: 'neutral', running: 'accent', completed: 'ok', failed: 'danger' } as const
@@ -34,22 +36,14 @@ function Summary() {
   const v = data.inventory
   return (
     <Card title="Summary" className="mb-3" action={<span className="text-xs text-ink-3">{data.lastReadyAt ? `Last report ${formatDateTime(data.lastReadyAt)}` : 'No reports finished yet'}</span>}>
-      <div className="grid grid-cols-2 divide-x divide-y divide-line md:grid-cols-4 md:divide-y-0">
-        <Figure label="Your reports" value={data.total} />
-        <Figure label="Ready to download" value={data.ready} />
+      <div className="grid grid-cols-2 divide-x divide-y divide-line md:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+        <Figure label="Ready" value={data.ready} />
         <Figure label="In progress" value={data.inProgress} />
         <Figure label="Failed" value={data.failed} alert />
+        {v && <Figure label="Subnets" value={v.subnets} />}
+        {v && <Figure label="Tracked IPs" value={v.ipRecords} />}
+        {v && <Figure label="Open findings" value={v.openFindings} alert />}
       </div>
-      {v && (
-        <div className="grid grid-cols-2 divide-x divide-y divide-line border-t border-line md:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
-          <Figure label="Subnets" value={v.subnets} />
-          <Figure label="Tracked IPs" value={v.ipRecords} />
-          <Figure label="Allocated" value={v.allocated} />
-          <Figure label="Reserved" value={v.reserved} />
-          <Figure label="Devices" value={v.devices} />
-          <Figure label="Open findings" value={v.openFindings} alert />
-        </div>
-      )}
     </Card>
   )
 }
@@ -59,16 +53,16 @@ function Generate({ report, onClose }: { report: ReportType | null; onClose: () 
   const [format, setFormat] = useState<keyof typeof formatNames>('xlsx')
   const [filters, setFilters] = useState<Record<string, string>>({})
   const uses = (f: string) => report?.filters.includes(f) ?? false
-  const domains = useQuery({ queryKey: ['routing-domains', 'all'], enabled: uses('routingDomainId'), queryFn: () => listAll<RoutingDomain>('/routing-domains') })
   const create = useMutation({
     mutationFn: () => post('/reports', { reportType: report?.key, format, filters }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['report-jobs'] }); setFilters({}); onClose() },
   })
   if (!report) return null
   const set = (key: string, value: string) => setFilters((f) => ({ ...f, [key]: value }))
+  const badDates = dateOrder(filters.from ?? '', filters.to ?? '')
   return (
     <Modal open onClose={onClose} title={report.title} subtitle={report.description}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={create.isPending} onClick={() => create.mutate()}>Generate</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={create.isPending} disabled={Boolean(badDates)} onClick={() => create.mutate()}>Generate</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Format" htmlFor="report-format">
           <Select id="report-format" value={format} onChange={(e) => setFormat(e.target.value as keyof typeof formatNames)}>
@@ -77,10 +71,7 @@ function Generate({ report, onClose }: { report: ReportType | null; onClose: () 
         </Field>
         {uses('routingDomainId') && (
           <Field label="Routing domain" htmlFor="report-domain">
-            <Select id="report-domain" value={filters.routingDomainId ?? ''} onChange={(e) => set('routingDomainId', e.target.value)}>
-              <option value="">All</option>
-              {domains.data?.map((d) => <option key={d.id} value={d.id}>{d.organisationName} / {d.name}</option>)}
-            </Select>
+            <RoutingDomainSelect id="report-domain" value={filters.routingDomainId ?? ''} onChange={(v) => set('routingDomainId', v)} emptyLabel="All" />
           </Field>
         )}
         {uses('environment') && (
@@ -92,7 +83,7 @@ function Generate({ report, onClose }: { report: ReportType | null; onClose: () 
           </Field>
         )}
         {uses('from') && <Field label="From" htmlFor="report-from"><Input id="report-from" type="date" value={filters.from ?? ''} onChange={(e) => set('from', e.target.value)} /></Field>}
-        {uses('to') && <Field label="To" htmlFor="report-to"><Input id="report-to" type="date" value={filters.to ?? ''} onChange={(e) => set('to', e.target.value)} /></Field>}
+        {uses('to') && <Field label="To" htmlFor="report-to" error={badDates}><Input id="report-to" type="date" min={filters.from} value={filters.to ?? ''} onChange={(e) => set('to', e.target.value)} /></Field>}
       </div>
       {format === 'pdf' && <p className="mt-3 text-[13px] text-ink-2">PDF reports stop at 5,000 rows. Use Excel or CSV for full registers.</p>}
       <div className="mt-3"><FormError error={create.error} /></div>
@@ -148,9 +139,12 @@ export function Reports() {
   const canScoped = useCan('reports:export_scoped')
   const allowed = canExport || canScoped
   const [selected, setSelected] = useState<ReportType | null>(null)
+  const [search, setSearch] = useState('')
   const { data, isPending, error, refetch } = useQuery({ queryKey: ['report-types'], enabled: allowed, queryFn: () => get<ReportType[]>('/reports/types') })
   if (!allowed) return <><PageHeader title="Reports" /><Card><EmptyState title="You don't have access to reports" /></Card></>
-  const groups = [...new Set(data?.map((r) => r.group))]
+  const words = search.trim().toLowerCase()
+  const matching = data?.filter((r) => `${r.title} ${r.description} ${r.group}`.toLowerCase().includes(words))
+  const groups = [...new Set(matching?.map((r) => r.group))]
   return (
     <>
       <PageHeader title="Reports" description="Registers and evidence in Excel, CSV and PDF. Reports run in the background, then appear below." />
@@ -158,11 +152,13 @@ export function Reports() {
       {isPending && <Card><SkeletonRows rows={6} /></Card>}
       {error && <Card><ErrorState error={error} onRetry={refetch} /></Card>}
       {!canExport && data && <p className="mb-3 text-[13px] text-ink-2">Your reports cover only the business services assigned to you.</p>}
+      {data && <div className="mb-3"><Input aria-label="Search reports" className="max-w-xs" placeholder="Search reports" value={search} onChange={(e) => setSearch(e.target.value)} /></div>}
+      {matching?.length === 0 && <Card className="mb-3"><EmptyState title="No reports match" /></Card>}
       <div className="mb-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {groups.map((g) => (
           <Card key={g} title={g}>
             <ul className="divide-y divide-line">
-              {data?.filter((r) => r.group === g).map((r) => (
+              {matching?.filter((r) => r.group === g).map((r) => (
                 <li key={r.key}>
                   <button type="button" onClick={() => setSelected(r)} className="flex w-full cursor-pointer items-start gap-2 px-4 py-2 text-left hover:bg-surface-2">
                     <FileBarChart size={15} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />

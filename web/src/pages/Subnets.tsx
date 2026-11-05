@@ -2,20 +2,23 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Columns3, Layers, Plus, Search, Wrench } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { useSearchParams } from 'react-router'
 import { z } from 'zod'
 import {
   Badge, Button, Card, ConfirmDialog, Modal, EmptyState, ErrorState, Field, FormError, Input, Meter, Mono, PageHeader,
   Pagination, Select, SkeletonRows, Td, Th,
+  MoreOptions,
 } from '../components/ui'
 import { ApiError, del, get, list, listAll, post, queryString } from '../lib/api'
 import { environments, formatCapacity, formatDateTime } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
-import type { FreeRanges, NetInfo, RoutingDomain, Subnet, Utilisation } from '../lib/types'
+import type { FreeRanges, NetInfo, Subnet, Utilisation } from '../lib/types'
 import { SavedFilters } from '../components/filters'
 import { BulkCreateModal, EditSubnetModal, ToolsModal } from './SubnetTools'
+import { RoutingDomainSelect, SearchSelect } from '../components/SearchSelect'
+import { isCIDR, isIP } from '../lib/validation'
 
 function useDebounced<T>(value: T, ms = 300): T {
   const [debounced, setDebounced] = useState(value)
@@ -33,9 +36,6 @@ const useOptions = (path: string, enabled = true) =>
 
 const usePeople = (enabled = true) =>
   useQuery({ queryKey: ['options', '/people'], enabled, queryFn: () => listAll<{ id: string; email: string }>('/people') })
-
-const useRoutingDomains = () =>
-  useQuery({ queryKey: ['routing-domains', 'all'], queryFn: () => listAll<RoutingDomain>('/routing-domains') })
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -62,10 +62,10 @@ function Calculated({ info }: { info: NetInfo }) {
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Enter a subnet name.'),
-  cidr: z.string().trim().min(1, 'Enter a CIDR.'),
+  cidr: z.string().trim().min(1, 'Enter a CIDR.').refine(isCIDR, 'Enter a network such as 10.20.30.0/24.'),
   routingDomainId: z.string().min(1, 'Choose a routing domain.'),
   environment: z.string().min(1, 'Choose an environment.'),
-  gateway: z.string().trim(),
+  gateway: z.string().trim().refine((v) => v === '' || isIP(v), 'Enter a valid IPv4 or IPv6 address.'),
   securityZone: z.string().trim(),
   description: z.string().trim(),
   siteId: z.string(),
@@ -85,7 +85,6 @@ interface Preview { info: NetInfo; conflicts: { id: string; name: string; cidr: 
 
 function CreateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const domains = useRoutingDomains()
   const sites = useOptions('/sites', open)
   const vlans = useOptions('/vlans', open)
   const services = useOptions('/business-services', open)
@@ -95,7 +94,7 @@ function CreateModal({ open, onClose }: { open: boolean; onClose: () => void }) 
   const units = useOptions('/business-units', open)
   const people = usePeople(open)
   const exceptions = useQuery({ queryKey: ['options', '/overlap-exceptions'], enabled: open, queryFn: () => listAll<{ id: string; reason: string }>('/overlap-exceptions') })
-  const { register, handleSubmit, watch, reset, setError, formState: { errors } } = useForm<FormValues>({
+  const { register, control, handleSubmit, watch, reset, setError, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: '', cidr: '', routingDomainId: '', environment: '', gateway: '', securityZone: '', description: '', siteId: '', vlanId: '', businessServiceId: '', networkBlockId: '', networkZoneId: '', vdomId: '', businessUnitId: '', technicalOwnerId: '', businessOwnerId: '', overlapExceptionId: '' },
   })
@@ -175,47 +174,46 @@ function CreateModal({ open, onClose }: { open: boolean; onClose: () => void }) 
             </Field>
           </div>
           <Field label="Routing domain" htmlFor="routingDomainId" error={errors.routingDomainId?.message} hint="Overlaps are only blocked within the same routing domain.">
-            <Select id="routingDomainId" {...register('routingDomainId')}>
-              <option value="">Select</option>
-              {domains.data?.map((d) => <option key={d.id} value={d.id}>{d.organisationName} / {d.name}</option>)}
-            </Select>
+            <Controller control={control} name="routingDomainId" render={({ field }) => <RoutingDomainSelect id="routingDomainId" value={field.value} onChange={field.onChange} />} />
           </Field>
+          <MoreOptions label="More details (site, VLAN, owners)" forceOpen={Boolean(errors.siteId || errors.vlanId || errors.networkBlockId || errors.networkZoneId || errors.vdomId)}>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Site (optional)" htmlFor="siteId" error={errors.siteId?.message}>
-              <Select id="siteId" {...register('siteId')}><option value="">None</option>{sites.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+              <Controller control={control} name="siteId" render={({ field }) => <SearchSelect id="siteId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={sites.isPending} fetchError={sites.error} onRetry={() => sites.refetch()} options={sites.data?.map((o) => ({ value: o.id, label: o.name })) ?? []} />} />
             </Field>
             <Field label="VLAN (optional)" htmlFor="vlanId" error={errors.vlanId?.message}>
-              <Select id="vlanId" {...register('vlanId')}><option value="">None</option>{vlans.data?.map((o) => <option key={o.id} value={o.id}>{o.vlanId} {o.name}</option>)}</Select>
+              <Controller control={control} name="vlanId" render={({ field }) => <SearchSelect id="vlanId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={vlans.isPending} fetchError={vlans.error} onRetry={() => vlans.refetch()} options={vlans.data?.map((o) => ({ value: o.id, label: `${o.vlanId} ${o.name}` })) ?? []} />} />
             </Field>
             <Field label="Business service (optional)" htmlFor="businessServiceId">
-              <Select id="businessServiceId" {...register('businessServiceId')}><option value="">None</option>{services.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+              <Controller control={control} name="businessServiceId" render={({ field }) => <SearchSelect id="businessServiceId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={services.isPending} fetchError={services.error} onRetry={() => services.refetch()} options={services.data?.map((o) => ({ value: o.id, label: o.name })) ?? []} />} />
             </Field>
             <Field label="Network block (optional)" htmlFor="networkBlockId" error={errors.networkBlockId?.message}>
-              <Select id="networkBlockId" {...register('networkBlockId')}><option value="">None</option>{blocks.data?.map((o) => <option key={o.id} value={o.id}>{o.cidr} {o.name}</option>)}</Select>
+              <Controller control={control} name="networkBlockId" render={({ field }) => <SearchSelect id="networkBlockId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={blocks.isPending} fetchError={blocks.error} onRetry={() => blocks.refetch()} options={blocks.data?.map((o) => ({ value: o.id, label: `${o.cidr} ${o.name}` })) ?? []} />} />
             </Field>
             <Field label="Network zone (optional)" htmlFor="networkZoneId" error={errors.networkZoneId?.message}>
-              <Select id="networkZoneId" {...register('networkZoneId')}><option value="">None</option>{zones.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+              <Controller control={control} name="networkZoneId" render={({ field }) => <SearchSelect id="networkZoneId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={zones.isPending} fetchError={zones.error} onRetry={() => zones.refetch()} options={zones.data?.map((o) => ({ value: o.id, label: o.name })) ?? []} />} />
             </Field>
             <Field label="VDOM (optional)" htmlFor="vdomId" error={errors.vdomId?.message}>
-              <Select id="vdomId" {...register('vdomId')}><option value="">None</option>{vdoms.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+              <Controller control={control} name="vdomId" render={({ field }) => <SearchSelect id="vdomId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={vdoms.isPending} fetchError={vdoms.error} onRetry={() => vdoms.refetch()} options={vdoms.data?.map((o) => ({ value: o.id, label: o.name })) ?? []} />} />
             </Field>
             <Field label="Business unit (optional)" htmlFor="businessUnitId">
-              <Select id="businessUnitId" {...register('businessUnitId')}><option value="">None</option>{units.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>
+              <Controller control={control} name="businessUnitId" render={({ field }) => <SearchSelect id="businessUnitId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={units.isPending} fetchError={units.error} onRetry={() => units.refetch()} options={units.data?.map((o) => ({ value: o.id, label: o.name })) ?? []} />} />
             </Field>
             <Field label="Technical owner (optional)" htmlFor="technicalOwnerId">
-              <Select id="technicalOwnerId" {...register('technicalOwnerId')}><option value="">None</option>{people.data?.map((o) => <option key={o.id} value={o.id}>{o.email}</option>)}</Select>
+              <Controller control={control} name="technicalOwnerId" render={({ field }) => <SearchSelect id="technicalOwnerId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={people.isPending} fetchError={people.error} onRetry={() => people.refetch()} options={people.data?.map((o) => ({ value: o.id, label: o.email })) ?? []} />} />
             </Field>
             <Field label="Business owner (optional)" htmlFor="businessOwnerId">
-              <Select id="businessOwnerId" {...register('businessOwnerId')}><option value="">None</option>{people.data?.map((o) => <option key={o.id} value={o.id}>{o.email}</option>)}</Select>
+              <Controller control={control} name="businessOwnerId" render={({ field }) => <SearchSelect id="businessOwnerId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={people.isPending} fetchError={people.error} onRetry={() => people.refetch()} options={people.data?.map((o) => ({ value: o.id, label: o.email })) ?? []} />} />
             </Field>
             <Field label="Security zone (optional)" htmlFor="securityZone"><Input id="securityZone" {...register('securityZone')} /></Field>
             <Field label="Description (optional)" htmlFor="description"><Input id="description" {...register('description')} /></Field>
             {(exceptions.data?.length ?? 0) > 0 && (
               <Field label="Overlap exception (optional)" htmlFor="overlapExceptionId" hint="Only for an approved, documented overlap.">
-                <Select id="overlapExceptionId" {...register('overlapExceptionId')}><option value="">None</option>{exceptions.data?.map((o) => <option key={o.id} value={o.id}>{o.reason}</option>)}</Select>
+                <Controller control={control} name="overlapExceptionId" render={({ field }) => <SearchSelect id="overlapExceptionId" value={field.value} onChange={field.onChange} emptyLabel="None" loading={exceptions.isPending} fetchError={exceptions.error} onRetry={() => exceptions.refetch()} options={exceptions.data?.map((o) => ({ value: o.id, label: o.reason })) ?? []} />} />
               </Field>
             )}
           </div>
+          </MoreOptions>
           {!fieldLevel && <FormError error={create.error} />}
         </div>
         <aside className="self-start rounded-[5px] border border-line bg-surface-2 px-3 py-2">
@@ -396,7 +394,6 @@ export function Subnets() {
   const [params, setParams] = useSearchParams()
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Subnet | null>(null)
-  const domains = useRoutingDomains()
 
   const paging = usePaging()
   const [search, setSearch] = useState(params.get('q') ?? '')
@@ -456,10 +453,7 @@ export function Subnets() {
             <option value="">All environments</option>
             {Object.entries(environments).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
-          <Select aria-label="Routing domain" className="w-48!" value={routingDomainId} onChange={(e) => setFilter('routingDomainId', e.target.value)}>
-            <option value="">All routing domains</option>
-            {domains.data?.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </Select>
+          <RoutingDomainSelect aria-label="Routing domain" className="w-56" emptyLabel="All routing domains" value={routingDomainId} onChange={(v) => setFilter('routingDomainId', v)} />
           <SavedFilters page="subnets" current={{ q: params.get('q') ?? '', family, environment, routingDomainId }}
             onApply={(f) => setParams(new URLSearchParams(f))} />
           <div className="relative ml-auto">

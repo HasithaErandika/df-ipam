@@ -1,12 +1,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plug, Plus, RefreshCw } from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
-import { del, get, list, listAll, post, put } from '../lib/api'
+import { ApiError, del, get, list, post, put, queryString } from '../lib/api'
 import { formatDateTime } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
-import type { Connection, ConnectorKind, RoutingDomain, SyncError, SyncJob } from '../lib/types'
+import type { Connection, ConnectorKind, SyncError, SyncJob } from '../lib/types'
+import { RoutingDomainSelect } from '../components/SearchSelect'
+import { useChecks, useDebounced } from '../components/workflow'
+import { between, isHttpsUrl, isUUID, issues as check, required } from '../lib/validation'
 
 const healthTone = { healthy: 'ok', degraded: 'warn', failed: 'danger', unknown: 'neutral' } as const
 const healthLabel = { healthy: 'Healthy', degraded: 'Degraded', failed: 'Failed', unknown: 'Not synced yet' }
@@ -24,6 +28,27 @@ interface Form {
 
 const blank: Form = { kind: 'fortigate', name: '', baseUrl: '', config: {}, credentials: {}, syncIntervalMinutes: 60, isEnabled: true }
 
+function fieldIssues(error: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (error instanceof ApiError) for (const d of error.details) out[d.field] = d.issue
+  return out
+}
+
+function RowMenu({ label, actions }: { label: string; actions: { label: string; run: () => void; danger?: boolean }[] }) {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild><Button aria-label={`More actions for ${label}`}><MoreHorizontal size={14} aria-hidden /></Button></DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={4} className="z-40 min-w-44 rounded-[5px] border border-line-strong bg-surface py-1 shadow-[0_8px_24px_-8px_rgba(11,18,32,.25)]">
+          {actions.map((a) => (
+            <DropdownMenu.Item key={a.label} onSelect={a.run} className={`cursor-pointer px-3 py-1.5 text-[13px] outline-none data-[highlighted]:bg-surface-2 ${a.danger ? 'text-danger' : 'text-ink'}`}>{a.label}</DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
 function ConnectionForm({ open, editing, kinds, onClose }: { open: boolean; editing: Connection | null; kinds: ConnectorKind[]; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<Form>(blank)
@@ -40,39 +65,63 @@ function ConnectionForm({ open, editing, kinds, onClose }: { open: boolean; edit
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['connections'] }); onClose() },
   })
+  const needed = (options: ConnectorKind['config'], values: Record<string, string>) =>
+    Object.fromEntries((options ?? []).filter((o) => o.required).map((o) => [o.key, required(values[o.key], o.label)]))
+  const guid = (key: string) => (form.config[key]?.trim() && !isUUID(form.config[key]) ? 'Use the ID in its GUID form.' : undefined)
+  const azure = form.kind === 'azure'
+  const aws = form.kind === 'aws'
+  const accessKey = form.credentials.accessKeyId?.trim() ?? ''
+  const secretKey = form.credentials.secretAccessKey?.trim() ?? ''
+  const checks = useChecks(check({
+    name: required(form.name, 'Name'),
+    baseUrl: kind?.needsUrl ? (isHttpsUrl(form.baseUrl.trim()) ? undefined : 'Use a full https URL, such as https://fw1.corp.example.') : undefined,
+    syncIntervalMinutes: between(form.syncIntervalMinutes, 5, 10080, 'Sync interval'),
+    ...needed(kind?.config ?? [], form.config),
+    // On an edit, an empty credential keeps the stored one.
+    ...(editing?.hasCredentials ? {} : needed(kind?.credentials ?? [], form.credentials)),
+    ...(azure ? { tenantId: form.config.tenantId?.trim() ? guid('tenantId') : required('', 'Tenant ID'), clientId: form.config.clientId?.trim() ? guid('clientId') : required('', 'Client ID'),
+      subscriptionId: form.config.subscriptionId?.trim() ? guid('subscriptionId') : required('', 'Subscription ID') } : {}),
+    ...(aws ? {
+      roleArn: /^arn:aws[\w-]*:iam::\d{12}:role\/[\w+=,.@/-]+$/.test(form.config.roleArn?.trim() ?? '') ? undefined : 'Use a role ARN such as arn:aws:iam::123456789012:role/df-ipam-read.',
+      regions: (form.config.regions ?? '').split(',').map((r) => r.trim()).filter(Boolean).every((r) => /^[a-z]{2}(-[a-z]+)+-\d$/.test(r)) && form.config.regions?.trim() ? undefined : 'List regions such as ap-south-1, separated by commas.',
+      secretAccessKey: accessKey && !secretKey ? 'Enter the secret key with its access key.' : undefined,
+      accessKeyId: secretKey && !accessKey ? 'Enter the access key with its secret key.' : undefined,
+    } : {}),
+  }), open)
+  const errors = { ...fieldIssues(save.error), ...checks.shown }
   const setMap = (group: 'config' | 'credentials', key: string, value: string) => setForm((f) => ({ ...f, [group]: { ...f[group], [key]: value } }))
   return (
     <Modal open={open} onClose={onClose} title={editing ? `Edit ${editing.name}` : 'Add a connection'} size="lg"
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} disabled={!kind?.available} onClick={() => save.mutate()}>Save</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} disabled={!kind?.available} onClick={() => checks.submit(() => save.mutate())}>Save</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Connector" htmlFor="conn-kind">
           <Select id="conn-kind" value={form.kind} disabled={editing !== null} onChange={(e) => setForm({ ...blank, name: form.name, kind: e.target.value })}>
             {kinds.map((k) => <option key={k.kind} value={k.kind} disabled={!k.available}>{k.label}{k.available ? '' : ' (waiting)'}</option>)}
           </Select>
         </Field>
-        <Field label="Name" htmlFor="conn-name"><Input id="conn-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Name" htmlFor="conn-name" error={errors.name}><Input id="conn-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
       </div>
       {kind && <p className="mt-2 text-[13px] text-ink-2">{kind.note}</p>}
       {kind?.needsUrl && (
-        <div className="mt-3"><Field label="URL" htmlFor="conn-url" hint="https only, on the server's approved host list."><Input id="conn-url" value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} /></Field></div>
+        <div className="mt-3"><Field label="URL" htmlFor="conn-url" error={errors.baseUrl} hint="https only, on the server's approved host list."><Input id="conn-url" value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} /></Field></div>
       )}
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {kind?.config?.map((o) => (
-          <Field key={o.key} label={o.label} htmlFor={`conn-${o.key}`} hint={o.hint}>
+          <Field key={o.key} label={o.required ? o.label : `${o.label} (optional)`} htmlFor={`conn-${o.key}`} error={errors[o.key]} hint={o.hint}>
             <Input id={`conn-${o.key}`} value={form.config[o.key] ?? ''} onChange={(e) => setMap('config', o.key, e.target.value)} />
           </Field>
         ))}
         {kind?.credentials?.map((o) => (
-          <Field key={o.key} label={o.label} htmlFor={`cred-${o.key}`} hint={editing?.hasCredentials ? 'Stored. Leave empty to keep it.' : undefined}>
+          <Field key={o.key} label={o.required ? o.label : `${o.label} (optional)`} htmlFor={`cred-${o.key}`} error={errors[o.key]} hint={editing?.hasCredentials ? 'Stored. Leave empty to keep it.' : undefined}>
             <Input id={`cred-${o.key}`} type="password" autoComplete="off" value={form.credentials[o.key] ?? ''} onChange={(e) => setMap('credentials', o.key, e.target.value)} />
           </Field>
         ))}
-        <Field label="Sync every (minutes)" htmlFor="conn-interval">
+        <Field label="Sync every (minutes)" htmlFor="conn-interval" error={errors.syncIntervalMinutes}>
           <Input id="conn-interval" type="number" min={5} max={10080} value={form.syncIntervalMinutes} onChange={(e) => setForm({ ...form, syncIntervalMinutes: Number(e.target.value) })} />
         </Field>
       </div>
       <label className="mt-3 flex items-center gap-2 text-ink"><input type="checkbox" className="size-4 accent-[var(--accent)]" checked={form.isEnabled} onChange={(e) => setForm({ ...form, isEnabled: e.target.checked })} /> Sync on schedule</label>
-      <div className="mt-3"><FormError error={save.error} /></div>
+      {Object.keys(errors).length === 0 && <div className="mt-3"><FormError error={save.error} /></div>}
       <p className="mt-3 text-[12px] text-ink-3">Credentials are encrypted and can't be read back. Use an account that can only read.</p>
     </Modal>
   )
@@ -82,7 +131,6 @@ function RoutingMap({ connection, onClose }: { connection: Connection | null; on
   const queryClient = useQueryClient()
   const [map, setMap] = useState<Record<string, string>>({})
   useEffect(() => { setMap(connection?.routingDomains ?? {}) }, [connection])
-  const domains = useQuery({ queryKey: ['routing-domains', 'all'], enabled: connection !== null, queryFn: () => listAll<RoutingDomain>('/routing-domains') })
   const save = useMutation({
     mutationFn: () => put(`/integrations/connections/${connection?.id}`, { ...connection, routingDomains: map }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['connections'] }); onClose() },
@@ -93,16 +141,12 @@ function RoutingMap({ connection, onClose }: { connection: Connection | null; on
     <Modal open onClose={onClose} title="Routing domains" subtitle={connection.name} size="lg"
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} disabled={contexts.length === 0} onClick={() => save.mutate()}>Save</Button></>}>
       <p className="mb-3 text-[13px] text-ink-2">Evidence from a place with no routing domain is kept, but isn't matched to inventory. Nothing is mapped automatically, because the same address can exist in two isolated networks.</p>
-      {domains.error ? <ErrorState error={domains.error} onRetry={domains.refetch} /> : null}
       {contexts.length === 0 && <EmptyState title="Nothing to map yet" body="Run a sync first. The VDOMs and networks it finds appear here." />}
       <div className="space-y-2">
         {contexts.map((c) => (
           <div key={c} className="grid items-center gap-2 sm:grid-cols-2">
             <Mono>{c}</Mono>
-            <Select aria-label={`Routing domain for ${c}`} value={map[c] ?? ''} onChange={(e) => setMap({ ...map, [c]: e.target.value })}>
-              <option value="">Not mapped</option>
-              {domains.data?.map((d) => <option key={d.id} value={d.id}>{d.organisationName} / {d.name}</option>)}
-            </Select>
+            <RoutingDomainSelect aria-label={`Routing domain for ${c}`} value={map[c] ?? ''} onChange={(v) => setMap({ ...map, [c]: v })} emptyLabel="Not mapped" />
           </div>
         ))}
       </div>
@@ -170,9 +214,12 @@ export function Integrations() {
   const [removing, setRemoving] = useState<Connection | null>(null)
   const [tested, setTested] = useState<{ id: string; ok: boolean; message: string } | null>(null)
   const kinds = useQuery({ queryKey: ['connector-kinds'], enabled: canView, queryFn: () => get<ConnectorKind[]>('/integrations/kinds') })
+  const [search, setSearch] = useState('')
+  const q = useDebounced(search.trim())
+  const qs = queryString({ page: paging.page, pageSize: paging.pageSize, q })
   const { data, isPending, error, refetch } = useQuery({
-    queryKey: ['connections', paging.page, paging.pageSize], enabled: canView, placeholderData: keepPreviousData,
-    queryFn: () => list<Connection>(`/integrations/connections?page=${paging.page}&pageSize=${paging.pageSize}`),
+    queryKey: ['connections', qs], enabled: canView, placeholderData: keepPreviousData,
+    queryFn: () => list<Connection>(`/integrations/connections${qs}`),
   })
   useClampPage(paging, data?.meta)
   const test = useMutation({
@@ -196,9 +243,10 @@ export function Integrations() {
       {test.error ? <div className="mb-3"><FormError error={test.error} /></div> : null}
       {sync.error ? <div className="mb-3"><FormError error={sync.error} /></div> : null}
       <Card>
+        <div className="border-b border-line p-2.5"><Input aria-label="Search connections" className="max-w-xs" placeholder="Search by name or URL" value={search} onChange={(e) => { setSearch(e.target.value); paging.setPage(1) }} /></div>
         {isPending && <SkeletonRows rows={5} />}
         {error && <ErrorState error={error} onRetry={refetch} />}
-        {data?.data.length === 0 && <EmptyState title="No connections yet" body="Add a FortiGate, vCenter, AWS or Azure connection." />}
+        {data?.data.length === 0 && (q ? <EmptyState title="No connections match" /> : <EmptyState title="No connections yet" body="Add a FortiGate, vCenter, AWS or Azure connection." />)}
         {data && data.data.length > 0 && (
           <>
             <div className="overflow-x-auto">
@@ -222,11 +270,14 @@ export function Integrations() {
                         <Td className="text-right whitespace-nowrap">
                           {canManage && (
                             <span className="inline-flex gap-1">
-                              <Button busy={test.isPending && test.variables?.id === c.id} onClick={() => test.mutate(c)}><Plug size={13} aria-hidden /> Test</Button>
                               <Button busy={sync.isPending && sync.variables?.id === c.id} onClick={() => sync.mutate(c)}><RefreshCw size={13} aria-hidden /> Sync</Button>
-                              <Button onClick={() => setMapping(c)}>Map</Button>
-                              <Button aria-label={`Edit ${c.name}`} onClick={() => setEditing(c)}><Pencil size={13} aria-hidden /></Button>
-                              <Button variant="ghost" onClick={() => setRemoving(c)}>Delete</Button>
+                              <RowMenu label={c.name} actions={[
+                                { label: 'Test connection', run: () => test.mutate(c) },
+                                { label: 'Map routing domains', run: () => setMapping(c) },
+                                { label: 'Sync history', run: () => setHistory(c) },
+                                { label: 'Edit', run: () => setEditing(c) },
+                                { label: 'Delete', run: () => setRemoving(c), danger: true },
+                              ]} />
                             </span>
                           )}
                         </Td>
@@ -240,18 +291,6 @@ export function Integrations() {
           </>
         )}
       </Card>
-      {kinds.data && (
-        <Card title="Available connectors" className="mt-3">
-          <ul className="divide-y divide-line">
-            {kinds.data.map((k) => (
-              <li key={k.kind} className="flex items-start justify-between gap-3 px-4 py-2">
-                <div><div className="text-[13px] font-medium text-ink">{k.label}</div><div className="text-xs text-ink-2">{k.note}</div></div>
-                <Badge tone={k.available ? 'ok' : 'neutral'}>{k.available ? 'Available' : 'Waiting'}</Badge>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
       <ConnectionForm open={adding || editing !== null} editing={editing} kinds={kinds.data ?? []} onClose={() => { setAdding(false); setEditing(null) }} />
       <RoutingMap connection={mapping} onClose={() => setMapping(null)} />
       <History connection={history} onClose={() => setHistory(null)} />

@@ -68,8 +68,8 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | IPv4 and IPv6 calculations, `/31`, `/32`, `/127`, `/128` | ✅ Done | |
 | Utilisation breakdown, free ranges | ✅ Done | Subnet detail view |
 | Provider-reserved ranges | ✅ Done | AWS and Azure reservations are recorded when a subnet is created in a VPC or VNet routing domain |
-| Split, summarise, locate tools | ✅ Done | Tools dialog on Subnet Management |
-| IP Address Explorer | ✅ Done | Table and colour-coded grid, filters, record detail with history and evidence, create and edit |
+| Split, summarise, locate tools | ✅ Done | Tools dialog on Subnets |
+| IP Addresses | ✅ Done | Table and colour-coded grid, filters, record detail with history and evidence, create and edit |
 | Device view per address | ✅ Done | Device, interface, MAC flags, DNS, DHCP and reporting sources, from inventory and approved read-only sources only |
 | Device types and OS family, with icons | ✅ Done | Laptops, desktops, phones, access points, servers, VMs, firewalls and more. Filled by people, imports and, later, discovery |
 | DNS and DHCP records | ✅ Done | Read-only. DNS records list through the API and appear in the device view |
@@ -83,7 +83,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | --- | --- | --- |
 | Allocation, reservation and release requests | ✅ Done | Draft, submit, cancel. Release and conversion requests point at their allocation or reservation |
 | Multi-level approvals, separation of duties | ✅ Done | Workflows choose role-based steps by request type, environment and sensitivity. No self-approval, one step per person, steps in order. Enforced in the service and the database |
-| Approval workflow administration | ✅ Done | Workflows tab on IP Allocation Requests. Submitted requests keep their steps |
+| Approval workflow administration | ✅ Done | Workflows tab on Requests. Submitted requests keep their steps |
 | Fulfilment: allocate, reserve, release | ✅ Done | Only approved requests. Repeating a call returns the same result |
 | Automatic next-free selection | ✅ Done | Range-based, safe for IPv6. Skips held, observed, reserved-range, DHCP, gateway and more-specific-subnet addresses |
 | Concurrent allocation and reservation tests | ✅ Done | Real database, separate connections: 40 allocations 20 at a time, exhaustion, allocation against reservation for one address, racing approvers, repeated fulfilment |
@@ -117,7 +117,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | ICMP, ARP/NDP, reverse DNS, Nmap host discovery | 🟦 Built, not tested | Agent enforces rate, concurrency and timeout limits |
 | SNMP collector | ⬜ To do | Needs SNMPv3 credential storage (Phase 5 encrypted credentials) |
 | Safety controls and emergency stop | 🟦 Built, not tested | Results re-checked against scope; discovery never changes allocation or ownership |
-| Discovery Centre screen, Explorer scan button | 🟦 Built, not tested | |
+| Discovery screen, Explorer scan button | 🟦 Built, not tested | |
 | Redis job queue | ⛔ Blocked | Jobs use PostgreSQL with SKIP LOCKED meanwhile |
 | Sensitive network rules | ⛔ Blocked | Mechanism built (passive only unless an approved sensitive policy); needs the list of banking and payment networks |
 | Lab test of scope and emergency stop | ⬜ To do | Phase 4 exit criterion |

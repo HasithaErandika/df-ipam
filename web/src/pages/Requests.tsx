@@ -4,14 +4,15 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import {
   Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination,
-  Select, SkeletonRows, Td, Th,
-} from '../components/ui'
+  Select, SkeletonRows, Td, Th, MoreOptions } from '../components/ui'
 import { Detail, StatusBadge, SubnetPicker, Tabs, useDebounced, type TabDef } from '../components/workflow'
 import { ApiError, del, get, list, listAll, post, put, queryString } from '../lib/api'
 import { environments, formatDate, formatDateTime, formatEndOfDay, isoDate, requestStatuses, requestTypes } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan, useMe } from '../lib/session'
 import type { Allocation, IPRequest, PendingApproval, RequestType, Role, Subnet, Workflow } from '../lib/types'
+import { useChecks } from '../components/workflow'
+import { ip, issues as check, required } from '../lib/validation'
 
 /** Invalidates everything a workflow change can affect. */
 function useRefresh() {
@@ -61,7 +62,17 @@ export function NewRequestModal({ open, preset, onClose }: { open: boolean; pres
       navigate(`/requests?tab=mine&id=${r.id}`)
     },
   })
-  const errors = fieldErrors(save.error)
+  // A draft can be unfinished, but what it does hold must be valid.
+  const checks = useChecks(check({
+    requestedAddress: mode === 'specific' && !release && !conversion ? (address.trim() ? ip(address) : 'Enter the address you want.') : undefined,
+  }), open)
+  const submitChecks = useChecks(check({
+    subnetId: !release && !conversion && !subnet ? 'Choose a subnet.' : undefined,
+    requestedAddress: mode === 'specific' && !release && !conversion ? (address.trim() ? ip(address) : 'Enter the address you want.') : undefined,
+    justification: required(justification, 'Justification'),
+    expiryDate: requestType === 'reservation' && !expiryDate ? 'Choose an end date.' : undefined,
+  }), open)
+  const errors = { ...fieldErrors(save.error), ...checks.shown, ...submitChecks.shown }
   const fieldLevel = Object.keys(errors).length > 0
   const title = conversion ? 'Convert reservation to allocation' : release ? 'Request a release' : 'New request'
 
@@ -70,8 +81,8 @@ export function NewRequestModal({ open, preset, onClose }: { open: boolean; pres
       subtitle="Requests are approved before anything changes. You can't approve your own."
       footer={<>
         <Button onClick={onClose}>Cancel</Button>
-        <Button busy={save.isPending && save.variables === false} disabled={save.isPending} onClick={() => save.mutate(false)}>Save draft</Button>
-        <Button variant="primary" busy={save.isPending && save.variables === true} disabled={save.isPending} onClick={() => save.mutate(true)}>Submit for approval</Button>
+        <Button busy={save.isPending && save.variables === false} disabled={save.isPending} onClick={() => checks.submit(() => save.mutate(false))}>Save draft</Button>
+        <Button variant="primary" busy={save.isPending && save.variables === true} disabled={save.isPending} onClick={() => submitChecks.submit(() => save.mutate(true))}>Submit for approval</Button>
       </>}>
       <div className="space-y-4">
         {!preset && (
@@ -119,6 +130,13 @@ export function NewRequestModal({ open, preset, onClose }: { open: boolean; pres
           <textarea id="rq-justification" rows={3} value={justification} onChange={(e) => setJustification(e.target.value)}
             className="w-full rounded-[5px] border border-line-strong bg-surface-2 px-2.5 py-1.5 text-[13px] text-ink focus:border-accent focus:bg-surface focus:outline-none" />
         </Field>
+        {requestType === 'reservation' && (
+              <Field label="Reservation ends" htmlFor="rq-expiry" error={errors.expiryDate} hint="At most a year ahead. The holder is reminded a week before.">
+                <Input id="rq-expiry" type="date" min={isoDate(1)} max={isoDate(365)} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+              </Field>
+        )}
+        <MoreOptions forceOpen={Boolean(errors.environment || errors.requiredDate)}>
+          <div className="space-y-4">
         {!release && (
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department (optional)" htmlFor="rq-dept"><Input id="rq-dept" value={department} onChange={(e) => setDepartment(e.target.value)} /></Field>
@@ -131,14 +149,11 @@ export function NewRequestModal({ open, preset, onClose }: { open: boolean; pres
             <Field label="Needed by (optional)" htmlFor="rq-required" error={errors.requiredDate}>
               <Input id="rq-required" type="date" value={requiredDate} onChange={(e) => setRequiredDate(e.target.value)} />
             </Field>
-            {requestType === 'reservation' && (
-              <Field label="Reservation ends" htmlFor="rq-expiry" error={errors.expiryDate} hint="At most a year ahead. The holder is reminded a week before.">
-                <Input id="rq-expiry" type="date" min={isoDate(1)} max={isoDate(365)} value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-              </Field>
-            )}
           </div>
         )}
         <Field label="Comments (optional)" htmlFor="rq-comments"><Input id="rq-comments" value={comments} onChange={(e) => setComments(e.target.value)} /></Field>
+          </div>
+        </MoreOptions>
         {!fieldLevel && <FormError error={save.error} />}
       </div>
     </Modal>
@@ -461,11 +476,15 @@ function WorkflowModal({ workflow, open, onClose }: { workflow: Workflow | null;
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['workflows'] }); refresh(); onClose() },
   })
-  const errors = fieldErrors(save.error)
+  const checks = useChecks(check({
+    name: required(name, 'Name'),
+    steps: steps.some((r) => !r) ? 'Choose an approver role for every step.' : undefined,
+  }), open)
+  const errors = { ...fieldErrors(save.error), ...checks.shown }
   return (
     <Modal open={open} onClose={onClose} title={workflow ? 'Edit workflow' : 'New approval workflow'} size="lg"
       subtitle="The most specific matching workflow applies when a request is submitted. Requests already submitted keep their steps."
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>Save workflow</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => checks.submit(() => save.mutate())}>Save workflow</Button></>}>
       <div className="space-y-4">
         <Field label="Name" htmlFor="wf-name" error={errors.name}><Input id="wf-name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Checks legend="Request types" options={requestTypes} value={types} onChange={setTypes} />

@@ -3,13 +3,16 @@ import { Copy, OctagonX, Pause, Play, Plus, Radar, ShieldCheck, X } from 'lucide
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { CatalogManager, type EntityDef } from '../components/catalog'
-import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th, MoreOptions } from '../components/ui'
 import { Detail, SubnetPicker, Tabs } from '../components/workflow'
 import { ApiError, get, list, post, put, queryString } from '../lib/api'
 import { formatDateTime } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
 import type { Subnet } from '../lib/types'
+import { SearchSelect } from '../components/SearchSelect'
+import { useChecks } from '../components/workflow'
+import { between, isCIDR, isCron, issues as check, required } from '../lib/validation'
 
 const methodLabels: Record<string, string> = {
   icmp: 'ICMP ping', arp: 'ARP table', ndp: 'IPv6 neighbours (NDP)', dns: 'Reverse DNS (passive)', snmp: 'SNMP', nmap: 'Nmap host discovery (-sn)',
@@ -77,10 +80,8 @@ export function StartJobModal({ subnet: initial, onClose }: { subnet?: Subnet | 
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={start.isPending} disabled={!policyId || subnets.length === 0} onClick={() => start.mutate()}><Radar size={14} aria-hidden /> Start discovery</Button></>}>
       <div className="space-y-3.5">
         <Field label="Policy" htmlFor="job-policy" error={errors.policyId} hint={approved.length === 0 ? 'No approved policy yet. Create one under Policies, and have someone else approve it.' : undefined}>
-          <Select id="job-policy" value={policyId} onChange={(e) => setPolicyId(e.target.value)}>
-            <option value="">Select</option>
-            {approved.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
+          <SearchSelect id="job-policy" value={policyId} onChange={setPolicyId} loading={policies.isPending} fetchError={policies.error} onRetry={() => policies.refetch()}
+            options={approved.map((p) => ({ value: p.id, label: p.name }))} />
         </Field>
         {policy && (
           <p className="rounded-[5px] bg-surface-2 px-3 py-2 text-[12.5px] text-ink-2">
@@ -101,10 +102,8 @@ export function StartJobModal({ subnet: initial, onClose }: { subnet?: Subnet | 
           </>
         </Field>
         <Field label="Agent (optional)" htmlFor="job-agent" hint="Leave empty to let any active agent take it.">
-          <Select id="job-agent" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-            <option value="">Any agent</option>
-            {agents.data?.data.filter((a) => a.status !== 'revoked').map((a) => <option key={a.id} value={a.id}>{a.name} ({a.status})</option>)}
-          </Select>
+          <SearchSelect id="job-agent" value={agentId} onChange={setAgentId} emptyLabel="Any agent" loading={agents.isPending} fetchError={agents.error} onRetry={() => agents.refetch()}
+            options={agents.data?.data.filter((a) => a.status !== 'revoked').map((a) => ({ value: a.id, label: a.name, detail: a.status })) ?? []} />
         </Field>
         {Object.keys(errors).length === 0 && <FormError error={start.error} />}
       </div>
@@ -220,11 +219,22 @@ function PolicyModal({ policy, onClose }: { policy: Policy | null; onClose: () =
     },
     onSuccess: () => { refresh(); onClose() },
   })
-  const errors = issues(save.error)
+  const networks = form.allowlist.split(/[\s,]+/).filter(Boolean)
+  const checks = useChecks(check({
+    name: required(form.name, 'Name'),
+    methods: form.methods.length === 0 ? 'Choose at least one method.' : undefined,
+    targetAllowlist: networks.length === 0 ? 'List at least one network.' : networks.find((n) => !isCIDR(n)) ? `${networks.find((n) => !isCIDR(n))} is not a valid network.` : undefined,
+    maxPps: between(form.maxPps, 1, 1000, 'Packets per second'),
+    maxConcurrency: between(form.maxConcurrency, 1, 256, 'Probes at once'),
+    timeoutMs: between(form.timeoutMs, 100, 30000, 'Timeout'),
+    retries: between(form.retries, 0, 5, 'Retries'),
+    windows: form.windows.some((w) => w.days.length === 0 || !w.start || !w.end) ? 'Each window needs at least one day, a start and an end.' : undefined,
+  }))
+  const errors = { ...issues(save.error), ...checks.shown }
   const setWindow = (i: number, w: Partial<Window>) => setForm((f) => ({ ...f, windows: f.windows.map((x, j) => (j === i ? { ...x, ...w } : x)) }))
   return (
     <Modal open onClose={onClose} size="lg" title={policy ? 'Edit policy' : 'New discovery policy'} subtitle="Saving needs a fresh approval from someone else before the policy runs again."
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>Save policy</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => checks.submit(() => save.mutate())}>Save policy</Button></>}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Name" htmlFor="pol-name" error={errors.name}><Input id="pol-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Description (optional)" htmlFor="pol-desc"><Input id="pol-desc" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
@@ -244,10 +254,13 @@ function PolicyModal({ policy, onClose }: { policy: Policy | null; onClose: () =
               className="w-full rounded-[5px] border border-line-strong bg-surface-2 px-2.5 py-1.5 font-mono text-[12.5px] focus:border-accent focus:outline-none" />
           </Field>
         </div>
+        <div className="col-span-2">
+          <MoreOptions label="Speed limits and time windows" forceOpen={Boolean(errors.maxPps || errors.maxConcurrency || errors.timeoutMs || errors.retries || errors.windows)}>
+            <div className="grid grid-cols-2 gap-3">
         <Field label="Packets per second" htmlFor="pol-pps" error={errors.maxPps}><Input id="pol-pps" type="number" value={form.maxPps} onChange={(e) => setForm({ ...form, maxPps: e.target.value })} /></Field>
-        <Field label="Probes at once" htmlFor="pol-conc"><Input id="pol-conc" type="number" value={form.maxConcurrency} onChange={(e) => setForm({ ...form, maxConcurrency: e.target.value })} /></Field>
-        <Field label="Timeout (ms)" htmlFor="pol-timeout"><Input id="pol-timeout" type="number" value={form.timeoutMs} onChange={(e) => setForm({ ...form, timeoutMs: e.target.value })} /></Field>
-        <Field label="Retries" htmlFor="pol-retries"><Input id="pol-retries" type="number" value={form.retries} onChange={(e) => setForm({ ...form, retries: e.target.value })} /></Field>
+        <Field label="Probes at once" htmlFor="pol-conc" error={errors.maxConcurrency}><Input id="pol-conc" type="number" value={form.maxConcurrency} onChange={(e) => setForm({ ...form, maxConcurrency: e.target.value })} /></Field>
+        <Field label="Timeout (ms)" htmlFor="pol-timeout" error={errors.timeoutMs}><Input id="pol-timeout" type="number" value={form.timeoutMs} onChange={(e) => setForm({ ...form, timeoutMs: e.target.value })} /></Field>
+        <Field label="Retries" htmlFor="pol-retries" error={errors.retries}><Input id="pol-retries" type="number" value={form.retries} onChange={(e) => setForm({ ...form, retries: e.target.value })} /></Field>
         <fieldset className="col-span-2">
           <legend className="mb-1 text-[13px] font-medium text-ink">Time windows <span className="font-normal text-ink-3">(Colombo time; none means any time)</span></legend>
           {form.windows.map((w, i) => (
@@ -267,6 +280,9 @@ function PolicyModal({ policy, onClose }: { policy: Policy | null; onClose: () =
         </fieldset>
         <label className="col-span-2 flex items-center gap-2 text-[13px] text-ink"><input type="checkbox" checked={form.isSensitive} onChange={(e) => setForm({ ...form, isSensitive: e.target.checked })} />
           Approved for sensitive networks (core banking, payments). Without this, sensitive subnets get passive methods only.</label>
+            </div>
+          </MoreOptions>
+        </div>
         <div className="col-span-2">{Object.keys(errors).length === 0 && <FormError error={save.error} />}</div>
       </div>
     </Modal>
@@ -378,8 +394,9 @@ const blackouts: EntityDef = {
   key: 'blackouts', label: 'Blackouts', singular: 'blackout', path: '/discovery/blackouts', writePermission: 'discovery:manage', searchLabel: 'Search blackouts',
   description: 'Maintenance periods when no new discovery starts on the network, or on everything if no network is given.',
   fields: [{ key: 'name', label: 'Name', type: 'text', required: true }, { key: 'target', label: 'Network', type: 'cidr' },
-    { key: 'startsAt', label: 'Starts', type: 'text', required: true, hint: 'Such as 2026-11-20T22:00+05:30' },
-    { key: 'endsAt', label: 'Ends', type: 'text', required: true }, { key: 'reason', label: 'Reason', type: 'text' }],
+    { key: 'startsAt', label: 'Starts', type: 'datetime', required: true, hint: 'In your own time zone.' },
+    { key: 'endsAt', label: 'Ends', type: 'datetime', required: true }, { key: 'reason', label: 'Reason', type: 'text' }],
+  validate: (f) => ({ endsAt: f.startsAt && f.endsAt && String(f.endsAt) <= String(f.startsAt) ? 'The end must be after the start.' : undefined }),
   columns: [{ label: 'Name', render: (r) => r.name }, { label: 'Network', render: (r) => (r.target ? <Mono>{r.target}</Mono> : 'Everything') },
     { label: 'From', render: (r) => formatDateTime(r.startsAt) }, { label: 'To', render: (r) => formatDateTime(r.endsAt) }],
 }
@@ -389,9 +406,10 @@ const schedules: EntityDef = {
   description: 'Recurring discovery of one subnet under an approved policy. The worker starts a job when the schedule matches, unless the last one is still running or the emergency stop is on.',
   fields: [{ key: 'policyId', label: 'Policy', type: 'ref', ref: '/discovery/policies', required: true },
     { key: 'subnetId', label: 'Subnet', type: 'ref', ref: '/subnets', required: true, refLabel: (o) => `${o.calculated?.cidr ?? ''} ${o.name}` },
-    { key: 'cron', label: 'Schedule (cron)', type: 'text', required: true, hint: 'minute hour day month weekday, such as 30 23 * * 1-5' },
-    { key: 'timezone', label: 'Timezone', type: 'text', hint: 'Defaults to Asia/Colombo.' },
-    { key: 'agentId', label: 'Agent', type: 'ref', ref: '/agents' }, { key: 'priority', label: 'Priority (1 high to 9 low)', type: 'number' },
+    { key: 'cron', label: 'Schedule (cron)', type: 'text', required: true, hint: 'minute hour day month weekday, such as 30 23 * * 1-5',
+      check: (v) => (isCron(v) ? undefined : 'Use five fields: minute hour day month weekday.') },
+    { key: 'timezone', label: 'Timezone', type: 'timezone', hint: 'Defaults to Asia/Colombo.' },
+    { key: 'agentId', label: 'Agent', type: 'ref', ref: '/agents' }, { key: 'priority', label: 'Priority (1 high to 9 low)', type: 'number', min: 1, max: 9 },
     { key: 'isEnabled', label: 'Enabled', type: 'bool' }],
   columns: [{ label: 'Policy', render: (r) => r.policyName }, { label: 'Subnet', render: (r) => r.subnetName }, { label: 'Cron', render: (r) => <Mono>{r.cron}</Mono> },
     { label: 'Last run', render: (r) => (r.lastRunAt ? formatDateTime(r.lastRunAt) : 'Never') }, { label: 'Enabled', render: (r) => (r.isEnabled ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>) }],

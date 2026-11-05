@@ -3,13 +3,14 @@ import { Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
-import { Detail, useDebounced } from '../components/workflow'
+import { Detail, useChecks, useDebounced } from '../components/workflow'
 import { ApiError, get, list, post, queryString } from '../lib/api'
 import { daysUntil, formatDateTime, formatEndOfDay, isoDate } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
 import type { Reservation } from '../lib/types'
 import { NewRequestModal, type Preset } from './Requests'
+import { issues as check, required } from '../lib/validation'
 
 const statusLabels: Record<string, string> = { active: 'Active', expired: 'Expired', released: 'Released', converted: 'Converted to allocation', all: 'All' }
 
@@ -40,9 +41,14 @@ function ReservationModal({ id, onClose, onConvert }: { id: string | null; onClo
       setReason('')
     },
   })
+  const checks = useChecks(check({
+    expiryDate: mode === 'extend' && !date ? 'Choose a new end date.' : undefined,
+    reason: required(reason, 'Reason'),
+  }))
   if (!id) return null
   const issues: Record<string, string> = {}
   if (act.error instanceof ApiError) for (const d of act.error.details) issues[d.field] = d.issue
+  Object.assign(issues, checks.shown)
   const active = r?.status === 'active'
   return (
     <Modal open onClose={onClose} title="Reservation" subtitle={r && <span className="flex items-center gap-2"><ExpiryBadge r={r} /> <Mono>{r.address}</Mono></span>} size="lg"
@@ -81,7 +87,7 @@ function ReservationModal({ id, onClose, onConvert }: { id: string | null; onClo
               {Object.keys(issues).length === 0 && <FormError error={act.error} />}
               <div className="flex justify-end gap-2">
                 <Button onClick={() => setMode(null)}>Back</Button>
-                <Button variant={mode === 'release' ? 'danger' : 'primary'} busy={act.isPending} onClick={() => act.mutate()}>
+                <Button variant={mode === 'release' ? 'danger' : 'primary'} busy={act.isPending} onClick={() => checks.submit(() => act.mutate())}>
                   {mode === 'extend' ? 'Save new end date' : 'Release reservation'}
                 </Button>
               </div>

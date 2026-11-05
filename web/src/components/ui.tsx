@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { AlertTriangle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Inbox, Loader2, X } from 'lucide-react'
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, Ref } from 'react'
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Inbox, Loader2, X } from 'lucide-react'
+import { cloneElement, Component, Fragment, isValidElement, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type Ref } from 'react'
 import { ApiError, type PageMeta } from '../lib/api'
 import { pageWindow, type Severity } from '../lib/format'
 
@@ -29,7 +29,7 @@ export function Button({ variant = 'secondary', busy, className, children, disab
   )
 }
 
-const control = 'h-8 w-full rounded-[5px] border border-line-strong bg-surface-2 px-2.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-accent focus:bg-surface focus:outline-none'
+const control = 'h-8 w-full rounded-[5px] border border-line-strong bg-surface-2 px-2.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-accent focus:bg-surface focus:outline-none aria-invalid:border-danger'
 
 export function Input({ className, ref, ...rest }: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
   return <input ref={ref} {...rest} className={cx(control, className)} />
@@ -39,16 +39,63 @@ export function Select({ className, ref, ...rest }: SelectHTMLAttributes<HTMLSel
   return <select ref={ref} {...rest} className={cx(control, 'pr-7', className)} />
 }
 
+/** Ties the message to its control, so screen readers announce it. */
 export function Field({ label, error, hint, htmlFor, children }:
   { label: string; error?: string; hint?: string; htmlFor: string; children: ReactNode }) {
+  const noteId = `${htmlFor}-note`
+  const note = error || hint ? noteId : undefined
+  const linked = isValidElement<Record<string, unknown>>(children) && children.type !== Fragment
+    ? cloneElement(children, { 'aria-invalid': Boolean(error) || undefined, 'aria-describedby': note })
+    : children
   return (
     <div className="space-y-1">
       <label htmlFor={htmlFor} className="block text-[13px] font-medium text-ink">{label}</label>
-      {children}
-      {error ? <p role="alert" className="text-[13px] text-danger">{error}</p>
-        : hint && <p className="text-[13px] text-ink-3">{hint}</p>}
+      {linked}
+      {error ? <p id={noteId} role="alert" className="text-[13px] text-danger">{error}</p>
+        : hint && <p id={noteId} className="text-[13px] text-ink-3">{hint}</p>}
     </div>
   )
+}
+
+/**
+ * Keeps less-used fields out of the way. Fields stay mounted, so a form still holds
+ * their values. forceOpen shows them when one has an error, so nothing fails unseen.
+ */
+export function MoreOptions({ label = 'More options', forceOpen, children }: { label?: string; forceOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const shown = open || Boolean(forceOpen)
+  return (
+    <div>
+      <button type="button" aria-expanded={shown} onClick={() => setOpen(!shown)} className="flex cursor-pointer items-center gap-1 text-[13px] font-medium text-accent hover:underline">
+        <ChevronDown size={14} aria-hidden className={shown ? 'rotate-180' : undefined} /> {label}
+      </button>
+      <div hidden={!shown} className="mt-3">{children}</div>
+    </div>
+  )
+}
+
+/** Catches a crash in a page, so people get a way forward instead of a blank screen. */
+export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: string }, { failed: boolean; key?: string }> {
+  state = { failed: false, key: this.props.resetKey }
+
+  static getDerivedStateFromError() { return { failed: true } }
+
+  // Moving to another page clears the failure.
+  static getDerivedStateFromProps(props: { resetKey?: string }, state: { failed: boolean; key?: string }) {
+    return props.resetKey === state.key ? null : { failed: false, key: props.resetKey }
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children
+    return (
+      <div role="alert" className="flex flex-col items-center p-10 text-center">
+        <AlertTriangle size={26} className="mb-3 text-danger" aria-hidden />
+        <h1 className="text-base font-semibold text-ink">This page ran into a problem</h1>
+        <p className="mt-1 text-ink-2">Your data is safe. Reload the page, or go to another one.</p>
+        <div className="mt-4"><Button variant="primary" onClick={() => window.location.reload()}>Reload</Button></div>
+      </div>
+    )
+  }
 }
 
 export function Card({ title, action, children, className }:

@@ -1,12 +1,14 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { ApiError, del, list, listAll, patchPlain, post, queryString } from '../lib/api'
+import { ApiError, del, list, patchPlain, post, queryString } from '../lib/api'
 import { formatDateTime } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, Pagination, Select, SkeletonRows, Td, Th } from './ui'
-import { useDebounced } from './workflow'
+import { RefSelect as SearchRef, SearchSelect, timezones } from './SearchSelect'
+import { useChecks, useDebounced } from './workflow'
+import { cidr, ip, isEmail, issues, required, type Issue } from '../lib/validation'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Row = Record<string, any> & { id: string }
@@ -14,7 +16,7 @@ export type Row = Record<string, any> & { id: string }
 export interface FieldDef {
   key: string
   label: string
-  type: 'text' | 'number' | 'bool' | 'cidr' | 'ip' | 'ref' | 'select' | 'date'
+  type: 'text' | 'number' | 'bool' | 'cidr' | 'ip' | 'ref' | 'select' | 'date' | 'datetime' | 'timezone'
   required?: boolean
   /** For ref fields: the list endpoint, and how to name an option. */
   ref?: string
@@ -23,6 +25,10 @@ export interface FieldDef {
   hint?: string
   /** Fixed once created, because other records depend on it. */
   createOnly?: boolean
+  min?: number
+  max?: number
+  /** An extra check on a filled-in value. */
+  check?: (value: string) => Issue
 }
 
 export interface ColumnDef { label: string; render: (r: Row) => ReactNode; className?: string }
@@ -39,17 +45,41 @@ export interface EntityDef {
   writePermission?: string
   readOnly?: boolean
   searchLabel?: string
+  /** Checks across fields, such as an end after a start. */
+  validate?: (form: Record<string, string | boolean>) => Record<string, Issue>
   rowAction?: (r: Row) => ReactNode
 }
 
 function RefSelect({ field, id, value, onChange, invalid }: { field: FieldDef; id: string; value: string; onChange: (v: string) => void; invalid?: boolean }) {
-  const options = useQuery({ queryKey: ['options', field.ref], queryFn: () => listAll<Row>(field.ref!) })
   return (
-    <Select id={id} aria-invalid={invalid} value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">{field.required ? 'Select' : 'None'}</option>
-      {options.data?.map((o) => <option key={o.id} value={o.id}>{field.refLabel ? field.refLabel(o) : o.name ?? o.email}</option>)}
-    </Select>
+    <SearchRef<Row> id={id} aria-invalid={invalid} value={value} onChange={onChange} path={field.ref!} emptyLabel={field.required ? undefined : 'None'}
+      toOption={(o) => ({ value: o.id, label: field.refLabel ? field.refLabel(o) : o.name ?? o.email })} />
   )
+}
+
+/** What a browser's date and time box holds, in the person's own time zone. */
+function toLocalInput(v: string): string {
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return ''
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+}
+
+function checkField(f: FieldDef, value: string): Issue {
+  const v = value.trim()
+  if (v === '') return f.required ? (f.type === 'ref' || f.type === 'select' ? `Choose ${f.label.toLowerCase()}.` : required(v, f.label)) : undefined
+  if (f.type === 'cidr') return cidr(v)
+  if (f.type === 'ip') return ip(v)
+  if (f.type === 'number') {
+    const n = Number(v)
+    if (!Number.isInteger(n)) return `${f.label} must be a whole number.`
+    if ((f.min !== undefined && n < f.min) || (f.max !== undefined && n > f.max)) return `${f.label} must be from ${f.min} to ${f.max}.`
+  }
+  return f.check?.(v)
+}
+
+function checkForm(def: EntityDef, form: Record<string, string | boolean>, editing: boolean): Record<string, string> {
+  const fields = def.fields.filter((f) => f.type !== 'bool' && !(editing && f.createOnly))
+  return issues({ ...Object.fromEntries(fields.map((f) => [f.key, checkField(f, String(form[f.key] ?? ''))])), ...def.validate?.(form) })
 }
 
 function toForm(def: EntityDef, row: Row | null): Record<string, string | boolean> {
@@ -58,6 +88,7 @@ function toForm(def: EntityDef, row: Row | null): Record<string, string | boolea
     const v = row?.[f.key]
     if (f.type === 'bool') out[f.key] = Boolean(v)
     else if (f.type === 'date') out[f.key] = typeof v === 'string' ? v.slice(0, 10) : ''
+    else if (f.type === 'datetime') out[f.key] = typeof v === 'string' ? toLocalInput(v) : ''
     else out[f.key] = v === null || v === undefined ? '' : String(v)
   }
   return out
@@ -70,6 +101,7 @@ function toBody(def: EntityDef, form: Record<string, string | boolean>, editing:
     const v = form[f.key]
     if (f.type === 'bool') body[f.key] = Boolean(v)
     else if (f.type === 'number') body[f.key] = v === '' ? null : Number(v)
+    else if (f.type === 'datetime' && v) body[f.key] = new Date(String(v)).toISOString()
     else if (v === '' && f.type !== 'text') body[f.key] = editing ? '' : undefined
     else body[f.key] = v
   }
@@ -91,13 +123,15 @@ function EditModal({ def, row, onClose }: { def: EntityDef; row: Row | null; onC
       onClose()
     },
   })
+  const checks = useChecks(checkForm(def, form, editing))
   const errors: Record<string, string> = {}
   if (save.error instanceof ApiError) for (const d of save.error.details) errors[d.field] = d.issue
+  Object.assign(errors, checks.shown)
   const set = (key: string, v: string | boolean) => setForm((f) => ({ ...f, [key]: v }))
   return (
     <Modal open onClose={onClose} title={`${editing ? 'Edit' : 'New'} ${def.singular}`}
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" form={`form-${def.key}`} busy={save.isPending}>{editing ? 'Save changes' : `Create ${def.singular}`}</Button></>}>
-      <form id={`form-${def.key}`} noValidate onSubmit={(e) => { e.preventDefault(); save.mutate() }} className="space-y-3.5">
+      <form id={`form-${def.key}`} noValidate onSubmit={(e) => { e.preventDefault(); checks.submit(() => save.mutate()) }} className="space-y-3.5">
         {def.fields.map((f) => {
           const id = `${def.key}-${f.key}`
           const label = `${f.label}${f.required ? '' : ' (optional)'}`
@@ -114,6 +148,8 @@ function EditModal({ def, row, onClose }: { def: EntityDef; row: Row | null; onC
               {f.type === 'ref' ? (
                 disabled ? <Input id={id} disabled value={row?.[`${f.key.replace(/Id$/, '')}Name`] ?? String(form[f.key])} />
                   : <RefSelect field={f} id={id} value={String(form[f.key])} onChange={(v) => set(f.key, v)} invalid={Boolean(errors[f.key])} />
+              ) : f.type === 'timezone' ? (
+                <SearchSelect id={id} value={String(form[f.key])} onChange={(v) => set(f.key, v)} options={timezones()} emptyLabel="Default" />
               ) : f.type === 'select' ? (
                 <Select id={id} value={String(form[f.key])} disabled={disabled} onChange={(e) => set(f.key, e.target.value)}>
                   <option value="">{f.required ? 'Select' : 'None'}</option>
@@ -121,7 +157,8 @@ function EditModal({ def, row, onClose }: { def: EntityDef; row: Row | null; onC
                 </Select>
               ) : (
                 <Input id={id} disabled={disabled} aria-invalid={Boolean(errors[f.key])}
-                  type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
+                  type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : f.type === 'datetime' ? 'datetime-local' : 'text'}
+                  min={f.min} max={f.max}
                   className={f.type === 'cidr' || f.type === 'ip' ? 'font-mono' : undefined} spellCheck={f.type === 'text'}
                   value={String(form[f.key])} onChange={(e) => set(f.key, e.target.value)} />
               )}
@@ -264,7 +301,7 @@ export const entities: EntityDef[] = [
     key: 'vlans', label: 'VLANs', singular: 'VLAN', path: '/vlans', searchLabel: 'Search VLANs by name',
     description: 'VLAN IDs 1 to 4094, scoped to a site or VDOM.',
     fields: [
-      { key: 'vlanId', label: 'VLAN ID', type: 'number', required: true },
+      { key: 'vlanId', label: 'VLAN ID', type: 'number', required: true, min: 1, max: 4094 },
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'siteId', label: 'Site', type: 'ref', ref: '/sites' },
       { key: 'vdomId', label: 'VDOM', type: 'ref', ref: '/vdoms', refLabel: (o) => `${o.name} (${o.deviceName ?? 'device'})` },
@@ -339,7 +376,7 @@ export const entities: EntityDef[] = [
     description: 'Responsible teams, for ownership and notifications.',
     fields: [
       { key: 'name', label: 'Name', type: 'text', required: true },
-      { key: 'email', label: 'Team email', type: 'text' },
+      { key: 'email', label: 'Team email', type: 'text', check: (v) => (isEmail(v) ? undefined : 'Enter a valid email address.') },
       { key: 'description', label: 'Description', type: 'text' },
     ],
     columns: [

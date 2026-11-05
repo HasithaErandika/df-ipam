@@ -2,11 +2,13 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Plus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Badge, Button, Card, Modal, EmptyState, ErrorState, Field, FormError, Input, PageHeader, Pagination, SkeletonRows, Td, Th } from '../components/ui'
-import { list, post, put } from '../lib/api'
+import { list, post, put, queryString } from '../lib/api'
 import { formatDateTime } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useMe } from '../lib/session'
 import type { Role, User } from '../lib/types'
+import { useChecks, useDebounced } from '../components/workflow'
+import { email as emailIssue, issues as check } from '../lib/validation'
 
 function RolesDrawer({ user, onClose }: { user: User | null; onClose: () => void }) {
   const queryClient = useQueryClient()
@@ -49,13 +51,14 @@ function InviteDrawer({ open, onClose }: { open: boolean; onClose: () => void })
     mutationFn: () => post<void>('/users/invite', { email }),
     onSuccess: () => { setEmail(''); onClose() },
   })
-  const submit = (e: FormEvent) => { e.preventDefault(); invite.mutate() }
+  const checks = useChecks(check({ email: emailIssue(email) }), open)
+  const submit = (e: FormEvent) => { e.preventDefault(); checks.submit(() => invite.mutate()) }
   return (
     <Modal open={open} onClose={onClose} title="Invite user"
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" form="invite" busy={invite.isPending}>Send invitation</Button></>}>
-      <form id="invite" onSubmit={submit} className="space-y-4">
-        <Field label="Work email" htmlFor="invite-email" hint="They get an email link, and no access until you assign a role.">
-          <Input id="invite-email" type="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
+      <form id="invite" noValidate onSubmit={submit} className="space-y-4">
+        <Field label="Work email" htmlFor="invite-email" error={checks.shown.email} hint="They get an email link, and no access until you assign a role.">
+          <Input id="invite-email" type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <FormError error={invite.error} />
       </form>
@@ -69,9 +72,12 @@ export function Users() {
   const paging = usePaging()
   const [editing, setEditing] = useState<User | null>(null)
   const [inviting, setInviting] = useState(false)
+  const [search, setSearch] = useState('')
+  const q = useDebounced(search.trim())
+  const qs = queryString({ page: paging.page, pageSize: paging.pageSize, q })
   const { data, isPending, error, refetch } = useQuery({
-    queryKey: ['users', paging.page, paging.pageSize], enabled: canManage, placeholderData: keepPreviousData,
-    queryFn: () => list<User>(`/users?page=${paging.page}&pageSize=${paging.pageSize}`),
+    queryKey: ['users', qs], enabled: canManage, placeholderData: keepPreviousData,
+    queryFn: () => list<User>(`/users${qs}`),
   })
   useClampPage(paging, data?.meta)
   return (
@@ -80,9 +86,11 @@ export function Users() {
         actions={canManage && <Button variant="primary" onClick={() => setInviting(true)}><Plus size={16} aria-hidden /> Invite user</Button>} />
       <Card>
         {!canManage && <EmptyState title="You don't have access to user management" />}
+        {canManage && <div className="border-b border-line p-2.5"><Input aria-label="Search users" className="max-w-xs" placeholder="Search by email or name" value={search} onChange={(e) => { setSearch(e.target.value); paging.setPage(1) }} /></div>}
         {canManage && isPending && <SkeletonRows />}
         {error && <ErrorState error={error} onRetry={refetch} />}
-        {data && (
+        {data?.data.length === 0 && <EmptyState title="No users match" />}
+        {data && data.data.length > 0 && (
           <>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">

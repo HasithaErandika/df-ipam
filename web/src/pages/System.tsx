@@ -6,6 +6,8 @@ import { get, put } from '../lib/api'
 import { formatCount, formatDateTime } from '../lib/format'
 import { useCan } from '../lib/session'
 import type { RetentionPolicy, SystemHealth } from '../lib/types'
+import { useChecks } from '../components/workflow'
+import { between, issues as check } from '../lib/validation'
 
 const classNames: Record<string, string> = {
   discovery_observations: 'Discovery evidence', discovery_job_logs: 'Discovery job logs', agent_heartbeats: 'Agent heartbeats',
@@ -50,11 +52,12 @@ function EditRetention({ policy, onClose }: { policy: RetentionPolicy | null; on
     mutationFn: () => put(`/system/retention/${policy?.dataClass}`, { retainDays: days }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['retention'] }); onClose() },
   })
+  const checks = useChecks(check({ days: between(days, policy?.dataClass === 'audit_logs' ? 365 : 7, 36500, 'Days') }))
   if (!policy) return null
   return (
     <Modal open onClose={onClose} title={classNames[policy.dataClass] ?? policy.dataClass}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>Save</Button></>}>
-      <Field label="Keep for (days)" htmlFor="retain-days"><Input id="retain-days" type="number" min={7} value={days} onChange={(e) => setDays(Number(e.target.value))} /></Field>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => checks.submit(() => save.mutate())}>Save</Button></>}>
+      <Field label="Keep for (days)" htmlFor="retain-days" error={checks.shown.days}><Input id="retain-days" type="number" min={7} value={days} onChange={(e) => setDays(Number(e.target.value))} /></Field>
       <div className="mt-3"><FormError error={save.error} /></div>
     </Modal>
   )

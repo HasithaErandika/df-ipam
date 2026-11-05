@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, ChevronDown, GitCompareArrows, ChevronRight, LogOut, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { ErrorBoundary } from '../components/ui'
 import { get } from '../lib/api'
 import { signOut } from '../lib/auth'
 import { allItems, nav } from '../lib/nav'
@@ -22,6 +23,8 @@ function LogoMark() {
 }
 
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { permissions } = useMe()
+  const groups = nav.map((g) => ({ ...g, items: g.items.filter((i) => !i.anyOf || i.anyOf.some((p) => permissions.includes(p))) })).filter((g) => g.items.length > 0)
   return (
     <aside className={`flex shrink-0 flex-col border-r border-side-border bg-side transition-[width] duration-150 ${collapsed ? 'w-[60px]' : 'w-[248px]'}`}>
       <div className={`flex h-[60px] shrink-0 items-center border-b border-side-border ${collapsed ? 'justify-center' : 'justify-between pr-2 pl-4'}`}>
@@ -47,10 +50,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             <PanelLeftOpen size={16} />
           </button>
         )}
-        {nav.map(({ group, items }) => (
+        {groups.map(({ group, items }) => (
           <div key={group} className="mb-2.5">
             {collapsed ? <div className="mx-4 my-2 h-px bg-side-border" />
-              : <div className="px-4 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] text-side-ink-3 uppercase">{group}</div>}
+              : group && <div className="px-4 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] text-side-ink-3 uppercase">{group}</div>}
             {items.map(({ to, label, icon: Icon, phase }) => (
               <NavLink
                 key={to}
@@ -203,7 +206,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1440px] px-6 py-5"><Outlet /></div>
+          <div className="mx-auto max-w-[1440px] px-6 py-5"><ErrorBoundary resetKey={pathname}><Outlet /></ErrorBoundary></div>
         </main>
       </div>
     </div>

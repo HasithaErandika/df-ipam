@@ -88,3 +88,21 @@ export function SubnetPicker({ id, value, onChange, invalid }:
     </div>
   )
 }
+
+/**
+ * Holds a form's own checks back until the first attempt to save, so nobody is told
+ * off for a field they haven't reached. Server messages are merged in by the caller.
+ */
+export function useChecks(checks: Record<string, string>, open = true) {
+  const [tried, setTried] = useState(false)
+  // Some dialogs stay mounted while closed: a new start shouldn't open on old errors.
+  useEffect(() => { if (!open) setTried(false) }, [open])
+  return {
+    shown: tried ? checks : {},
+    /** Runs fn only if the form is valid. */
+    submit: (fn: () => void) => {
+      setTried(true)
+      if (Object.keys(checks).length === 0) fn()
+    },
+  }
+}

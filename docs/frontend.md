@@ -74,6 +74,21 @@ Every dialog is centred over a blurred background, using `Modal` and `ConfirmDia
 
 Formats: Excel, CSV and PDF.
 
+## Keeping it simple
+
+Show what most people need, and put the rest one click away.
+
+- The sidebar hides what a person can't use.
+- Long forms show the essentials, with the rest under `MoreOptions`. It opens by itself if a hidden field has an error.
+- Table rows have one main action, and a menu for the others.
+
+## Forms
+
+- **Checks:** `web/src/lib/validation.ts` holds the shared checks, and `useChecks` shows them from the first attempt to save. The API checks everything again and has the final word.
+- **Reference data:** pick it with `SearchSelect`, or `RefSelect`, `RoutingDomainSelect` and `PersonSelect`. You can type to search, and they show loading and failure states. Short fixed lists, such as status or environment, stay native selects.
+- **Messages:** `Field` links each error or hint to its control for screen readers.
+- **Dates and times:** use the browser's pickers. Date and time values are sent in UTC.
+
 ## Global features
 
 Left sidebar, top bar, global search, breadcrumbs, user menu, notification centre, saved filters, pagination, saved views, sorting, column visibility, export controls, confirmation dialogs and keyboard navigation.

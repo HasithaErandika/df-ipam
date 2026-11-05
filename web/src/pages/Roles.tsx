@@ -1,15 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, SkeletonRows, Td, Th } from '../components/ui'
+import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, MoreOptions, PageHeader, SkeletonRows, Td, Th } from '../components/ui'
 import { del, get, post, put } from '../lib/api'
 import { useCan, useMe } from '../lib/session'
 import type { MatrixRole, PermissionMatrix } from '../lib/types'
+import { useChecks } from '../components/workflow'
+import { issues as check, maxLength, required } from '../lib/validation'
 
 function RoleEditor({ role, permissions, onClose }: { role: MatrixRole | null; permissions: string[]; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [chosen, setChosen] = useState<Set<string>>(new Set())
-  useEffect(() => { setChosen(new Set(role?.permissions)) }, [role])
+  const [search, setSearch] = useState('')
+  useEffect(() => { setChosen(new Set(role?.permissions)); setSearch('') }, [role])
   const save = useMutation({
     mutationFn: () => put(`/roles/${role?.id}/permissions`, { permissions: [...chosen] }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['matrix'] }); onClose() },
@@ -23,9 +26,10 @@ function RoleEditor({ role, permissions, onClose }: { role: MatrixRole | null; p
   return (
     <Modal open onClose={onClose} title={`Permissions: ${role.name}`} subtitle={role.description} size="lg"
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>Save</Button></>}>
+      <Input aria-label="Search permissions" className="mb-2" placeholder="Search permissions" value={search} onChange={(e) => setSearch(e.target.value)} />
       <fieldset className="grid gap-1 sm:grid-cols-2">
         <legend className="sr-only">Permissions</legend>
-        {permissions.map((p) => (
+        {permissions.filter((p) => p.includes(search.trim().toLowerCase())).map((p) => (
           <label key={p} className="flex cursor-pointer items-center gap-2 rounded p-1.5 hover:bg-surface-2">
             <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={chosen.has(p)} onChange={() => toggle(p)} /><Mono>{p}</Mono>
           </label>
@@ -46,12 +50,13 @@ function RoleDetails({ role, onClose }: { role: MatrixRole | null; onClose: () =
     mutationFn: () => put(`/roles/${role?.id}`, { name, description }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['matrix'] }); queryClient.invalidateQueries({ queryKey: ['roles'] }); onClose() },
   })
+  const checks = useChecks(check({ name: required(name, 'Name') ?? maxLength(name, 100, 'Name') }))
   if (!role) return null
   return (
     <Modal open onClose={onClose} title={`Edit ${role.name}`}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>Save</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => checks.submit(() => save.mutate())}>Save</Button></>}>
       <div className="space-y-3">
-        <Field label="Name" htmlFor="edit-role-name" hint={role.isSystem ? 'Default roles keep their names.' : undefined}>
+        <Field label="Name" htmlFor="edit-role-name" error={checks.shown.name} hint={role.isSystem ? 'Default roles keep their names.' : undefined}>
           <Input id="edit-role-name" value={name} disabled={role.isSystem} onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="Description" htmlFor="edit-role-description"><Input id="edit-role-description" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
@@ -69,11 +74,12 @@ function NewRole({ open, onClose }: { open: boolean; onClose: () => void }) {
     mutationFn: () => post('/roles', { name, description }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['matrix'] }); setName(''); setDescription(''); onClose() },
   })
+  const checks = useChecks(check({ name: required(name, 'Name') ?? maxLength(name, 100, 'Name') }), open)
   return (
     <Modal open={open} onClose={onClose} title="New role"
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={create.isPending} onClick={() => create.mutate()}>Create</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={create.isPending} onClick={() => checks.submit(() => create.mutate())}>Create</Button></>}>
       <div className="space-y-3">
-        <Field label="Name" htmlFor="role-name"><Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Name" htmlFor="role-name" error={checks.shown.name}><Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Description" htmlFor="role-description"><Input id="role-description" value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
       </div>
       <div className="mt-3"><FormError error={create.error} /></div>
@@ -134,6 +140,7 @@ export function Roles() {
           </div>
         </Card>
       )}
+      {data && <MoreOptions label="Compare all permissions">
       <Card title="Permission matrix">
         {isPending && <SkeletonRows rows={8} />}
         {error && <ErrorState error={error} onRetry={refetch} />}
@@ -158,6 +165,7 @@ export function Roles() {
           </div>
         )}
       </Card>
+      </MoreOptions>}
       <RoleEditor role={editing} permissions={data?.permissions ?? []} onClose={() => setEditing(null)} />
       <RoleDetails role={details} onClose={() => setDetails(null)} />
       <NewRole open={adding} onClose={() => setAdding(false)} />

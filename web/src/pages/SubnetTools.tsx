@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Badge, Button, Field, FormError, Input, Modal, Mono, Select, SkeletonRows, Td, Th } from '../components/ui'
-import { Tabs } from '../components/workflow'
+import { Tabs, useChecks } from '../components/workflow'
 import { ApiError, get, listAll, patch, post } from '../lib/api'
 import { environments } from '../lib/format'
-import type { RoutingDomain, Subnet } from '../lib/types'
+import type { Subnet } from '../lib/types'
+import { RoutingDomainSelect, SearchSelect } from '../components/SearchSelect'
+import { between, choose, cidr as cidrIssue, ip as ipIssue, issues as check, optionalIP, required } from '../lib/validation'
 
 interface Option { id: string; name: string; email?: string; vlanId?: number; cidr?: string }
 
@@ -33,10 +35,8 @@ function MappingSelect({ def, value, onChange, error }: { def: typeof mappingFie
   const id = `edit-${def.key}`
   return (
     <Field label={def.label} htmlFor={id} error={error}>
-      <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">None</option>
-        {options.data?.map((o) => <option key={o.id} value={o.id}>{def.label2 ? def.label2(o) : o.name}</option>)}
-      </Select>
+      <SearchSelect id={id} value={value} onChange={onChange} emptyLabel="None" loading={options.isPending} fetchError={options.error} onRetry={() => options.refetch()}
+        options={options.data?.map((o) => ({ value: o.id, label: def.label2 ? def.label2(o) : o.name })) ?? []} />
     </Field>
   )
 }
@@ -56,7 +56,14 @@ export function EditSubnetModal({ subnet, onClose, onSaved }: { subnet: Subnet; 
     }, subnet.version),
     onSuccess: (s) => { queryClient.invalidateQueries({ queryKey: ['subnets'] }); onSaved(s); onClose() },
   })
-  const errors = issues(save.error)
+  const warn = Number(form.warnThreshold)
+  const checks = useChecks(check({
+    name: required(String(form.name), 'Name'),
+    gateway: optionalIP(String(form.gateway)),
+    warnThreshold: between(String(form.warnThreshold), 1, 100, 'Warning level'),
+    criticalThreshold: between(String(form.criticalThreshold), 1, 100, 'Critical level') ?? (Number(form.criticalThreshold) <= warn ? 'Critical must be above the warning level.' : undefined),
+  }))
+  const errors = { ...issues(save.error), ...checks.shown }
   const set = (k: string) => (v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
   const text = (k: string, label: string, mono = false) => (
     <Field label={label} htmlFor={`edit-${k}`} error={errors[k]}>
@@ -65,7 +72,7 @@ export function EditSubnetModal({ subnet, onClose, onSaved }: { subnet: Subnet; 
   )
   return (
     <Modal open onClose={onClose} size="xl" title={`Edit ${subnet.name}`} subtitle={<><Mono>{subnet.calculated.cidr}</Mono> · {subnet.routingDomainName}. The CIDR and routing domain stay fixed.</>}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>Save changes</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => checks.submit(() => save.mutate())}>Save changes</Button></>}>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         {text('name', 'Name')}
         <Field label="Environment" htmlFor="edit-environment" error={errors.environment}>
@@ -106,7 +113,6 @@ export function parseBulk(text: string) {
 
 export function BulkCreateModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient()
-  const domains = useQuery({ queryKey: ['routing-domains', 'all'], queryFn: () => listAll<RoutingDomain>('/routing-domains') })
   const [routingDomainId, setRd] = useState('')
   const [environment, setEnvironment] = useState('')
   const [text, setText] = useState('')
@@ -115,23 +121,24 @@ export function BulkCreateModal({ onClose }: { onClose: () => void }) {
     mutationFn: (dryRun: boolean) => post<BulkResponse>('/subnets/bulk', { routingDomainId, environment, dryRun, subnets: parseBulk(text) }),
     onSuccess: (r) => { setResult(r); if (r.created) queryClient.invalidateQueries({ queryKey: ['subnets'] }) },
   })
-  const errors = issues(run.error)
   const rows = parseBulk(text)
+  const checks = useChecks(check({
+    routingDomainId: choose(routingDomainId, 'a routing domain'), environment: choose(environment, 'an environment'),
+    subnets: rows.length === 0 ? 'Add at least one subnet.' : undefined,
+  }))
+  const errors = { ...issues(run.error), ...checks.shown }
   return (
     <Modal open onClose={onClose} size="xl" title="Bulk create subnets" subtitle="Check first, then create. All rows are created together, or none are."
       footer={result?.created ? <Button variant="primary" onClick={onClose}>Done</Button> : <>
         <Button onClick={onClose}>Cancel</Button>
-        <Button busy={run.isPending && run.variables === true} disabled={run.isPending || rows.length === 0} onClick={() => run.mutate(true)}>Check {rows.length} rows</Button>
+        <Button busy={run.isPending && run.variables === true} disabled={run.isPending} onClick={() => checks.submit(() => run.mutate(true))}>Check {rows.length} rows</Button>
         <Button variant="primary" busy={run.isPending && run.variables === false} disabled={run.isPending || !result || result.invalid > 0} onClick={() => run.mutate(false)}>Create {rows.length} subnets</Button>
       </>}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Routing domain" htmlFor="bulk-rd" error={errors.routingDomainId}>
-          <Select id="bulk-rd" value={routingDomainId} onChange={(e) => { setRd(e.target.value); setResult(null) }}>
-            <option value="">Select</option>
-            {domains.data?.map((d) => <option key={d.id} value={d.id}>{d.organisationName} / {d.name}</option>)}
-          </Select>
+          <RoutingDomainSelect id="bulk-rd" value={routingDomainId} onChange={(v) => { setRd(v); setResult(null) }} />
         </Field>
-        <Field label="Environment" htmlFor="bulk-env">
+        <Field label="Environment" htmlFor="bulk-env" error={errors.environment}>
           <Select id="bulk-env" value={environment} onChange={(e) => { setEnvironment(e.target.value); setResult(null) }}>
             <option value="">Select</option>
             {Object.entries(environments).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -178,14 +185,16 @@ export function ToolsModal({ onClose, onOpenSubnet }: { onClose: () => void; onO
   const split = useMutation({ mutationFn: () => post<{ subnets: string[]; total: string; truncated: boolean }>('/tools/split', { cidr, newPrefix: Number(prefix) }) })
   const summarise = useMutation({ mutationFn: () => post<{ summary: string[] }>('/tools/summarise', { cidrs: many.split(/[\s,]+/).filter(Boolean) }) })
   const locate = useMutation({ mutationFn: () => get<Located[]>(`/tools/locate?address=${encodeURIComponent(address.trim())}`) })
+  const splitChecks = useChecks(check({ cidr: cidrIssue(cidr), newPrefix: between(prefix, 0, 128, 'New prefix') }))
+  const locateChecks = useChecks(check({ address: ipIssue(address) }))
   return (
     <Modal open onClose={onClose} size="lg" title="Subnet tools" subtitle="Calculations only. Nothing here changes inventory.">
       <Tabs tabs={[{ key: 'split', label: 'Split' }, { key: 'summarise', label: 'Summarise' }, { key: 'locate', label: 'Locate an address' }]} active={tab} onChange={setTab} />
       {tab === 'split' && (
-        <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); split.mutate() }}>
+        <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); splitChecks.submit(() => split.mutate()) }}>
           <div className="grid grid-cols-[1fr_8rem_auto] items-end gap-2">
-            <Field label="CIDR" htmlFor="t-cidr" error={issues(split.error).cidr}><Input id="t-cidr" className="font-mono" value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="10.0.0.0/22" /></Field>
-            <Field label="New prefix" htmlFor="t-prefix" error={issues(split.error).newPrefix}><Input id="t-prefix" type="number" value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="24" /></Field>
+            <Field label="CIDR" htmlFor="t-cidr" error={splitChecks.shown.cidr ?? issues(split.error).cidr}><Input id="t-cidr" className="font-mono" value={cidr} onChange={(e) => setCidr(e.target.value)} placeholder="10.0.0.0/22" /></Field>
+            <Field label="New prefix" htmlFor="t-prefix" error={splitChecks.shown.newPrefix ?? issues(split.error).newPrefix}><Input id="t-prefix" type="number" value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="24" /></Field>
             <Button type="submit" variant="primary" busy={split.isPending}>Split</Button>
           </div>
           {split.data && <><p className="text-[13px] text-ink-2">{split.data.total} subnets{split.data.truncated && `, showing the first ${split.data.subnets.length}`}.</p>
@@ -203,9 +212,9 @@ export function ToolsModal({ onClose, onOpenSubnet }: { onClose: () => void; onO
         </form>
       )}
       {tab === 'locate' && (
-        <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); locate.mutate() }}>
+        <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); locateChecks.submit(() => locate.mutate()) }}>
           <div className="grid grid-cols-[1fr_auto] items-end gap-2">
-            <Field label="Address" htmlFor="t-addr" error={issues(locate.error).address}><Input id="t-addr" className="font-mono" value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
+            <Field label="Address" htmlFor="t-addr" error={locateChecks.shown.address ?? issues(locate.error).address}><Input id="t-addr" className="font-mono" value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
             <Button type="submit" variant="primary" busy={locate.isPending}>Locate</Button>
           </div>
           {locate.isPending && <SkeletonRows rows={2} />}

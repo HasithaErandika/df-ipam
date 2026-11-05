@@ -95,4 +95,6 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 | Roles | `/admin/permission-matrix`, `/roles`, `/roles/{id}`, `/roles/{id}/permissions` | `users:manage` |
 | System | `/system/health`, `/system/retention`, `/system/retention/{class}` | `system:manage`; reading also `audit:view` |
 
+`/users`, `/integrations/connections` and `/reconciliation/results` take `q` to search. `/audit-logs` takes `actor`, `action`, `objectType`, `result`, `from` and `to`, and `/audit-logs/filters` lists the actions and object types that exist.
+
 New error codes: `ENCRYPTION_NOT_CONFIGURED`, `CONNECTOR_NOT_AVAILABLE`, `CREDENTIALS_MISSING`, `CONNECTION_HAS_HISTORY`, `SYNC_ACTIVE`, `NAME_TAKEN`, `FINDING_NOT_CHANGEABLE`, `CHANGE_ALREADY_OPEN`, `CHANGE_ALREADY_DECIDED`, `REPORT_LIMIT`, `REPORT_NOT_READY`, `ROLE_PROTECTED`, `LAST_ADMINISTRATOR`, `ROLE_IN_USE`, `ROLE_IS_SYSTEM`.

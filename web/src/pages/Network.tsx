@@ -5,11 +5,14 @@ import { useSearchParams } from 'react-router'
 import { CatalogManager, entities, type Row } from '../components/catalog'
 import { Badge, Button, Card, ConfirmDialog, Modal, EmptyState, ErrorState, Field, FormError, Input, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
 import { Tabs } from '../components/workflow'
-import { del, get, list, listAll, patchPlain, post } from '../lib/api'
+import { del, get, list, patchPlain, post } from '../lib/api'
 import { domainKinds, formatCount } from '../lib/format'
 import { useClampPage, usePaging, type Paging } from '../lib/paging'
 import { useCan } from '../lib/session'
 import type { Organisation, RoutingDomain } from '../lib/types'
+import { RefSelect } from '../components/SearchSelect'
+import { useChecks } from '../components/workflow'
+import { choose, issues as check, required } from '../lib/validation'
 
 const useOrganisations = (p: Paging) => useQuery({
   queryKey: ['organisations', p.page, p.pageSize], placeholderData: keepPreviousData,
@@ -33,13 +36,14 @@ function NewOrganisation({ open, onClose }: { open: boolean; onClose: () => void
       onClose()
     },
   })
-  const submit = (e: FormEvent) => { e.preventDefault(); create.mutate() }
+  const checks = useChecks(check({ name: required(name, 'Name'), code: required(code, 'Code') }), open)
+  const submit = (e: FormEvent) => { e.preventDefault(); checks.submit(() => create.mutate()) }
   return (
     <Modal open={open} onClose={onClose} title="New organisation"
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" form="new-org" busy={create.isPending}>Create organisation</Button></>}>
-      <form id="new-org" onSubmit={submit} className="space-y-4">
-        <Field label="Name" htmlFor="org-name"><Input id="org-name" required autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Code" htmlFor="org-code" hint="A short identifier, such as DF."><Input id="org-code" required value={code} onChange={(e) => setCode(e.target.value)} /></Field>
+      <form id="new-org" noValidate onSubmit={submit} className="space-y-4">
+        <Field label="Name" htmlFor="org-name" error={checks.shown.name}><Input id="org-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Code" htmlFor="org-code" error={checks.shown.code} hint="A short identifier, such as DF."><Input id="org-code" value={code} onChange={(e) => setCode(e.target.value)} /></Field>
         <p className="text-[13px] text-ink-3">A Default routing domain is created with it.</p>
         <FormError error={create.error} />
       </form>
@@ -49,7 +53,6 @@ function NewOrganisation({ open, onClose }: { open: boolean; onClose: () => void
 
 function NewDomain({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
-  const organisations = useQuery({ queryKey: ['organisations', 'all'], queryFn: () => listAll<Organisation>('/organisations') })
   const [organisationId, setOrganisationId] = useState('')
   const [name, setName] = useState('')
   const [kind, setKind] = useState('vrf')
@@ -63,24 +66,25 @@ function NewDomain({ open, onClose }: { open: boolean; onClose: () => void }) {
       onClose()
     },
   })
-  const submit = (e: FormEvent) => { e.preventDefault(); create.mutate() }
+  const checks = useChecks(check({
+    organisationId: choose(organisationId, 'an organisation'), name: required(name, 'Name'),
+    routeDistinguisher: routeDistinguisher.trim() && !/^[\w.]+:\d+$/.test(routeDistinguisher.trim()) ? 'Use a form such as 65000:100.' : undefined,
+  }), open)
+  const submit = (e: FormEvent) => { e.preventDefault(); checks.submit(() => create.mutate()) }
   return (
     <Modal open={open} onClose={onClose} title="New routing domain"
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" type="submit" form="new-rd" busy={create.isPending}>Create routing domain</Button></>}>
-      <form id="new-rd" onSubmit={submit} className="space-y-4">
-        <Field label="Organisation" htmlFor="rd-org">
-          <Select id="rd-org" required value={organisationId} onChange={(e) => setOrganisationId(e.target.value)}>
-            <option value="">Select</option>
-            {organisations.data?.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </Select>
+      <form id="new-rd" noValidate onSubmit={submit} className="space-y-4">
+        <Field label="Organisation" htmlFor="rd-org" error={checks.shown.organisationId}>
+          <RefSelect<Organisation> id="rd-org" value={organisationId} onChange={setOrganisationId} path="/organisations" toOption={(o) => ({ value: o.id, label: o.name })} />
         </Field>
-        <Field label="Name" htmlFor="rd-name"><Input id="rd-name" required value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Name" htmlFor="rd-name" error={checks.shown.name}><Input id="rd-name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Type" htmlFor="rd-kind">
           <Select id="rd-kind" value={kind} onChange={(e) => setKind(e.target.value)}>
             {Object.entries(domainKinds).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
         </Field>
-        <Field label="Route distinguisher (optional)" htmlFor="rd-rd"><Input id="rd-rd" className="font-mono" value={routeDistinguisher} onChange={(e) => setRd(e.target.value)} /></Field>
+        <Field label="Route distinguisher (optional)" htmlFor="rd-rd" error={checks.shown.routeDistinguisher}><Input id="rd-rd" className="font-mono" value={routeDistinguisher} onChange={(e) => setRd(e.target.value)} /></Field>
         <label className="flex items-center gap-2 text-ink">
           <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={isIsolated} onChange={(e) => setIsolated(e.target.checked)} />
           Isolated routing domain

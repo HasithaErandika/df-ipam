@@ -7,6 +7,8 @@ export interface NavItem {
   to: string
   label: string
   icon: LucideIcon
+  /** Hides the link from people holding none of these. The API still does the real check. */
+  anyOf?: string[]
   /** Roadmap phase for pages that aren't built yet. */
   phase?: number
   summary?: string
@@ -28,10 +30,10 @@ export const nav: { group: string; items: NavItem[] }[] = [
   {
     group: 'Operations',
     items: [
-      { to: '/discovery', label: 'Discovery Centre', icon: Radar },
-      { to: '/imports', label: 'Imports', icon: FileUp },
+      { to: '/discovery', label: 'Discovery Centre', icon: Radar, anyOf: ['discovery:run', 'discovery:manage', 'inventory:view'] },
+      { to: '/imports', label: 'Imports', icon: FileUp, anyOf: ['imports:run'] },
       { to: '/reconciliation', label: 'Reconciliation Centre', icon: GitCompareArrows },
-      { to: '/integrations', label: 'Integrations', icon: Plug },
+      { to: '/integrations', label: 'Integrations', icon: Plug, anyOf: ['integrations:manage', 'audit:view'] },
     ],
   },
   {
@@ -40,16 +42,16 @@ export const nav: { group: string; items: NavItem[] }[] = [
       { to: '/requests', label: 'IP Allocation Requests', icon: ClipboardList },
       { to: '/reservations', label: 'Reservations', icon: BookCheck },
       { to: '/alerts', label: 'Alerts and Notifications', icon: Bell },
-      { to: '/reports', label: 'Reports', icon: FileBarChart },
-      { to: '/audit', label: 'Audit Logs', icon: ScrollText },
+      { to: '/reports', label: 'Reports', icon: FileBarChart, anyOf: ['reports:export', 'reports:export_scoped'] },
+      { to: '/audit', label: 'Audit Logs', icon: ScrollText, anyOf: ['audit:view'] },
     ],
   },
   {
     group: 'Administration',
     items: [
-      { to: '/users', label: 'User Management', icon: Users },
-      { to: '/roles', label: 'Roles and Permissions', icon: ShieldCheck },
-      { to: '/system', label: 'System Administration', icon: Settings },
+      { to: '/users', label: 'User Management', icon: Users, anyOf: ['users:manage'] },
+      { to: '/roles', label: 'Roles and Permissions', icon: ShieldCheck, anyOf: ['users:manage', 'audit:view'] },
+      { to: '/system', label: 'System Administration', icon: Settings, anyOf: ['system:manage', 'audit:view'] },
     ],
   },
 ]

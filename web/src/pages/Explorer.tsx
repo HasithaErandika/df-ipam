@@ -7,11 +7,14 @@ import { allocationStates, DeviceIcon, deviceTypes, observationStates, OSBadge, 
 import { SavedFilters } from '../components/filters'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
 import { Detail, SubnetPicker, Tabs, useDebounced } from '../components/workflow'
-import { ApiError, get, getBody, list, listAll, patchPlain, post, queryString } from '../lib/api'
+import { ApiError, get, getBody, list, patchPlain, post, queryString } from '../lib/api'
 import { formatDateTime, humanAction } from '../lib/format'
 import { useClampPage, usePaging } from '../lib/paging'
 import { useCan } from '../lib/session'
-import type { DeviceInfo, EvidenceItem, GridCell, HistoryEntry, IPRecord, RoutingDomain, Subnet } from '../lib/types'
+import type { DeviceInfo, EvidenceItem, GridCell, HistoryEntry, IPRecord, Subnet } from '../lib/types'
+import { RefSelect, RoutingDomainSelect } from '../components/SearchSelect'
+import { useChecks } from '../components/workflow'
+import { choose, ip, issues as check, optionalMAC } from '../lib/validation'
 
 const heading = 'mb-1 mt-4 text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase first:mt-0'
 
@@ -90,7 +93,6 @@ function EditRecord({ record, onClose }: { record: IPRecord; onClose: () => void
   const canAllocate = useCan('ip:allocate')
   const canReserve = useCan('ip:reserve')
   const canState = canAllocate || canReserve
-  const devices = useQuery({ queryKey: ['options', '/devices'], queryFn: () => listAll<{ id: string; name: string; deviceType: string }>('/devices') })
   const [form, setForm] = useState({ hostname: record.hostname, fqdn: record.fqdn, mac: record.mac ?? '', notes: record.notes, deviceId: record.deviceId ?? '', allocationState: record.allocationState, reason: '' })
   const save = useMutation({
     mutationFn: () => patchPlain(`/ip-addresses/${record.id}`, {
@@ -99,21 +101,25 @@ function EditRecord({ record, onClose }: { record: IPRecord; onClose: () => void
     }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ip'] }); queryClient.invalidateQueries({ queryKey: ['subnets'] }); onClose() },
   })
+  const held = record.allocationState === 'allocated' || record.allocationState === 'reserved'
+  const checks = useChecks(check({
+    mac: optionalMAC(form.mac),
+    reason: held && form.allocationState !== record.allocationState && !form.reason.trim() ? 'Give a reason for releasing this address.' : undefined,
+  }))
   const errors: Record<string, string> = {}
   if (save.error instanceof ApiError) for (const d of save.error.details) errors[d.field] = d.issue
+  Object.assign(errors, checks.shown)
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }))
   return (
     <Modal open onClose={onClose} title={`Edit ${record.address}`} subtitle="Changes are audited."
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>Save changes</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => checks.submit(() => save.mutate())}>Save changes</Button></>}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Hostname" htmlFor="ip-host"><Input id="ip-host" value={form.hostname} onChange={set('hostname')} /></Field>
         <Field label="FQDN" htmlFor="ip-fqdn"><Input id="ip-fqdn" value={form.fqdn} onChange={set('fqdn')} /></Field>
         <Field label="MAC" htmlFor="ip-mac" error={errors.mac}><Input id="ip-mac" className="font-mono" value={form.mac} onChange={set('mac')} /></Field>
         <Field label="Device" htmlFor="ip-device">
-          <Select id="ip-device" value={form.deviceId} onChange={set('deviceId')}>
-            <option value="">None</option>
-            {devices.data?.map((d) => <option key={d.id} value={d.id}>{d.name} ({deviceTypes[d.deviceType]?.label ?? d.deviceType})</option>)}
-          </Select>
+          <RefSelect<{ id: string; name: string; deviceType: string }> id="ip-device" value={form.deviceId} onChange={(v) => setForm((f) => ({ ...f, deviceId: v }))} path="/devices" emptyLabel="None"
+            toOption={(d) => ({ value: d.id, label: d.name, detail: deviceTypes[d.deviceType]?.label ?? d.deviceType })} />
         </Field>
         <div className="col-span-2"><Field label="Notes" htmlFor="ip-notes"><Input id="ip-notes" value={form.notes} onChange={set('notes')} /></Field></div>
         {canState && (
@@ -191,7 +197,6 @@ function RecordModal({ id, onClose }: { id: string; onClose: () => void }) {
 
 function NewRecord({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const queryClient = useQueryClient()
-  const domains = useQuery({ queryKey: ['routing-domains', 'all'], queryFn: () => listAll<RoutingDomain>('/routing-domains') })
   const [routingDomainId, setRd] = useState('')
   const [address, setAddress] = useState('')
   const [hostname, setHostname] = useState('')
@@ -199,17 +204,16 @@ function NewRecord({ onClose, onCreated }: { onClose: () => void; onCreated: (id
     mutationFn: () => post<IPRecord>('/ip-addresses', { routingDomainId, address, hostname }),
     onSuccess: (r) => { queryClient.invalidateQueries({ queryKey: ['ip'] }); onClose(); onCreated(r.id) },
   })
+  const checks = useChecks(check({ routingDomainId: choose(routingDomainId, 'a routing domain'), address: ip(address) }))
   const errors: Record<string, string> = {}
   if (create.error instanceof ApiError) for (const d of create.error.details) errors[d.field] = d.issue
+  Object.assign(errors, checks.shown)
   return (
     <Modal open onClose={onClose} title="New IP record" subtitle="It joins the most specific subnet holding the address. Records are only kept for addresses of interest."
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={create.isPending} onClick={() => create.mutate()}>Create record</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={create.isPending} onClick={() => checks.submit(() => create.mutate())}>Create record</Button></>}>
       <div className="space-y-3.5">
         <Field label="Routing domain" htmlFor="nr-rd" error={errors.routingDomainId}>
-          <Select id="nr-rd" value={routingDomainId} onChange={(e) => setRd(e.target.value)}>
-            <option value="">Select</option>
-            {domains.data?.map((d) => <option key={d.id} value={d.id}>{d.organisationName} / {d.name}</option>)}
-          </Select>
+          <RoutingDomainSelect id="nr-rd" value={routingDomainId} onChange={setRd} />
         </Field>
         <Field label="Address" htmlFor="nr-addr" error={errors.address}><Input id="nr-addr" className="font-mono" value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
         <Field label="Hostname (optional)" htmlFor="nr-host"><Input id="nr-host" value={hostname} onChange={(e) => setHostname(e.target.value)} /></Field>
