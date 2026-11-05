@@ -76,59 +76,74 @@ type Field struct {
 	Nullable     bool   // an empty value clears the column
 }
 
-// ApplyFields updates the named fields of one row in tx, and returns their values
-// before and after for the audit row. table and extra are constants from the caller.
-func ApplyFields(ctx context.Context, tx pgx.Tx, table, id, actor, extra string, fields []Field, changes map[string]string) (before, after map[string]string, err error) {
+// fieldPlan is the SQL for one ApplyFields call.
+type fieldPlan struct {
+	sets, reads []string
+	selected    []Field
+	args        []any
+}
+
+func planFields(id, actor string, fields []Field, changes map[string]string) fieldPlan {
 	names := make([]string, 0, len(changes))
 	for k := range changes {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	var sets, reads []string
-	var selected []Field
-	args := []any{id, actor}
+	p := fieldPlan{args: []any{id, actor}}
 	for _, name := range names {
 		for _, f := range fields {
-			if f.Name != name {
-				continue
+			if f.Name == name {
+				p.add(f, changes[name])
 			}
-			args = append(args, changes[name])
-			expr := fmt.Sprintf("$%d", len(args))
-			if f.Nullable {
-				expr = "NULLIF(" + expr + ", '')"
-			}
-			if f.Cast != "" {
-				expr += "::" + f.Cast
-			}
-			sets = append(sets, f.Column+" = "+expr)
-			reads = append(reads, "COALESCE("+f.Column+"::text, '')")
-			selected = append(selected, f)
 		}
 	}
-	if len(sets) == 0 {
+	return p
+}
+
+func (p *fieldPlan) add(f Field, value string) {
+	p.args = append(p.args, value)
+	expr := fmt.Sprintf("$%d", len(p.args))
+	if f.Nullable {
+		expr = "NULLIF(" + expr + ", '')"
+	}
+	if f.Cast != "" {
+		expr += "::" + f.Cast
+	}
+	p.sets = append(p.sets, f.Column+" = "+expr)
+	p.reads = append(p.reads, "COALESCE("+f.Column+"::text, '')")
+	p.selected = append(p.selected, f)
+}
+
+// read returns the planned fields of one row as text.
+func (p fieldPlan) read(ctx context.Context, tx pgx.Tx, table, id, lock string) (map[string]string, error) {
+	values := make([]string, len(p.reads))
+	dest := make([]any, len(p.reads))
+	for i := range values {
+		dest[i] = &values[i]
+	}
+	if err := tx.QueryRow(ctx, "SELECT "+strings.Join(p.reads, ", ")+" FROM "+table+" WHERE id = $1::uuid"+lock, id).Scan(dest...); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(values))
+	for i, f := range p.selected {
+		out[f.Name] = values[i]
+	}
+	return out, nil
+}
+
+// ApplyFields updates the named fields of one row in tx, and returns their values
+// before and after for the audit row. table and extra are constants from the caller.
+func ApplyFields(ctx context.Context, tx pgx.Tx, table, id, actor, extra string, fields []Field, changes map[string]string) (before, after map[string]string, err error) {
+	p := planFields(id, actor, fields, changes)
+	if len(p.sets) == 0 {
 		return nil, nil, errors.New("no fields to change")
 	}
-	read := func(lock string) (map[string]string, error) {
-		values := make([]string, len(reads))
-		dest := make([]any, len(reads))
-		for i := range values {
-			dest[i] = &values[i]
-		}
-		if err := tx.QueryRow(ctx, "SELECT "+strings.Join(reads, ", ")+" FROM "+table+" WHERE id = $1::uuid"+lock, id).Scan(dest...); err != nil {
-			return nil, err
-		}
-		out := make(map[string]string, len(values))
-		for i, f := range selected {
-			out[f.Name] = values[i]
-		}
-		return out, nil
-	}
-	if before, err = read(" FOR UPDATE"); err != nil {
+	if before, err = p.read(ctx, tx, table, id, " FOR UPDATE"); err != nil {
 		return nil, nil, err
 	}
-	if _, err = tx.Exec(ctx, "UPDATE "+table+" SET "+strings.Join(sets, ", ")+", updated_by = $2::uuid"+extra+" WHERE id = $1::uuid", args...); err != nil {
+	if _, err = tx.Exec(ctx, "UPDATE "+table+" SET "+strings.Join(p.sets, ", ")+", updated_by = $2::uuid"+extra+" WHERE id = $1::uuid", p.args...); err != nil {
 		return nil, nil, err
 	}
-	after, err = read("")
+	after, err = p.read(ctx, tx, table, id, "")
 	return before, after, err
 }

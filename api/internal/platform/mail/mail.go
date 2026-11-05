@@ -86,8 +86,21 @@ func (s *SMTP) Send(ctx context.Context, to, subject, body string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
 	tlsConfig := &tls.Config{ServerName: s.cfg.Host, MinVersion: tls.VersionTLS12}
+	client, err := s.connect(ctx, tlsConfig)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	if err := s.secure(client, tlsConfig); err != nil {
+		return err
+	}
+	return s.deliver(client, to, subject, body)
+}
+
+// connect opens the connection and reads the greeting. Port 465 starts in TLS.
+func (s *SMTP) connect(ctx context.Context, tlsConfig *tls.Config) (*smtp.Client, error) {
+	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
 	dialer := &net.Dialer{}
 	var conn net.Conn
 	var err error
@@ -97,7 +110,7 @@ func (s *SMTP) Send(ctx context.Context, to, subject, body string) error {
 		conn, err = dialer.DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
-		return fmt.Errorf("connect to mail server: %w", err)
+		return nil, fmt.Errorf("connect to mail server: %w", err)
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
@@ -105,9 +118,12 @@ func (s *SMTP) Send(ctx context.Context, to, subject, body string) error {
 	client, err := smtp.NewClient(conn, s.cfg.Host)
 	if err != nil {
 		conn.Close()
-		return fmt.Errorf("mail server greeting: %w", err)
+		return nil, fmt.Errorf("mail server greeting: %w", err)
 	}
-	defer client.Close()
+	return client, nil
+}
+
+func (s *SMTP) secure(client *smtp.Client, tlsConfig *tls.Config) error {
 	if s.cfg.Port != 465 {
 		if ok, _ := client.Extension("STARTTLS"); !ok {
 			return errors.New("mail server does not offer STARTTLS")
@@ -116,11 +132,16 @@ func (s *SMTP) Send(ctx context.Context, to, subject, body string) error {
 			return fmt.Errorf("starttls: %w", err)
 		}
 	}
-	if s.cfg.Username != "" {
-		if err := client.Auth(smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)); err != nil {
-			return fmt.Errorf("mail server sign-in failed")
-		}
+	if s.cfg.Username == "" {
+		return nil
 	}
+	if err := client.Auth(smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)); err != nil {
+		return fmt.Errorf("mail server sign-in failed")
+	}
+	return nil
+}
+
+func (s *SMTP) deliver(client *smtp.Client, to, subject, body string) error {
 	if err := client.Mail(s.cfg.From); err != nil {
 		return fmt.Errorf("mail from: %w", err)
 	}

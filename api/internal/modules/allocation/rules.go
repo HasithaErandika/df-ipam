@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/netip"
 	"sort"
-	"strings"
 	"time"
 
 	"dfipam/api/internal/netcalc"
@@ -20,141 +19,20 @@ const ApprovalTTL = 30 * 24 * time.Hour
 const dateLayout = "2006-01-02"
 
 var (
-	errNotApproved = httpx.NewError(http.StatusConflict, "REQUEST_NOT_APPROVED", "Only approved requests can be fulfilled.")
-	errUnavailable = httpx.NewError(http.StatusConflict, "ADDRESS_UNAVAILABLE", "This address is no longer available. Choose another or use automatic selection.")
-	errExhausted   = httpx.NewError(http.StatusConflict, "SUBNET_EXHAUSTED", "This subnet has no available candidate addresses.")
-	errSelf        = httpx.NewError(http.StatusForbidden, "SELF_APPROVAL_DENIED", "You can't approve or reject your own request.")
-	errSeparation  = httpx.NewError(http.StatusForbidden, "SEPARATION_OF_DUTIES", "You've already decided a step of this request. Another approver must decide this one.")
-	errNotEligible = httpx.NewError(http.StatusForbidden, "NOT_ELIGIBLE_APPROVER", "This step needs an approver with a different role.")
-	errNotCurrent  = httpx.NewError(http.StatusConflict, "APPROVAL_NOT_CURRENT", "This approval step isn't open. It may have been decided already.")
-	errArchived    = httpx.NewError(http.StatusConflict, "SUBNET_ARCHIVED", "This subnet is archived.")
+	errNotApproved        = httpx.NewError(http.StatusConflict, "REQUEST_NOT_APPROVED", "Only approved requests can be fulfilled.")
+	errUnavailable        = httpx.NewError(http.StatusConflict, "ADDRESS_UNAVAILABLE", "This address is no longer available. Choose another or use automatic selection.")
+	errExhausted          = httpx.NewError(http.StatusConflict, "SUBNET_EXHAUSTED", "This subnet has no available candidate addresses.")
+	errSelf               = httpx.NewError(http.StatusForbidden, "SELF_APPROVAL_DENIED", "You can't approve or reject your own request.")
+	errSeparation         = httpx.NewError(http.StatusForbidden, "SEPARATION_OF_DUTIES", "You've already decided a step of this request. Another approver must decide this one.")
+	errNotEligible        = httpx.NewError(http.StatusForbidden, "NOT_ELIGIBLE_APPROVER", "This step needs an approver with a different role.")
+	errNotCurrent         = httpx.NewError(http.StatusConflict, "APPROVAL_NOT_CURRENT", "This approval step isn't open. It may have been decided already.")
+	errArchived           = httpx.NewError(http.StatusConflict, "SUBNET_ARCHIVED", "This subnet is archived.")
+	errAllocationReleased = httpx.NewError(http.StatusConflict, "ALLOCATION_RELEASED", "This allocation has already been released.")
+	errReleaseRequested   = httpx.NewError(http.StatusConflict, "RELEASE_ALREADY_REQUESTED", "A release of this allocation is already in progress.")
+	errReservationEnded   = httpx.NewError(http.StatusConflict, "RESERVATION_NOT_ACTIVE", "This reservation is no longer active.")
 )
 
 func badState(msg string) error { return httpx.NewError(http.StatusConflict, "INVALID_STATE", msg) }
-
-func optionalUUID(field string, v *string) (*string, error) {
-	if v == nil || strings.TrimSpace(*v) == "" {
-		return nil, nil
-	}
-	s := strings.TrimSpace(*v)
-	if !httpx.IsUUID(s) {
-		return nil, httpx.Validation(field, "Choose a valid record.")
-	}
-	return &s, nil
-}
-
-func optionalDate(field string, v *string) (*time.Time, error) {
-	if v == nil || strings.TrimSpace(*v) == "" {
-		return nil, nil
-	}
-	t, err := time.Parse(dateLayout, strings.TrimSpace(*v))
-	if err != nil {
-		return nil, httpx.Validation(field, "Enter a date as YYYY-MM-DD.")
-	}
-	return &t, nil
-}
-
-func dateString(t *time.Time) *string {
-	if t == nil {
-		return nil
-	}
-	s := t.Format(dateLayout)
-	return &s
-}
-
-// Normalise checks a request's fields on their own, before any database
-// lookup, and returns a cleaned copy. today is the current UTC date.
-func Normalise(in RequestInput, today time.Time) (RequestInput, error) {
-	out := in
-	out.Justification = strings.TrimSpace(in.Justification)
-	out.Department = strings.TrimSpace(in.Department)
-	out.Comments = strings.TrimSpace(in.Comments)
-	switch in.RequestType {
-	case TypeAllocation, TypeReservation, TypeRelease:
-	default:
-		return out, httpx.Validation("requestType", "Choose allocation, reservation or release.")
-	}
-	if out.Justification == "" {
-		return out, httpx.Validation("justification", "Say why this is needed.")
-	}
-	if len(out.Justification) > 2000 || len(out.Comments) > 2000 || len(out.Department) > 200 {
-		return out, httpx.Validation("justification", "Keep text fields under 2,000 characters.")
-	}
-	var err error
-	for field, ptr := range map[string]**string{"applicationId": &out.ApplicationID, "businessServiceId": &out.BusinessServiceID,
-		"technicalOwnerId": &out.TechnicalOwnerID, "businessOwnerId": &out.BusinessOwnerID,
-		"allocationId": &out.AllocationID, "reservationId": &out.ReservationID} {
-		if *ptr, err = optionalUUID(field, *ptr); err != nil {
-			return out, err
-		}
-	}
-	if out.Environment != nil && *out.Environment == "" {
-		out.Environment = nil
-	}
-	if out.Environment != nil && !environments[*out.Environment] {
-		return out, httpx.Validation("environment", "Choose an environment.")
-	}
-	required, err := optionalDate("requiredDate", in.RequiredDate)
-	if err != nil {
-		return out, err
-	}
-	expiry, err := optionalDate("expiryDate", in.ExpiryDate)
-	if err != nil {
-		return out, err
-	}
-	out.RequiredDate, out.ExpiryDate = dateString(required), dateString(expiry)
-	if expiry != nil && !expiry.After(today) {
-		return out, httpx.Validation("expiryDate", "The expiry date must be in the future.")
-	}
-	if required != nil && expiry != nil && expiry.Before(*required) {
-		return out, httpx.Validation("expiryDate", "The expiry date can't be before the required date.")
-	}
-
-	switch in.RequestType {
-	case TypeRelease:
-		if out.AllocationID == nil {
-			return out, httpx.Validation("allocationId", "Choose the allocation to release.")
-		}
-		out.ReservationID, out.SelectionMode, out.RequestedAddress = nil, "specific", nil
-		return out, nil
-	case TypeReservation:
-		out.ReservationID, out.AllocationID = nil, nil
-		if expiry == nil {
-			return out, httpx.Validation("expiryDate", "Reservations need an expiry date.")
-		}
-		if expiry.After(today.AddDate(0, 0, MaxReservationDays)) {
-			return out, httpx.Validation("expiryDate", "Reservations can run for at most a year.")
-		}
-	case TypeAllocation:
-		out.AllocationID = nil
-		if out.ReservationID != nil {
-			// Converting a reservation: the address comes from it.
-			out.SelectionMode, out.RequestedAddress = "specific", nil
-			return out, nil
-		}
-	}
-	if !httpx.IsUUID(strings.TrimSpace(in.SubnetID)) {
-		return out, httpx.Validation("subnetId", "Choose a subnet.")
-	}
-	out.SubnetID = strings.TrimSpace(in.SubnetID)
-	switch in.SelectionMode {
-	case "", "automatic":
-		out.SelectionMode, out.RequestedAddress = "automatic", nil
-	case "specific":
-		if in.RequestedAddress == nil {
-			return out, httpx.Validation("requestedAddress", "Enter the address you need.")
-		}
-		a, err := netip.ParseAddr(strings.TrimSpace(*in.RequestedAddress))
-		if err != nil || a.Zone() != "" || a.Is4In6() {
-			return out, httpx.Validation("requestedAddress", "Enter a valid IP address.")
-		}
-		s := a.String()
-		out.RequestedAddress = &s
-	default:
-		return out, httpx.Validation("selectionMode", "Choose automatic or specific.")
-	}
-	return out, nil
-}
 
 // ReservationEnd turns an expiry date into the moment a reservation ends: the
 // end of that day in UTC.

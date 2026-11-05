@@ -196,12 +196,3 @@ func TestCheckSpecific(t *testing.T) {
 		}
 	}
 }
-
-func TestCanCancel(t *testing.T) {
-	for status, want := range map[string]bool{StatusDraft: true, StatusPendingApproval: true, StatusApproved: true,
-		StatusAllocated: false, StatusRejected: false, StatusCancelled: false, StatusExpired: false} {
-		if CanCancel(status) != want {
-			t.Errorf("%s: want %v", status, want)
-		}
-	}
-}

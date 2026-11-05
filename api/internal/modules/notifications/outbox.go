@@ -2,12 +2,11 @@ package notifications
 
 import (
 	"context"
+	"dfipam/api/internal/platform/db"
+	"dfipam/api/internal/platform/mail"
 	"encoding/json"
 	"strings"
 	"time"
-
-	"dfipam/api/internal/platform/db"
-	"dfipam/api/internal/platform/mail"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -43,8 +42,7 @@ func EmailText(p Payload, baseURL string) (string, string) {
 // DeliveryResult counts one outbox pass.
 type DeliveryResult struct{ Sent, Failed, Suppressed int }
 
-// Deliver sends a batch of pending email. Rows are locked with SKIP LOCKED, so
-// several workers can run at once without sending anything twice.
+// Deliver suppresses stale emails, then sends the pending ones.
 func Deliver(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL string, batch int) (DeliveryResult, error) {
 	var res DeliveryResult
 	tag, err := conn.Exec(ctx, `UPDATE notifications SET status = 'suppressed', last_error = 'expired before delivery'
@@ -57,53 +55,65 @@ func Deliver(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL stri
 		return res, nil
 	}
 	err = db.InTx(ctx, conn, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `SELECT n.id::text, u.email, n.payload, n.attempts FROM notifications n
-			JOIN users u ON u.id = n.recipient_id
-			WHERE n.channel = 'email' AND n.status = 'pending' AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= now())
-			ORDER BY n.created_at LIMIT $1 FOR UPDATE OF n SKIP LOCKED`, batch)
-		if err != nil {
-			return err
-		}
-		type item struct {
-			id, to   string
-			payload  []byte
-			attempts int
-		}
-		items, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (item, error) {
-			var it item
-			return it, r.Scan(&it.id, &it.to, &it.payload, &it.attempts)
-		})
+		items, err := pendingEmails(ctx, tx, batch)
 		if err != nil {
 			return err
 		}
 		for _, it := range items {
-			var p Payload
-			_ = json.Unmarshal(it.payload, &p)
-			subject, body := EmailText(p, baseURL)
-			attempts := it.attempts + 1
-			if sendErr := mailer.Send(ctx, it.to, subject, body); sendErr != nil {
-				res.Failed++
-				status := "pending"
-				if attempts >= maxAttempts {
-					status = "failed"
-				}
-				msg := sendErr.Error()
-				if len(msg) > 300 {
-					msg = msg[:300]
-				}
-				if _, err := tx.Exec(ctx, `UPDATE notifications SET attempts = $2, status = $3, last_error = $4,
-					next_attempt_at = now() + make_interval(secs => $5) WHERE id = $1::uuid`, it.id, attempts, status, msg, Backoff(attempts).Seconds()); err != nil {
-					return err
-				}
-				continue
-			}
-			res.Sent++
-			if _, err := tx.Exec(ctx, `UPDATE notifications SET attempts = $2, status = 'sent', sent_at = now(), last_error = NULL
-				WHERE id = $1::uuid`, it.id, attempts); err != nil {
+			if err := sendEmail(ctx, tx, mailer, baseURL, it, &res); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	return res, err
+}
+
+type pendingEmail struct {
+	id, to   string
+	payload  []byte
+	attempts int
+}
+
+func pendingEmails(ctx context.Context, tx pgx.Tx, batch int) ([]pendingEmail, error) {
+	rows, err := tx.Query(ctx, `SELECT n.id::text, u.email, n.payload, n.attempts FROM notifications n
+		JOIN users u ON u.id = n.recipient_id
+		WHERE n.channel = 'email' AND n.status = 'pending' AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= now())
+		ORDER BY n.created_at LIMIT $1 FOR UPDATE OF n SKIP LOCKED`, batch)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (pendingEmail, error) {
+		var it pendingEmail
+		return it, r.Scan(&it.id, &it.to, &it.payload, &it.attempts)
+	})
+}
+
+func sendEmail(ctx context.Context, tx pgx.Tx, mailer mail.Mailer, baseURL string, it pendingEmail, res *DeliveryResult) error {
+	var p Payload
+	_ = json.Unmarshal(it.payload, &p)
+	subject, body := EmailText(p, baseURL)
+	attempts := it.attempts + 1
+	if sendErr := mailer.Send(ctx, it.to, subject, body); sendErr != nil {
+		res.Failed++
+		return recordSendFailure(ctx, tx, it.id, attempts, sendErr)
+	}
+	res.Sent++
+	_, err := tx.Exec(ctx, `UPDATE notifications SET attempts = $2, status = 'sent', sent_at = now(), last_error = NULL
+		WHERE id = $1::uuid`, it.id, attempts)
+	return err
+}
+
+func recordSendFailure(ctx context.Context, tx pgx.Tx, id string, attempts int, sendErr error) error {
+	status := "pending"
+	if attempts >= maxAttempts {
+		status = "failed"
+	}
+	msg := sendErr.Error()
+	if len(msg) > 300 {
+		msg = msg[:300]
+	}
+	_, err := tx.Exec(ctx, `UPDATE notifications SET attempts = $2, status = $3, last_error = $4,
+		next_attempt_at = now() + make_interval(secs => $5) WHERE id = $1::uuid`, id, attempts, status, msg, Backoff(attempts).Seconds())
+	return err
 }

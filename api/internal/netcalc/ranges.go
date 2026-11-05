@@ -35,9 +35,6 @@ func Offset(a netip.Addr, n *big.Int) netip.Addr {
 	return fromInt(new(big.Int).Add(toInt(a), n), a.Is4())
 }
 
-// Distance returns how far b is after a.
-func Distance(a, b netip.Addr) *big.Int { return new(big.Int).Sub(toInt(b), toInt(a)) }
-
 // PrefixRange returns every address in the prefix.
 func PrefixRange(p netip.Prefix) Range { return Range{p.Masked().Addr(), lastAddress(p.Masked())} }
 

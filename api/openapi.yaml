@@ -482,7 +482,7 @@ paths:
   /agent-api/jobs:
     get: { summary: 'Agent: claim the next job allowed to run now', responses: { '200': { description: A job }, '204': { description: Nothing to do } } }
   /agent-api/jobs/{id}/results:
-    post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop, and lists targets closed by a new exclusion or blackout', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
   /audit-logs/filters:
     get: { summary: Actions and object types that exist, for filter pickers, responses: { '200': { description: OK } } }
   /roles/{id}/permissions:
