@@ -176,6 +176,7 @@ Use `-hex` for the database passwords: they go into connection URLs, so they mus
 | `POSTGRES_PASSWORD`, `DFIPAM_APP_PASSWORD` | The two generated values |
 | `DATABASE_URL`, `MIGRATION_DATABASE_URL` | Same format as the example, with those passwords. Used only by commands run on the host |
 | `SECRET_ENCRYPTION_KEY` | The generated key |
+| `DOCKER_SUBNET`, `DOCKER_GATEWAY` | Leave as they are, unless `172.30.0.0/24` is in use at your company |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | Your mail server. An empty `SMTP_HOST` keeps email off |
 | `BACKUP_GPG_RECIPIENT` | See step 15 |
 
@@ -238,6 +239,39 @@ If a load balancer or proxy sits in front (model C), Nginx sees its address rath
 ```bash
 sudo ln -s /etc/nginx/sites-available/df-ipam /etc/nginx/sites-enabled/ && sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
+```
+
+## Step 9a: Flood protection
+
+Each layer stops what the one above it can't.
+
+| Layer | Stops | Where |
+| --- | --- | --- |
+| Upstream firewall | **Volumetric floods** | FortiGate DoS policy, or your ISP |
+| Host | SYN floods, spoofing, connection bursts | Sysctl settings and nftables, below |
+| Nginx | Request floods, slow clients | Already in `df-ipam.conf` |
+| API | Abuse per address and per person, overload | Built in |
+| Discovery | **DF-IPAM flooding your own network** | Built in |
+
+**No software on this server can stop a flood that fills your internet link.** The traffic is already through the link by the time it arrives, so that has to be stopped upstream. For models A and B the server isn't reachable from the internet at all, which is the best protection there is. For model C, set up a FortiGate DoS policy or an upstream scrubbing service first.
+
+On the server:
+
+```bash
+cd /opt/df-ipam
+sudo cp deploy/sysctl/99-df-ipam.conf /etc/sysctl.d/ && sudo sysctl --system
+sudo nft -c -f deploy/nftables/df-ipam-flood.nft   # check it first
+sudo nft -f deploy/nftables/df-ipam-flood.nft
+```
+
+To keep the nftables rules after a reboot, add `include "/opt/df-ipam/deploy/nftables/df-ipam-flood.nft"` to `/etc/nftables.conf`, and enable the `nftables` service.
+
+**Offices behind one NAT address count as one client** at every layer that limits by address. If real people see "Too many requests", raise `rate` in the Nginx file and the nftables file. Limits per person aren't affected.
+
+The discovery budget is 500 packets a second across all agents, and two jobs can't scan the same network at once. Jobs over the budget wait in the queue. To change it, in `make db-shell`:
+
+```sql
+UPDATE system_settings SET value = '300' WHERE key = 'discovery.max_total_pps';
 ```
 
 ## Step 10: Check it
@@ -416,6 +450,10 @@ sudo make docker-up
 | "Waiting for access" | Signed in with no role | Assign one in User Management, or see step 11 |
 | `required variable ... is missing` from Docker | Compose was run directly | Use the `make` commands, which load `api/.env` |
 | `migrate` or the API can't sign in to PostgreSQL | Passwords changed after the volume was created | Set them back, or change them in PostgreSQL with `make db-shell` |
+| "Too many requests" for real users | Many people behind one NAT address | Raise the Nginx and nftables rates (step 9a) |
+| Every user seems to share one rate limit, or audit logs show `172.30.0.1` | `DOCKER_GATEWAY` doesn't match the Docker network | Recreate with `make docker-down`, then `make docker-up` |
+| `Pool overlaps with other one` from Docker | `DOCKER_SUBNET` clashes with another network | Choose another range in `api/.env` |
+| A discovery job stays queued | Over the budget, or another job is scanning that network | It starts when the other job ends |
 | `port is already allocated` | Something else has 5432 or 8080 | Change `POSTGRES_PORT` or `API_PORT` in `api/.env`, and the Nginx upstream to match |
 | Connection test: "refused by the outbound policy" | Host or its private range isn't allowed | Fix `INTEGRATION_ALLOWED_HOSTS` and `INTEGRATION_ALLOWED_PRIVATE_RANGES`, then `make docker-up` |
 | Connection test: certificate error | Self-signed or internal certificate | Add the CA with `INTEGRATION_CA_FILE`. Don't look for a way to skip the check |

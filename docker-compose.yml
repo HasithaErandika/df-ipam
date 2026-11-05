@@ -73,6 +73,10 @@ services:
     environment:
       <<: *backend-env
       API_LISTEN_ADDR: 0.0.0.0:8080
+      # Nginx reaches this container from the gateway. Without this, every user would
+      # share one rate limit, and audit logs would show the wrong address.
+      TRUSTED_PROXIES: ${DOCKER_GATEWAY:-172.30.0.1}
+      API_MAX_IN_FLIGHT:
       DB_MAX_CONNS: ${API_DB_MAX_CONNS:-20}
     ports:
       - 127.0.0.1:${API_PORT:-8080}:8080
@@ -96,6 +100,14 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+
+# Fixed, so the API can trust its gateway and no other address.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.30.0.0/24}
+          gateway: ${DOCKER_GATEWAY:-172.30.0.1}
 
 volumes:
   db-data:

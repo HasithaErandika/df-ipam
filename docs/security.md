@@ -26,6 +26,8 @@ Grouped by STRIDE.
 | | Viewer sees out-of-scope data | Scope filter applied in the repository layer, covered by tests |
 | | Stolen token through XSS | CSP, output encoding, no `dangerouslySetInnerHTML` |
 | **Denial of service** | Huge IPv6 listing | Range limits, no enumeration, page caps |
+| | Request flood | Limits per address and person, in-flight cap, Nginx and host limits |
+| | Network flood | Upstream firewall. Models A and B aren't reachable from the internet |
 | | Discovery overloads a network | Rate and concurrency ceilings, windows, emergency stop |
 | | Large file upload | Size limits, background processing |
 | **Elevation of privilege** | Self-approval | Enforced in the service layer and database |
@@ -73,7 +75,12 @@ Nothing in DF-IPAM changes firewalls, DNS, DHCP or cloud networks.
 - TLS 1.2+ at Nginx, with HSTS
 - `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`, and `frame-ancestors 'none'`
 - CORS restricted to `CORS_ALLOWED_ORIGINS`
-- Rate limits on the API, stricter for agent registration and exports
+- Rate limits per address and per signed-in person, stricter for agent registration, with at most five running reports per person
+- An IPv6 client counts as its whole /64, so stepping through addresses doesn't escape a limit
+- A cap on requests running at once, which refuses work instead of queueing it, and a bound on the limiter's memory
+- Nginx connection limits and timeouts for slow clients, and SYN cookies and per-source limits on the host
+- Discovery stays inside a budget across all agents, and two jobs can't scan one network at once
+- Volumetric floods are stopped upstream, not here: see [setup.md](setup.md), step 9a
 - Request size limits
 - Errors return a generic message and a correlation ID, with detail only in the logs
 

@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +18,8 @@ type Config struct {
 	SupabaseAnonKey    string
 	SupabaseServiceKey string
 	AuthAudience       string
+	TrustedProxies     []string
+	MaxInFlight        int
 }
 
 func get(key, fallback string) string {
@@ -48,6 +51,14 @@ func Load() (Config, error) {
 		SupabaseAnonKey:    get("SUPABASE_ANON_KEY", ""),
 		SupabaseServiceKey: get("SUPABASE_SERVICE_ROLE_KEY", ""),
 		AuthAudience:       get("AUTH_AUDIENCE", "authenticated"),
+		TrustedProxies:     splitList(get("TRUSTED_PROXIES", "127.0.0.1,::1")),
+	}
+	if v := get("API_MAX_IN_FLIGHT", ""); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return c, fmt.Errorf("API_MAX_IN_FLIGHT must be a positive number")
+		}
+		c.MaxInFlight = n
 	}
 	var missing []string
 	for name, v := range map[string]string{

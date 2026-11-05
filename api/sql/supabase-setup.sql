@@ -1266,6 +1266,7 @@ INSERT INTO observation_sources (name, kind, reliability) VALUES ('ARP', 'active
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('ICMP', 'active', 40) ON CONFLICT (name) DO NOTHING;
 INSERT INTO observation_sources (name, kind, reliability) VALUES ('Nmap', 'active', 40) ON CONFLICT (name) DO NOTHING;
 INSERT INTO system_settings (key, value) VALUES ('discovery.emergency_stop', 'false') ON CONFLICT (key) DO NOTHING;
+INSERT INTO system_settings (key, value) VALUES ('discovery.max_total_pps', '500') ON CONFLICT (key) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_observations', 180) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_job_logs', 90) ON CONFLICT (data_class) DO NOTHING;
 INSERT INTO retention_policies (data_class, retain_days) VALUES ('agent_heartbeats', 30) ON CONFLICT (data_class) DO NOTHING;

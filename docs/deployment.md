@@ -77,6 +77,8 @@ Settings live in `api/.env` and `web/.env`, in development and on the server. `m
 | `DATABASE_URL`, `MIGRATION_DATABASE_URL` | Connections for commands run on the host. Containers build their own |
 | `SUPABASE_DATABASE_URL`, `SUPABASE_MIGRATION_DATABASE_URL` | Supabase database, for testing only |
 | `DB_MAX_CONNS` | Connection pool size for processes run on the host |
+| `TRUSTED_PROXIES`, `API_MAX_IN_FLIGHT` | Who may state the client's address, and the most requests running at once |
+| `DOCKER_SUBNET`, `DOCKER_GATEWAY` | The Docker network. The API trusts only this gateway |
 | `INTEGRATION_ALLOWED_HOSTS`, `INTEGRATION_ALLOWED_PRIVATE_RANGES`, `INTEGRATION_CA_FILE` | Outbound policy for connectors |
 | `SECRET_ENCRYPTION_KEY_VERSION`, `SECRET_ENCRYPTION_KEY_PREVIOUS` | Key rotation |
 | `BACKUP_GPG_RECIPIENT` | GPG key backups are encrypted to |

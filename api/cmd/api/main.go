@@ -52,7 +52,8 @@ func run() error {
 	}
 	verifier := auth.NewSupabaseVerifier(cfg.SupabaseURL+"/auth/v1", cfg.AuthAudience, cfg.SupabaseURL+"/auth/v1/.well-known/jwks.json")
 	resolver := &auth.Resolver{Pool: pool, Provider: verifier.Provider()}
-	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins}
+	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
+		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight}
 	if cfg.SupabaseServiceKey != "" {
 		deps.Inviter = admin
 	}
@@ -70,7 +71,7 @@ func run() error {
 	router, _ := server.New(deps)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute}
+		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 	errs := make(chan error, 1)
 	go func() {
 		slog.Info("api listening", "addr", cfg.ListenAddr)

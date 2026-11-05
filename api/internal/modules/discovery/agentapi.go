@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -33,7 +34,8 @@ func (h *Handler) RegisterAgentAPI(g *gin.RouterGroup) map[string]bool {
 		keys[method+" "+strings.TrimRight(g.BasePath(), "/")+path] = true
 		g.Handle(method, path, handlers...)
 	}
-	add(http.MethodPost, "/register", h.register)
+	// One-time tokens are guessed here if anywhere, so this is far stricter than the rest.
+	add(http.MethodPost, "/register", httpx.RateLimit(0.2, 5), h.register)
 	add(http.MethodPost, "/heartbeat", h.agentAuth, h.heartbeat)
 	add(http.MethodGet, "/jobs", h.agentAuth, h.claim)
 	add(http.MethodPost, "/jobs/:id/results", h.agentAuth, h.results)
@@ -149,6 +151,28 @@ type claimedTarget struct {
 	Status          string  `json:"status"`
 }
 
+// defaultMaxTotalPPS caps all discovery running at once, in packets per second. Each
+// policy has its own limit, but several agents together could otherwise add up to a
+// flood on the network this system is meant to protect.
+const defaultMaxTotalPPS = 500
+
+// fitsBudget says whether a job can start. A job alone on the network always may,
+// because its policy was approved at that rate, and it would otherwise never run.
+func fitsBudget(running, jobPPS, ceiling int) bool {
+	return running == 0 || running+jobPPS <= ceiling
+}
+
+// trafficBudget reads the ceiling, and what other agents use now. Agents that have
+// gone silent don't count, so a crashed agent can't block discovery for good.
+func trafficBudget(ctx context.Context, q querier, agent string) (ceiling, running int, err error) {
+	err = q.QueryRow(ctx, `SELECT
+		  COALESCE((SELECT (value #>> '{}')::int FROM system_settings WHERE key = 'discovery.max_total_pps'), $2),
+		  COALESCE((SELECT sum((j.config_snapshot->>'maxPps')::int) FROM discovery_jobs j JOIN discovery_agents a ON a.id = j.agent_id
+		            WHERE j.status = 'running' AND a.id <> $1::uuid AND a.last_heartbeat_at > now() - interval '5 minutes'), 0)`,
+		agent, defaultMaxTotalPPS).Scan(&ceiling, &running)
+	return ceiling, running, err
+}
+
 // claim hands the agent its next job, if discovery may run now. Jobs pinned to
 // another agent, or outside their policy's windows, are left alone.
 func (h *Handler) claim(c *gin.Context) {
@@ -156,6 +180,10 @@ func (h *Handler) claim(c *gin.Context) {
 	var out *gin.H
 	err := db.InTx(ctx, h.svc.conn, func(tx pgx.Tx) error {
 		if on, err := Stopped(ctx, tx); err != nil || on {
+			return err
+		}
+		// One claim at a time, so two agents can't both pass the checks below.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('discovery-claim', 7))`); err != nil {
 			return err
 		}
 		// A job this agent already runs is handed back first, so a restart resumes it.
@@ -183,8 +211,25 @@ func (h *Handler) claim(c *gin.Context) {
 		rows.Close()
 		loc, _ := time.LoadLocation("Asia/Colombo")
 		now := time.Now().In(loc)
+		ceiling, running, err := trafficBudget(ctx, tx, agent)
+		if err != nil {
+			return err
+		}
 		for _, cd := range list {
 			if !InWindow(cd.snap.Windows, now) {
+				continue
+			}
+			var resuming, busy bool
+			if err := tx.QueryRow(ctx, `SELECT status = 'running', EXISTS (
+				  SELECT 1 FROM discovery_job_targets a
+				  JOIN discovery_job_targets b ON b.routing_domain_id = a.routing_domain_id AND b.target && a.target AND b.job_id <> a.job_id
+				  JOIN discovery_jobs j ON j.id = b.job_id AND j.status = 'running'
+				  WHERE a.job_id = $1::uuid)
+				FROM discovery_jobs WHERE id = $1::uuid`, cd.id).Scan(&resuming, &busy); err != nil {
+				return err
+			}
+			// Waiting jobs stay queued and go at a later claim. Nothing is lost.
+			if !resuming && (busy || !fitsBudget(running, cd.snap.MaxPPS, ceiling)) {
 				continue
 			}
 			if _, err := tx.Exec(ctx, `UPDATE discovery_jobs SET status = 'running', agent_id = $2::uuid, started_at = coalesce(started_at, now()), claimed_at = now()

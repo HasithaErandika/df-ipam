@@ -100,6 +100,7 @@ func SQL() string {
 		fmt.Fprintf(&b, "INSERT INTO observation_sources (name, kind, reliability) VALUES (%s, %s, %d) ON CONFLICT (name) DO NOTHING;\n", quote(s.Name), quote(s.Kind), s.Reliability)
 	}
 	b.WriteString("INSERT INTO system_settings (key, value) VALUES ('discovery.emergency_stop', 'false') ON CONFLICT (key) DO NOTHING;\n")
+	b.WriteString("INSERT INTO system_settings (key, value) VALUES ('discovery.max_total_pps', '500') ON CONFLICT (key) DO NOTHING;\n")
 	for _, r := range retention {
 		fmt.Fprintf(&b, "INSERT INTO retention_policies (data_class, retain_days) VALUES (%s, %d) ON CONFLICT (data_class) DO NOTHING;\n", quote(r.Class), r.Days)
 	}
