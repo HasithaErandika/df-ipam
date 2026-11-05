@@ -21,6 +21,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPost, "/subnets", h.create, auth.InventoryCreate)
 	g.Handle(http.MethodPost, "/subnets/calculate", h.calculate, auth.InventoryView)
 	g.Handle(http.MethodPost, "/subnets/check-overlap", h.checkOverlap, auth.InventoryView)
+	g.Handle(http.MethodPost, "/subnets/bulk", h.bulk, auth.InventoryEdit)
 	g.Handle(http.MethodGet, "/subnets/:id", h.get, auth.InventoryView)
 	g.Handle(http.MethodPatch, "/subnets/:id", h.update, auth.InventoryEdit)
 	g.Handle(http.MethodPost, "/subnets/:id/archive", h.archive, auth.InventoryEdit)
@@ -42,7 +43,7 @@ func (h *Handler) list(c *gin.Context) {
 		httpx.Fail(c, httpx.Validation("routingDomainId", "Must be a valid ID."))
 		return
 	}
-	for _, param := range []string{"siteId", "vlanId", "vdomId", "businessServiceId", "networkBlockId"} {
+	for _, param := range []string{"siteId", "vlanId", "vdomId", "businessServiceId", "networkBlockId", "networkZoneId", "businessUnitId"} {
 		if v := c.Query(param); v != "" && !httpx.IsUUID(v) {
 			httpx.Fail(c, httpx.Validation(param, "Must be a valid ID."))
 			return
@@ -51,6 +52,7 @@ func (h *Handler) list(c *gin.Context) {
 	rows, total, err := h.svc.List(c.Request.Context(), Filter{
 		SiteID: c.Query("siteId"), VLANID: c.Query("vlanId"), VDOMID: c.Query("vdomId"),
 		BusinessServiceID: c.Query("businessServiceId"), NetworkBlockID: c.Query("networkBlockId"),
+		NetworkZoneID: c.Query("networkZoneId"), BusinessUnitID: c.Query("businessUnitId"),
 		Query: strings.TrimSpace(c.Query("q")), RoutingDomainID: rd, Environment: c.Query("environment"),
 		Family: family, IncludeArchived: c.Query("includeArchived") == "true", Sort: c.Query("sort"),
 	}, p)
@@ -137,6 +139,26 @@ func (h *Handler) remove(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// bulk needs inventory:edit, and inventory:delete as well to delete.
+func (h *Handler) bulk(c *gin.Context) {
+	var req BulkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrBadRequest)
+		return
+	}
+	p := auth.Current(c)
+	if req.Action == "delete" && !p.Has(auth.InventoryDelete) {
+		httpx.Fail(c, httpx.ErrForbidden)
+		return
+	}
+	n, err := h.svc.Bulk(c.Request.Context(), p.UserID, req)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, http.StatusOK, gin.H{"affected": n})
 }
 
 func (h *Handler) calculate(c *gin.Context) {

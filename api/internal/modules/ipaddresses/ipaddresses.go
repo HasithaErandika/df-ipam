@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -97,6 +98,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPost, "/ip-addresses", h.create, auth.InventoryCreate)
 	g.Handle(http.MethodGet, "/ip-addresses/:id", h.get, auth.InventoryView)
 	g.Handle(http.MethodPatch, "/ip-addresses/:id", h.update, auth.InventoryEdit)
+	g.Handle(http.MethodPost, "/ip-addresses/bulk", h.bulk, auth.InventoryEdit)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/history", h.history, auth.InventoryView)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/evidence", h.evidence, auth.InventoryView)
 }
@@ -116,7 +118,8 @@ func (h *Handler) list(c *gin.Context) {
 			OR i.fqdn ILIKE '%%' || $%[1]d || '%%' OR i.mac::text ILIKE '%%' || $%[1]d || '%%')`, q)
 	}
 	for param, column := range map[string]string{"subnetId": "i.subnet_id", "routingDomainId": "i.routing_domain_id",
-		"deviceId": "i.device_id", "ownerId": "i.owner_id", "siteId": "s.site_id", "businessServiceId": "i.business_service_id"} {
+		"deviceId": "i.device_id", "ownerId": "i.owner_id", "siteId": "s.site_id", "businessServiceId": "i.business_service_id",
+		"vlanId": "s.vlan_id", "vdomId": "s.vdom_id", "applicationId": "i.application_id"} {
 		if v := c.Query(param); v != "" {
 			if !httpx.IsUUID(v) {
 				httpx.Fail(c, httpx.Validation(param, "Must be a valid ID."))
@@ -129,6 +132,12 @@ func (h *Handler) list(c *gin.Context) {
 		if v := c.Query(param); v != "" {
 			add(column+" = $%d", v)
 		}
+	}
+	switch c.Query("family") {
+	case "4":
+		add("family(i.address) = $%d", 4)
+	case "6":
+		add("family(i.address) = $%d", 6)
 	}
 	clause := ""
 	if len(where) > 0 {
@@ -358,51 +367,126 @@ func (h *Handler) update(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	ctx, actor := c.Request.Context(), auth.Current(c).UserID
 	var out Address
-	err := db.InTx(ctx, h.conn, func(tx pgx.Tx) error {
-		var locked string
-		if err := tx.QueryRow(ctx, `SELECT id::text FROM ip_addresses WHERE id = $1::uuid FOR UPDATE`, id).Scan(&locked); errors.Is(err, pgx.ErrNoRows) {
-			return httpx.ErrNotFound
-		} else if err != nil {
-			return err
-		}
-		old, err := one(c, tx, id)
-		if err != nil {
-			return err
-		}
-		if req.AllocationState != nil && *req.AllocationState != old.AllocationState {
-			held := old.AllocationState == "allocated" || old.AllocationState == "reserved"
-			if held && strings.TrimSpace(req.Reason) == "" {
-				return httpx.Validation("reason", "Give a reason for releasing this address.")
-			}
-			if err := applyState(c, tx, old, *req.AllocationState, actor); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Exec(ctx, `UPDATE ip_addresses SET
-			hostname = COALESCE($2, hostname), fqdn = COALESCE($3, fqdn), notes = COALESCE($4, notes),
-			mac = CASE WHEN $5::text IS NULL THEN mac ELSE NULLIF($5, '')::macaddr END,
-			device_id = CASE WHEN $6::text IS NULL THEN device_id ELSE NULLIF($6, '')::uuid END,
-			application_id = CASE WHEN $7::text IS NULL THEN application_id ELSE NULLIF($7, '')::uuid END,
-			business_service_id = CASE WHEN $8::text IS NULL THEN business_service_id ELSE NULLIF($8, '')::uuid END,
-			owner_id = CASE WHEN $9::text IS NULL THEN owner_id ELSE NULLIF($9, '')::uuid END,
-			allocation_state = COALESCE($10, allocation_state), updated_by = $11::uuid
-			WHERE id = $1::uuid`, id, req.Hostname, req.FQDN, req.Notes, req.MAC, req.DeviceID, req.ApplicationID,
-			req.BusinessServiceID, req.OwnerID, req.AllocationState, actor); err != nil {
-			return err
-		}
-		if out, err = one(c, tx, id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "ip_address.update", ObjectType: "ip_address", ObjectID: id,
-			Old: old, New: gin.H{"record": out, "reason": req.Reason}})
+	err := db.InTx(c.Request.Context(), h.conn, func(tx pgx.Tx) error {
+		var err error
+		out, err = updateOne(c, tx, id, req)
+		return err
 	})
 	if err != nil {
 		httpx.Fail(c, translate(err))
 		return
 	}
 	httpx.OK(c, http.StatusOK, out)
+}
+
+// updateOne changes one locked record and keeps allocation history in step.
+func updateOne(c *gin.Context, tx pgx.Tx, id string, req writeRequest) (Address, error) {
+	ctx, actor := c.Request.Context(), auth.Current(c).UserID
+	var locked string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM ip_addresses WHERE id = $1::uuid FOR UPDATE`, id).Scan(&locked); errors.Is(err, pgx.ErrNoRows) {
+		return Address{}, httpx.ErrNotFound
+	} else if err != nil {
+		return Address{}, err
+	}
+	old, err := one(c, tx, id)
+	if err != nil {
+		return Address{}, err
+	}
+	if req.AllocationState != nil && *req.AllocationState != old.AllocationState {
+		held := old.AllocationState == "allocated" || old.AllocationState == "reserved"
+		if held && strings.TrimSpace(req.Reason) == "" {
+			return Address{}, httpx.Validation("reason", "Give a reason for releasing this address.")
+		}
+		if err := applyState(c, tx, old, *req.AllocationState, actor); err != nil {
+			return Address{}, err
+		}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE ip_addresses SET
+		hostname = COALESCE($2, hostname), fqdn = COALESCE($3, fqdn), notes = COALESCE($4, notes),
+		mac = CASE WHEN $5::text IS NULL THEN mac ELSE NULLIF($5, '')::macaddr END,
+		device_id = CASE WHEN $6::text IS NULL THEN device_id ELSE NULLIF($6, '')::uuid END,
+		application_id = CASE WHEN $7::text IS NULL THEN application_id ELSE NULLIF($7, '')::uuid END,
+		business_service_id = CASE WHEN $8::text IS NULL THEN business_service_id ELSE NULLIF($8, '')::uuid END,
+		owner_id = CASE WHEN $9::text IS NULL THEN owner_id ELSE NULLIF($9, '')::uuid END,
+		allocation_state = COALESCE($10, allocation_state), updated_by = $11::uuid
+		WHERE id = $1::uuid`, id, req.Hostname, req.FQDN, req.Notes, req.MAC, req.DeviceID, req.ApplicationID,
+		req.BusinessServiceID, req.OwnerID, req.AllocationState, actor); err != nil {
+		return Address{}, err
+	}
+	out, err := one(c, tx, id)
+	if err != nil {
+		return Address{}, err
+	}
+	return out, audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "ip_address.update", ObjectType: "ip_address", ObjectID: id,
+		Old: old, New: gin.H{"record": out, "reason": req.Reason}})
+}
+
+const maxBulk = 500
+
+// bulk applies the same change to many records, all or nothing. Only shared
+// fields can change together: hostname, FQDN and MAC belong to one address.
+func (h *Handler) bulk(c *gin.Context) {
+	var req struct {
+		IDs     []string     `json:"ids"`
+		Changes writeRequest `json:"changes"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrBadRequest)
+		return
+	}
+	if len(req.IDs) == 0 || len(req.IDs) > maxBulk {
+		httpx.Fail(c, httpx.Validation("ids", fmt.Sprintf("Choose between 1 and %d records.", maxBulk)))
+		return
+	}
+	for _, id := range req.IDs {
+		if !httpx.IsUUID(id) {
+			httpx.Fail(c, httpx.Validation("ids", "Every ID must be a valid record ID."))
+			return
+		}
+	}
+	ch := req.Changes
+	if ch.Hostname != nil || ch.FQDN != nil || ch.MAC != nil || ch.Address != "" || ch.RoutingDomainID != "" {
+		httpx.Fail(c, httpx.Validation("changes", "Hostname, FQDN and MAC are set one record at a time."))
+		return
+	}
+	if ch.Notes == nil && ch.DeviceID == nil && ch.ApplicationID == nil && ch.BusinessServiceID == nil && ch.OwnerID == nil && ch.AllocationState == nil {
+		httpx.Fail(c, httpx.Validation("changes", "Choose at least one change."))
+		return
+	}
+	if err := ch.validate(c); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	ids := slices.Compact(slices.Sorted(slices.Values(req.IDs)))
+	var failed string
+	err := db.InTx(c.Request.Context(), h.conn, func(tx pgx.Tx) error {
+		for _, id := range ids {
+			if _, err := updateOne(c, tx, id, ch); err != nil {
+				failed = id
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		err = translate(err)
+		var e *httpx.Error
+		if errors.As(err, &e) && failed != "" {
+			var address string
+			_ = h.conn.QueryRow(c.Request.Context(), `SELECT host(address) FROM ip_addresses WHERE id = $1::uuid`, failed).Scan(&address)
+			named := *e
+			issue := e.Message
+			if len(e.Details) > 0 {
+				issue = e.Details[0].Issue
+			}
+			named.Message = strings.TrimSpace(address + ": " + issue)
+			err = &named
+		}
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, http.StatusOK, gin.H{"affected": len(ids)})
 }
 
 func (h *Handler) history(c *gin.Context) {

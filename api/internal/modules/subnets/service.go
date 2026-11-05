@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -98,7 +99,7 @@ func toResponse(s Subnet) Response {
 		NetworkZone: ref(s.NetworkZoneID, s.NetworkZoneName), VDOM: ref(s.VDOMID, s.VDOMName), VLAN: ref(s.VLANID, s.VLANName),
 		BusinessUnit: ref(s.BusinessUnitID, s.BusinessUnitName), BusinessService: ref(s.BusinessServiceID, s.BusinessServiceName),
 		TechnicalOwner: ref(s.TechnicalOwnerID, s.TechnicalOwnerName), BusinessOwner: ref(s.BusinessOwnerID, s.BusinessOwnerName),
-		HasOverlapException: s.OverlapExceptionID != nil,
+		HasOverlapException: s.OverlapExceptionID != nil, OverlapExceptionID: s.OverlapExceptionID,
 	}
 }
 
@@ -135,7 +136,7 @@ func cleanMappings(m *Mappings) error {
 	for name, field := range map[string]**string{
 		"networkBlockId": &m.NetworkBlockID, "siteId": &m.SiteID, "networkZoneId": &m.NetworkZoneID, "vdomId": &m.VDOMID,
 		"vlanId": &m.VLANID, "businessUnitId": &m.BusinessUnitID, "businessServiceId": &m.BusinessServiceID,
-		"technicalOwnerId": &m.TechnicalOwnerID, "businessOwnerId": &m.BusinessOwnerID,
+		"technicalOwnerId": &m.TechnicalOwnerID, "businessOwnerId": &m.BusinessOwnerID, "overlapExceptionId": &m.OverlapExceptionID,
 	} {
 		v := *field
 		if v == nil {
@@ -227,9 +228,6 @@ func (s *Service) Create(ctx context.Context, actor string, req CreateRequest) (
 	if err := cleanMappings(&req.Mappings); err != nil {
 		return Response{}, err
 	}
-	if req.OverlapExceptionID != nil && (*req.OverlapExceptionID == "" || !httpx.IsUUID(*req.OverlapExceptionID)) {
-		req.OverlapExceptionID = nil
-	}
 
 	var created Subnet
 	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
@@ -238,6 +236,9 @@ func (s *Service) Create(ctx context.Context, actor string, req CreateRequest) (
 		}
 		id, err := s.repo.Insert(ctx, tx, actor, req, p.String(), warn, critical)
 		if err != nil {
+			return err
+		}
+		if err := s.repo.AddProviderRanges(ctx, tx, id, req.RoutingDomainID, p); err != nil {
 			return err
 		}
 		if created, err = s.load(ctx, tx, id, false); err != nil {
@@ -268,75 +269,126 @@ func (s *Service) Update(ctx context.Context, actor, id string, version int32, r
 		if err != nil {
 			return err
 		}
-		if old.ArchivedAt != nil {
-			return httpx.NewError(http.StatusConflict, "SUBNET_ARCHIVED", "Archived subnets can't be edited.")
-		}
-		if old.Version != version {
-			return httpx.NewError(http.StatusPreconditionFailed, "STALE_VERSION", "This subnet changed since you opened it. Reload and try again.")
-		}
-		next := old
-		if req.Name != nil {
-			if next.Name = strings.TrimSpace(*req.Name); next.Name == "" {
-				return httpx.Validation("name", "Enter a subnet name.")
-			}
-		}
-		if req.Gateway != nil {
-			if err := validateGateway(req.Gateway, netip.MustParsePrefix(old.CIDR)); err != nil {
-				return err
-			}
-			next.Gateway = req.Gateway
-			if *req.Gateway == "" {
-				next.Gateway = nil
-			}
-		}
-		if req.Environment != nil {
-			if !environments[*req.Environment] {
-				return httpx.Validation("environment", "Choose an environment.")
-			}
-			next.Environment = *req.Environment
-		}
-		if req.SecurityZone != nil {
-			next.SecurityZone = *req.SecurityZone
-		}
-		if req.Description != nil {
-			next.Description = *req.Description
-		}
-		if req.DiscoveryEnabled != nil {
-			next.DiscoveryEnabled = *req.DiscoveryEnabled
-		}
-		if req.WarnThreshold != nil {
-			next.WarnThreshold = *req.WarnThreshold
-		}
-		if req.CriticalThreshold != nil {
-			next.CriticalThreshold = *req.CriticalThreshold
-		}
-		if err := validateThresholds(next.WarnThreshold, next.CriticalThreshold); err != nil {
-			return err
-		}
-		if req.Sensitivity != nil {
-			next.Sensitivity = *req.Sensitivity
-		}
-		if err := cleanMappingUpdate(&next, req.Mappings); err != nil {
-			return err
-		}
-		if err := s.checkMappings(ctx, tx, next.RoutingDomainID, next.CIDR, Mappings{NetworkBlockID: next.NetworkBlockID, SiteID: next.SiteID,
-			NetworkZoneID: next.NetworkZoneID, VDOMID: next.VDOMID, VLANID: next.VLANID}); err != nil {
-			return err
-		}
-		if err := s.repo.Update(ctx, tx, actor, next); err != nil {
-			return err
-		}
-		if updated, err = s.load(ctx, tx, id, false); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.update", ObjectType: "subnet",
-			ObjectID: id, Old: toResponse(old), New: toResponse(updated)})
+		updated, err = s.update(ctx, tx, actor, old, &version, req)
+		return err
 	})
 	if err != nil {
-		return Response{}, err
+		return Response{}, s.writeError(ctx, err, id)
 	}
 	return toResponse(updated), nil
 }
+
+// writeError turns database failures from a subnet change into API errors.
+func (s *Service) writeError(ctx context.Context, err error, id string) error {
+	switch db.ErrorCode(err) {
+	case db.CodeExclusion:
+		var conflicts []Conflict
+		if sub, loadErr := s.load(ctx, s.pool, id, false); loadErr == nil {
+			conflicts, _ = s.repo.Overlaps(ctx, s.pool, sub.RoutingDomainID, sub.CIDR)
+			conflicts = without(conflicts, id)
+		}
+		return overlapError(conflicts)
+	case db.CodeForeignKey:
+		return httpx.Validation("body", "A chosen record doesn't exist.")
+	case db.CodeBadValue, db.CodeCheck:
+		return httpx.Validation("body", "A value is not valid.")
+	}
+	return err
+}
+
+func without(conflicts []Conflict, id string) []Conflict {
+	out := conflicts[:0]
+	for _, c := range conflicts {
+		if c.ID != id {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// update applies a change to a locked subnet. A nil version skips the version
+// check, which only bulk changes do: they never carry a form the user loaded.
+func (s *Service) update(ctx context.Context, tx pgx.Tx, actor string, old Subnet, version *int32, req UpdateRequest) (Subnet, error) {
+	if old.ArchivedAt != nil {
+		return Subnet{}, httpx.NewError(http.StatusConflict, "SUBNET_ARCHIVED", fmt.Sprintf("Archived subnets can't be edited (%s).", old.CIDR))
+	}
+	if version != nil && old.Version != *version {
+		return Subnet{}, httpx.NewError(http.StatusPreconditionFailed, "STALE_VERSION", "This subnet changed since you opened it. Reload and try again.")
+	}
+	next := old
+	if req.Name != nil {
+		if next.Name = strings.TrimSpace(*req.Name); next.Name == "" {
+			return Subnet{}, httpx.Validation("name", "Enter a subnet name.")
+		}
+	}
+	if req.Gateway != nil {
+		if err := validateGateway(req.Gateway, netip.MustParsePrefix(old.CIDR)); err != nil {
+			return Subnet{}, err
+		}
+		next.Gateway = req.Gateway
+		if *req.Gateway == "" {
+			next.Gateway = nil
+		}
+	}
+	if req.Environment != nil {
+		if !environments[*req.Environment] {
+			return Subnet{}, httpx.Validation("environment", "Choose an environment.")
+		}
+		next.Environment = *req.Environment
+	}
+	if req.SecurityZone != nil {
+		next.SecurityZone = strings.TrimSpace(*req.SecurityZone)
+	}
+	if req.Description != nil {
+		next.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.DiscoveryEnabled != nil {
+		next.DiscoveryEnabled = *req.DiscoveryEnabled
+	}
+	if req.WarnThreshold != nil {
+		next.WarnThreshold = *req.WarnThreshold
+	}
+	if req.CriticalThreshold != nil {
+		next.CriticalThreshold = *req.CriticalThreshold
+	}
+	if err := validateThresholds(next.WarnThreshold, next.CriticalThreshold); err != nil {
+		return Subnet{}, err
+	}
+	if req.Sensitivity != nil {
+		if !sensitivities[*req.Sensitivity] {
+			return Subnet{}, httpx.Validation("sensitivity", "Choose standard, sensitive or restricted.")
+		}
+		next.Sensitivity = *req.Sensitivity
+	}
+	if err := cleanMappingUpdate(&next, req.Mappings); err != nil {
+		return Subnet{}, err
+	}
+	check := Mappings{NetworkBlockID: next.NetworkBlockID, SiteID: next.SiteID, NetworkZoneID: next.NetworkZoneID, VDOMID: next.VDOMID, VLANID: next.VLANID}
+	if req.OverlapExceptionID != nil {
+		check.OverlapExceptionID = next.OverlapExceptionID // only a newly applied exception must be current
+	}
+	if err := s.checkMappings(ctx, tx, next.RoutingDomainID, next.CIDR, check); err != nil {
+		return Subnet{}, err
+	}
+	if err := s.repo.Update(ctx, tx, actor, next); err != nil {
+		return Subnet{}, err
+	}
+	if !equal(old.OverlapExceptionID, next.OverlapExceptionID) {
+		if err := s.repo.SetOverlapException(ctx, tx, old.ID, next.OverlapExceptionID); err != nil {
+			return Subnet{}, err
+		}
+	}
+	updated, err := s.load(ctx, tx, old.ID, false)
+	if err != nil {
+		return Subnet{}, err
+	}
+	return updated, audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.update", ObjectType: "subnet",
+		ObjectID: old.ID, Old: toResponse(old), New: toResponse(updated)})
+}
+
+func equal(a, b *string) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+
+var sensitivities = map[string]bool{"standard": true, "sensitive": true, "restricted": true}
 
 // cleanMappingUpdate applies only the mappings present in the request.
 func cleanMappingUpdate(next *Subnet, m Mappings) error {
@@ -345,6 +397,7 @@ func cleanMappingUpdate(next *Subnet, m Mappings) error {
 		"networkZoneId": {&m.NetworkZoneID, &next.NetworkZoneID}, "vdomId": {&m.VDOMID, &next.VDOMID}, "vlanId": {&m.VLANID, &next.VLANID},
 		"businessUnitId": {&m.BusinessUnitID, &next.BusinessUnitID}, "businessServiceId": {&m.BusinessServiceID, &next.BusinessServiceID},
 		"technicalOwnerId": {&m.TechnicalOwnerID, &next.TechnicalOwnerID}, "businessOwnerId": {&m.BusinessOwnerID, &next.BusinessOwnerID},
+		"overlapExceptionId": {&m.OverlapExceptionID, &next.OverlapExceptionID},
 	} {
 		v := *pair[0]
 		if v == nil {
@@ -368,16 +421,22 @@ func (s *Service) Archive(ctx context.Context, actor, id string) error {
 		if err != nil {
 			return err
 		}
-		if old.ArchivedAt != nil {
-			return nil
-		}
-		if err := s.repo.Archive(ctx, tx, actor, id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.archive", ObjectType: "subnet",
-			ObjectID: id, Old: toResponse(old)})
+		return s.archive(ctx, tx, actor, old)
 	})
 }
+
+func (s *Service) archive(ctx context.Context, tx pgx.Tx, actor string, old Subnet) error {
+	if old.ArchivedAt != nil {
+		return nil
+	}
+	if err := s.repo.Archive(ctx, tx, actor, old.ID); err != nil {
+		return err
+	}
+	return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.archive", ObjectType: "subnet",
+		ObjectID: old.ID, Old: toResponse(old)})
+}
+
+var errInUse = httpx.NewError(http.StatusConflict, "SUBNET_IN_USE", "This subnet has linked records. Archive it instead.")
 
 // Delete removes a subnet nothing refers to. Anything else must be archived.
 func (s *Service) Delete(ctx context.Context, actor, id string) error {
@@ -386,14 +445,89 @@ func (s *Service) Delete(ctx context.Context, actor, id string) error {
 		if err != nil {
 			return err
 		}
-		if err := s.repo.Delete(ctx, tx, id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.delete", ObjectType: "subnet",
-			ObjectID: id, Old: toResponse(old)})
+		return s.remove(ctx, tx, actor, old)
 	})
 	if db.ErrorCode(err) == db.CodeForeignKey {
-		return httpx.NewError(http.StatusConflict, "SUBNET_IN_USE", "This subnet has linked records. Archive it instead.")
+		return errInUse
 	}
 	return err
+}
+
+func (s *Service) remove(ctx context.Context, tx pgx.Tx, actor string, old Subnet) error {
+	if err := s.repo.Delete(ctx, tx, old.ID); err != nil {
+		return err
+	}
+	return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.delete", ObjectType: "subnet",
+		ObjectID: old.ID, Old: toResponse(old)})
+}
+
+// MaxBulk caps one bulk request, so a single transaction stays short.
+const MaxBulk = 500
+
+// Bulk applies one action to every listed subnet in a single transaction: if any
+// subnet fails, nothing changes, and the error names that subnet.
+func (s *Service) Bulk(ctx context.Context, actor string, req BulkRequest) (int, error) {
+	if len(req.IDs) == 0 || len(req.IDs) > MaxBulk {
+		return 0, httpx.Validation("ids", fmt.Sprintf("Choose between 1 and %d subnets.", MaxBulk))
+	}
+	for _, id := range req.IDs {
+		if !httpx.IsUUID(id) {
+			return 0, httpx.Validation("ids", "Every ID must be a valid subnet ID.")
+		}
+	}
+	// Sorted and unique, so concurrent bulk requests lock rows in the same order.
+	ids := slices.Compact(slices.Sorted(slices.Values(req.IDs)))
+	switch req.Action {
+	case "update":
+		c := req.Changes
+		if c.Name != nil || c.Gateway != nil {
+			return 0, httpx.Validation("changes", "Name and gateway are set one subnet at a time.")
+		}
+		if c == (UpdateRequest{}) {
+			return 0, httpx.Validation("changes", "Choose at least one change.")
+		}
+	case "archive", "delete":
+	default:
+		return 0, httpx.Validation("action", "Choose update, archive or delete.")
+	}
+	var current Subnet
+	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
+		for _, id := range ids {
+			old, err := s.load(ctx, tx, id, true)
+			if err != nil {
+				return err
+			}
+			current = old
+			switch req.Action {
+			case "update":
+				_, err = s.update(ctx, tx, actor, old, nil, req.Changes)
+			case "archive":
+				err = s.archive(ctx, tx, actor, old)
+			case "delete":
+				err = s.remove(ctx, tx, actor, old)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		return len(ids), nil
+	}
+	if db.ErrorCode(err) == db.CodeForeignKey && req.Action == "delete" {
+		err = errInUse
+	} else {
+		err = s.writeError(ctx, err, current.ID)
+	}
+	var e *httpx.Error
+	if errors.As(err, &e) && current.CIDR != "" {
+		named := *e
+		named.Message = fmt.Sprintf("%s (%s): %s", current.CIDR, current.Name, e.Message)
+		if len(e.Details) > 0 && e.Code == "VALIDATION_FAILED" {
+			named.Message = fmt.Sprintf("%s (%s): %s", current.CIDR, current.Name, e.Details[0].Issue)
+		}
+		return 0, &named
+	}
+	return 0, err
 }

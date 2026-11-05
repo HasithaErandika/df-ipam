@@ -65,9 +65,19 @@ paths:
   /organisations:
     get: { summary: List organisations, responses: { '200': { description: OK } } }
     post: { summary: Create an organisation and its Default routing domain, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
+  /organisations/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get an organisation, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Rename an organisation or change its code, responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete an organisation and its unused routing domains, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
   /routing-domains:
     get: { summary: List routing domains, responses: { '200': { description: OK } } }
     post: { summary: Create a routing domain, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
+  /routing-domains/{id}:
+    parameters: [{ $ref: '#/components/parameters/id' }]
+    get: { summary: Get a routing domain, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+    patch: { summary: Update a routing domain's name, type, route distinguisher or isolation, responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
+    delete: { summary: Delete a routing domain nothing refers to, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
   /subnets:
     get:
       summary: List subnets
@@ -96,6 +106,21 @@ paths:
     post: { summary: Calculate details for a CIDR, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
   /subnets/check-overlap:
     post: { summary: List subnets a CIDR would overlap, responses: { '200': { description: OK } } }
+  /subnets/bulk:
+    post:
+      summary: Update, archive or delete up to 500 subnets in one transaction. Delete also needs inventory:delete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids, action]
+              properties:
+                ids: { type: array, maxItems: 500, items: { type: string, format: uuid } }
+                action: { type: string, enum: [update, archive, delete] }
+                changes: { type: object, description: Same fields as a subnet update, except name and gateway }
+      responses: { '200': { description: Number of subnets affected }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } }
   /subnets/{id}:
     parameters: [{ $ref: '#/components/parameters/id' }]
     get: { summary: Get a subnet, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
@@ -132,6 +157,8 @@ paths:
   /ip-addresses:
     get: { summary: Search IP records, responses: { '200': { description: OK } } }
     post: { summary: Create a record in the most specific subnet, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /ip-addresses/bulk:
+    post: { summary: Apply one change to up to 500 records in one transaction. Hostname, FQDN and MAC can't be bulk-changed, responses: { '200': { description: Number of records affected }, '422': { $ref: '#/components/responses/Error' } } }
   /ip-addresses/{id}:
     parameters: [{ $ref: '#/components/parameters/id' }]
     get: { summary: Get a record, responses: { '200': { description: OK } } }
@@ -260,6 +287,31 @@ paths:
     get: { summary: Get a overlap exception, responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
     patch: { summary: Update a overlap exception, responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } } }
     delete: { summary: Delete a overlap exception, responses: { '204': { description: Deleted }, '409': { $ref: '#/components/responses/Error' } } }
+  /dns-records:
+    get: { summary: List DNS records from read-only sources. Filters routingDomainId, ipAddressId and q, responses: { '200': { description: OK } } }
+  /dns-records/{id}:
+    get: { summary: Get a DNS record, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+  /dhcp-reservations:
+    get: { summary: List DHCP reservations from read-only sources. Filters scopeId and q, responses: { '200': { description: OK } } }
+  /dhcp-reservations/{id}:
+    get: { summary: Get a DHCP reservation, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Error' } } }
+  /dhcp-scopes/{id}/reservations:
+    get: { summary: Reservations in one DHCP scope, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /search:
+    get:
+      summary: Search subnets, IP records, blocks, sites, VLANs, VDOMs, devices and DNS records. An address or CIDR matches by containment
+      parameters: [{ name: q, in: query, required: true, schema: { type: string, minLength: 2, maxLength: 100 } }]
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Error' } }
+  /saved-filters:
+    get:
+      summary: The current user's saved filters for one page
+      parameters: [{ name: page, in: query, required: true, schema: { type: string, enum: [subnets, ip-addresses] } }]
+      responses: { '200': { description: OK } }
+    post: { summary: Save a named filter set for the current user, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /saved-filters/{id}:
+    delete: { summary: Delete one of the current user's saved filters, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '204': { description: Deleted }, '404': { $ref: '#/components/responses/Error' } } }
+  /users/lookup:
+    get: { summary: Active users for owner pickers. Needs only inventory:view, responses: { '200': { description: OK } } }
   /users/invite:
     post: { summary: Send a sign-up invitation, responses: { '204': { description: Sent }, '409': { $ref: '#/components/responses/Error' } } }
   /dashboard/summary:

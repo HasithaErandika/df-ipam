@@ -1,6 +1,10 @@
 package subnets
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"testing"
+)
 
 func TestParseCIDR(t *testing.T) {
 	for _, ok := range []string{"10.0.0.0/24", "10.0.0.0/31", "10.0.0.1/32", "2001:db8::/64", "2001:db8::1/128", " 192.168.0.0/16 "} {
@@ -43,5 +47,46 @@ func TestOrderByIgnoresUnknownFields(t *testing.T) {
 	}
 	if got := orderBy("-updatedAt"); got != "s.updated_at DESC, s.id" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestProviderReserved(t *testing.T) {
+	cases := []struct {
+		kind, cidr, provider string
+		ranges               []string
+	}{
+		{"vpc", "10.0.0.0/24", "aws", []string{"10.0.0.0-10.0.0.3", "10.0.0.255-10.0.0.255"}},
+		{"vnet", "10.1.0.0/29", "azure", []string{"10.1.0.0-10.1.0.3", "10.1.0.7-10.1.0.7"}},
+		{"vpc", "2001:db8::/64", "aws", []string{"2001:db8::-2001:db8::3", "2001:db8::ffff:ffff:ffff:ffff-2001:db8::ffff:ffff:ffff:ffff"}},
+		{"vpc", "10.0.0.0/30", "", nil},
+		{"default", "10.0.0.0/24", "", nil},
+		{"vrf", "10.0.0.0/24", "", nil},
+	}
+	for _, c := range cases {
+		p, _ := ParseCIDR(c.cidr)
+		provider, ranges := ProviderReserved(c.kind, p)
+		var got []string
+		for _, r := range ranges {
+			got = append(got, r.First.String()+"-"+r.Last.String())
+		}
+		if provider != c.provider || fmt.Sprint(got) != fmt.Sprint(c.ranges) {
+			t.Errorf("%s %s: got %q %v", c.kind, c.cidr, provider, got)
+		}
+	}
+}
+
+func TestBulkValidation(t *testing.T) {
+	s := &Service{}
+	name := "x"
+	for _, req := range []BulkRequest{
+		{Action: "archive"},
+		{IDs: []string{"nope"}, Action: "archive"},
+		{IDs: []string{"00000000-0000-0000-0000-000000000001"}, Action: "explode"},
+		{IDs: []string{"00000000-0000-0000-0000-000000000001"}, Action: "update"},
+		{IDs: []string{"00000000-0000-0000-0000-000000000001"}, Action: "update", Changes: UpdateRequest{Name: &name}},
+	} {
+		if _, err := s.Bulk(context.Background(), "u", req); err == nil {
+			t.Errorf("%+v: expected rejection", req)
+		}
 	}
 }

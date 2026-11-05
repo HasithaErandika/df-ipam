@@ -3,6 +3,7 @@ package subnets
 
 import (
 	"math/big"
+	"net/netip"
 	"time"
 
 	"dfipam/api/internal/netcalc"
@@ -80,6 +81,22 @@ type Conflict struct {
 type Filter struct {
 	Query, RoutingDomainID, Environment, Sort                 string
 	SiteID, VLANID, VDOMID, BusinessServiceID, NetworkBlockID string
+	NetworkZoneID, BusinessUnitID                             string
 	Family                                                    int
 	IncludeArchived                                           bool
+}
+
+// ProviderReserved returns the addresses a cloud provider keeps in every subnet:
+// the first four and the last, in both AWS VPCs and Azure VNets. Prefixes too
+// small for a cloud subnet get none.
+func ProviderReserved(kind string, p netip.Prefix) (string, []netcalc.Range) {
+	provider := map[string]string{"vpc": "aws", "vnet": "azure"}[kind]
+	if provider == "" || p.Addr().BitLen()-p.Bits() < 3 {
+		return "", nil
+	}
+	all := netcalc.PrefixRange(p)
+	return provider, []netcalc.Range{
+		{First: all.First, Last: netcalc.Offset(all.First, big.NewInt(3))},
+		{First: all.Last, Last: all.Last},
+	}
 }

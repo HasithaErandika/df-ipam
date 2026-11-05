@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"time"
 
 	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
@@ -32,9 +33,10 @@ const (
 	CIDR
 	Inet
 	MAC
+	Time
 )
 
-var casts = map[Kind]string{Text: "text", UUID: "uuid", Int: "integer", Bool: "boolean", CIDR: "text::cidr", Inet: "text::inet", MAC: "text::macaddr"}
+var casts = map[Kind]string{Text: "text", UUID: "uuid", Int: "integer", Bool: "boolean", CIDR: "text::cidr", Inet: "text::inet", MAC: "text::macaddr", Time: "text::timestamptz"}
 
 // Field maps a JSON property to a column. Names here are constants, never input.
 type Field struct {
@@ -51,12 +53,19 @@ type Entity struct {
 	Fields              []Field
 	Labels              []Label
 	Filters             map[string]string // query parameter to uuid column
-	Search              string            // column for ?q=
+	Search              string            // columns for ?q=, comma-separated
 	Order               string
 	Stamped             bool   // has created_by and updated_by
 	ActorCol            string // set to the acting user on create
 	WritePermission     string
+	// ReadOnly entities are inventory from read-only sources: list and get only.
+	ReadOnly bool
+	// Parent serves the list under another record too, as Parent.Path/:id/Parent.Sub.
+	Parent *Parent
 }
+
+// Parent nests a list under its owning record, such as a scope's reservations.
+type Parent struct{ Path, Sub, Col string }
 
 func (e Entity) object() string {
 	parts := []string{"'id', t.id"}
@@ -121,6 +130,16 @@ func checkValue(f Field, v any) (any, error) {
 		if _, err := net.ParseMAC(s); err != nil {
 			return invalid("Enter a valid MAC address.")
 		}
+	case Time:
+		if _, err := time.Parse(time.RFC3339, s); err == nil {
+			return s, nil
+		}
+		d, err := time.Parse(time.DateOnly, s)
+		if err != nil {
+			return invalid("Enter a date, such as 2027-01-31.")
+		}
+		// A date alone means the end of that day, in UTC.
+		return d.Add(24*time.Hour - time.Second).Format(time.RFC3339), nil
 	}
 	return s, nil
 }
@@ -149,8 +168,14 @@ func (h *Handler) Register(g *auth.Guard) {
 			create, edit, remove = e.WritePermission, e.WritePermission, e.WritePermission
 		}
 		g.Handle(http.MethodGet, e.Path, func(c *gin.Context) { h.list(c, e) }, auth.InventoryView)
-		g.Handle(http.MethodPost, e.Path, func(c *gin.Context) { h.create(c, e) }, create)
 		g.Handle(http.MethodGet, e.Path+"/:id", func(c *gin.Context) { h.get(c, e) }, auth.InventoryView)
+		if e.Parent != nil {
+			g.Handle(http.MethodGet, e.Parent.Path+"/:id/"+e.Parent.Sub, func(c *gin.Context) { h.list(c, e) }, auth.InventoryView)
+		}
+		if e.ReadOnly {
+			continue
+		}
+		g.Handle(http.MethodPost, e.Path, func(c *gin.Context) { h.create(c, e) }, create)
 		g.Handle(http.MethodPatch, e.Path+"/:id", func(c *gin.Context) { h.update(c, e) }, edit)
 		g.Handle(http.MethodDelete, e.Path+"/:id", func(c *gin.Context) { h.remove(c, e) }, remove)
 	}
@@ -160,6 +185,14 @@ func (h *Handler) list(c *gin.Context, e Entity) {
 	p := httpx.ParsePage(c)
 	var where []string
 	var args []any
+	if e.Parent != nil && strings.HasPrefix(c.FullPath(), "/api/v1"+e.Parent.Path+"/") {
+		id, ok := httpx.PathID(c)
+		if !ok {
+			return
+		}
+		args = append(args, id)
+		where = append(where, fmt.Sprintf("t.%s = $%d::uuid", e.Parent.Col, len(args)))
+	}
 	for param, col := range e.Filters {
 		if v := c.Query(param); v != "" {
 			if !httpx.IsUUID(v) {
@@ -172,7 +205,11 @@ func (h *Handler) list(c *gin.Context, e Entity) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" && e.Search != "" {
 		args = append(args, q)
-		where = append(where, fmt.Sprintf("t.%s::text ILIKE '%%' || $%d || '%%'", e.Search, len(args)))
+		var any []string
+		for _, col := range strings.Split(e.Search, ",") {
+			any = append(any, fmt.Sprintf("t.%s::text ILIKE '%%' || $%d || '%%'", col, len(args)))
+		}
+		where = append(where, "("+strings.Join(any, " OR ")+")")
 	}
 	clause := ""
 	if len(where) > 0 {

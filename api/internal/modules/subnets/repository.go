@@ -104,6 +104,7 @@ func (Repository) List(ctx context.Context, q querier, f Filter, p httpx.Page) (
 	for clause, value := range map[string]string{
 		"s.site_id = $%d::uuid": f.SiteID, "s.vlan_id = $%d::uuid": f.VLANID, "s.vdom_id = $%d::uuid": f.VDOMID,
 		"s.business_service_id = $%d::uuid": f.BusinessServiceID, "s.network_block_id = $%d::uuid": f.NetworkBlockID,
+		"s.network_zone_id = $%d::uuid": f.NetworkZoneID, "s.business_unit_id = $%d::uuid": f.BusinessUnitID,
 	} {
 		if value != "" {
 			add(clause, value)
@@ -294,11 +295,39 @@ func (Repository) MappingProblem(ctx context.Context, q querier, routingDomainID
 		  UNION ALL
 		  SELECT 'networkZoneId', 'This zone belongs to a different site.'
 		  FROM network_zones z WHERE z.id = $7::uuid AND $6::uuid IS NOT NULL AND z.site_id IS NOT NULL AND z.site_id <> $6::uuid
-		) p LIMIT 1`, routingDomainID, cidr, m.NetworkBlockID, m.VDOMID, m.VLANID, m.SiteID, m.NetworkZoneID).Scan(&field, &issue)
+		  UNION ALL
+		  SELECT 'overlapExceptionId', 'This overlap exception has expired.'
+		  FROM overlap_exceptions e WHERE e.id = $8::uuid AND e.expires_at < now()
+		) p LIMIT 1`, routingDomainID, cidr, m.NetworkBlockID, m.VDOMID, m.VLANID, m.SiteID, m.NetworkZoneID, m.OverlapExceptionID).Scan(&field, &issue)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", nil
 	}
 	return field, issue, err
+}
+
+// SetOverlapException runs only when the exception changes. Listing the column in
+// every update would re-run the exception-overlap trigger on unrelated edits.
+func (Repository) SetOverlapException(ctx context.Context, q querier, id string, exceptionID *string) error {
+	_, err := q.Exec(ctx, `UPDATE subnets SET overlap_exception_id = $2::uuid WHERE id = $1::uuid`, id, exceptionID)
+	return err
+}
+
+// AddProviderRanges records the addresses AWS or Azure keep in a cloud subnet,
+// so utilisation and candidates account for them from the start.
+func (Repository) AddProviderRanges(ctx context.Context, q querier, id, routingDomainID string, p netip.Prefix) error {
+	var kind string
+	if err := q.QueryRow(ctx, `SELECT kind FROM routing_domains WHERE id = $1::uuid`, routingDomainID).Scan(&kind); err != nil {
+		return err
+	}
+	provider, ranges := ProviderReserved(kind, p)
+	reason := map[string]string{"aws": "Reserved by AWS", "azure": "Reserved by Azure"}[provider]
+	for _, r := range ranges {
+		if _, err := q.Exec(ctx, `INSERT INTO subnet_reserved_ranges (subnet_id, range_start, range_end, reason, provider)
+			VALUES ($1::uuid, $2::text::inet, $3::text::inet, $4, $5)`, id, r.First.String(), r.Last.String(), reason, provider); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (Repository) Archive(ctx context.Context, q querier, actor, id string) error {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/mail"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +50,7 @@ func NewHandler(pool db.Conn, inviter Inviter) *Handler { return &Handler{pool, 
 func (h *Handler) Register(g *auth.Guard) {
 	g.Authenticated(http.MethodGet, "/auth/me", h.me)
 	g.Handle(http.MethodGet, "/users", h.list, auth.UsersManage)
+	g.Handle(http.MethodGet, "/users/lookup", h.lookup, auth.InventoryView)
 	g.Handle(http.MethodPost, "/users/invite", h.invite, auth.UsersManage)
 	g.Handle(http.MethodGet, "/roles", h.roles, auth.UsersManage)
 	g.Handle(http.MethodPut, "/users/:id/roles", h.setRoles, auth.UsersManage)
@@ -88,6 +90,45 @@ func (h *Handler) list(c *gin.Context) {
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (User, error) {
 		var u User
 		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName, &u.IsActive, &u.LastLoginAt, &u.Roles)
+	})
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.List(c, out, p, total)
+}
+
+// Person is what inventory screens need to choose an owner: no roles or sign-in data.
+type Person struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+}
+
+// lookup lists active users for owner pickers, without needing users:manage.
+func (h *Handler) lookup(c *gin.Context) {
+	p := httpx.ParsePage(c)
+	ctx := c.Request.Context()
+	where, args := "WHERE is_active", []any{}
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		args = append(args, q)
+		where += ` AND (email ILIKE '%' || $1 || '%' OR display_name ILIKE '%' || $1 || '%')`
+	}
+	var total int64
+	if err := h.pool.QueryRow(ctx, `SELECT count(*) FROM users `+where, args...).Scan(&total); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	n := len(args)
+	rows, err := h.pool.Query(ctx, `SELECT id::text, email, display_name FROM users `+where+
+		` ORDER BY email, id LIMIT $`+strconv.Itoa(n+1)+` OFFSET $`+strconv.Itoa(n+2), append(args, p.Size, p.Offset())...)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Person, error) {
+		var u Person
+		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName)
 	})
 	if err != nil {
 		httpx.Fail(c, err)

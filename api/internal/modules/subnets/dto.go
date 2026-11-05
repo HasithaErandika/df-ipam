@@ -18,7 +18,6 @@ type CreateRequest struct {
 	WarnThreshold     *int16  `json:"warnThreshold"`
 	CriticalThreshold *int16  `json:"criticalThreshold"`
 	Mappings
-	OverlapExceptionID *string `json:"overlapExceptionId"`
 }
 
 // Mappings link a subnet to the rest of the hierarchy. An empty string clears one.
@@ -32,6 +31,8 @@ type Mappings struct {
 	BusinessServiceID *string `json:"businessServiceId"`
 	TechnicalOwnerID  *string `json:"technicalOwnerId"`
 	BusinessOwnerID   *string `json:"businessOwnerId"`
+	// OverlapExceptionID applies an approved exception, so this subnet may overlap others.
+	OverlapExceptionID *string `json:"overlapExceptionId"`
 }
 
 // UpdateRequest changes only the fields that are present. CIDR and routing
@@ -87,5 +88,13 @@ type Response struct {
 	TechnicalOwner         *Ref         `json:"technicalOwner"`
 	BusinessOwner          *Ref         `json:"businessOwner"`
 	HasOverlapException    bool         `json:"hasOverlapException"`
+	OverlapExceptionID     *string      `json:"overlapExceptionId"`
 	Calculated             netcalc.Info `json:"calculated"`
+}
+
+// BulkRequest applies one action to many subnets, all or nothing.
+type BulkRequest struct {
+	IDs     []string      `json:"ids"`
+	Action  string        `json:"action"` // update, archive or delete
+	Changes UpdateRequest `json:"changes"`
 }
