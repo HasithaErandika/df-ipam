@@ -7,9 +7,9 @@ export const text = (key: string) => (r: Row) => r[key] || <span className="text
 
 export const mono = (key: string) => (r: Row) => r[key] ? <Mono>{r[key]}</Mono> : <span className="text-ink-3">—</span>
 
-const siteTypes: Record<string, string> = { data_centre: 'Data centre', branch: 'Branch', office: 'Office', cloud: 'Cloud', other: 'Other' }
+const siteTypes: Record<string, string> = { site: 'Site or office', data_centre: 'Data centre', branch: 'Branch', cloud_region: 'Cloud region' }
 
-const criticality: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' }
+const criticality: Record<string, string> = { low: 'Low', standard: 'Standard', high: 'High', critical: 'Critical' }
 
 export const entities: EntityDef[] = [
   {

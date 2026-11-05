@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"strings"
+	"time"
 )
 
 type Kind int
@@ -18,9 +19,10 @@ const (
 	CIDR
 	Inet
 	MAC
+	Time
 )
 
-var casts = map[Kind]string{Text: "text", UUID: "uuid", Int: "integer", Bool: "boolean", CIDR: "text::cidr", Inet: "text::inet", MAC: "text::macaddr"}
+var casts = map[Kind]string{Text: "text", UUID: "uuid", Int: "integer", Bool: "boolean", CIDR: "text::cidr", Inet: "text::inet", MAC: "text::macaddr", Time: "text::timestamptz"}
 
 // Field maps a JSON property to a column. Names here are constants, never input.
 type Field struct {
@@ -85,8 +87,19 @@ func textIssue(f Field, s string) string {
 		if _, err := net.ParseMAC(s); err != nil {
 			return "Enter a valid MAC address."
 		}
+	case Time:
+		return timeIssue(s)
 	}
 	return ""
+}
+
+func timeIssue(s string) string {
+	for _, layout := range []string{time.RFC3339, time.DateOnly} {
+		if _, err := time.Parse(layout, s); err == nil {
+			return ""
+		}
+	}
+	return "Enter a valid date and time."
 }
 
 func cidrIssue(s string) string {
