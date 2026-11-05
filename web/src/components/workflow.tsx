@@ -1,3 +1,5 @@
+import { Link } from 'react-router'
+import { tabPath } from '../lib/tabs'
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -28,6 +30,10 @@ export function Detail({ label, children }: { label: string; children: ReactNode
   )
 }
 
+const tabClass = (active: boolean) =>
+  `-mb-px flex h-9 cursor-pointer items-center gap-1.5 border-b-2 px-3 text-[13px] font-medium ${active ? 'border-accent text-accent' : 'border-transparent text-ink-2 hover:text-ink'}`
+const tabCount = 'rounded-full bg-accent px-1.5 text-[10.5px] leading-4 font-semibold text-white tabular-nums'
+
 export interface TabDef { key: string; label: string; count?: number }
 
 export function Tabs({ tabs, active, onChange }: { tabs: TabDef[]; active: string; onChange: (key: string) => void }) {
@@ -35,12 +41,26 @@ export function Tabs({ tabs, active, onChange }: { tabs: TabDef[]; active: strin
     <div role="tablist" className="mb-3 flex flex-wrap gap-1 border-b border-line">
       {tabs.map((t) => (
         <button key={t.key} type="button" role="tab" aria-selected={active === t.key} onClick={() => onChange(t.key)}
-          className={`-mb-px flex h-9 cursor-pointer items-center gap-1.5 border-b-2 px-3 text-[13px] font-medium ${active === t.key ? 'border-accent text-accent' : 'border-transparent text-ink-2 hover:text-ink'}`}>
+          className={tabClass(active === t.key)}>
           {t.label}
-          {t.count !== undefined && t.count > 0 && <span className="rounded-full bg-accent px-1.5 text-[10.5px] leading-4 font-semibold text-white tabular-nums">{t.count}</span>}
+          {t.count !== undefined && t.count > 0 && <span className={tabCount}>{t.count}</span>}
         </button>
       ))}
     </div>
+  )
+}
+
+/** Tabs that are pages of their own: each is a link to its path under base. */
+export function RouteTabs({ tabs, active, base }: { tabs: TabDef[]; active: string; base: string }) {
+  return (
+    <nav aria-label="Sections" className="mb-3 flex flex-wrap gap-1 border-b border-line">
+      {tabs.map((t) => (
+        <Link key={t.key} to={tabPath(base, t.key)} aria-current={active === t.key ? 'page' : undefined} className={tabClass(active === t.key)}>
+          {t.label}
+          {t.count !== undefined && t.count > 0 && <span className={tabCount}>{t.count}</span>}
+        </Link>
+      ))}
+    </nav>
   )
 }
 

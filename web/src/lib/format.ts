@@ -74,7 +74,7 @@ export const requestStatuses: Record<string, string> = {
   allocated: 'Allocated', reserved: 'Reserved', released: 'Released', cancelled: 'Cancelled', expired: 'Expired',
 }
 
-export type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'
+type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'
 
 export function requestTone(status: string): Tone {
   switch (status) {
