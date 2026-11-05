@@ -20,8 +20,8 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | 0 | Foundation | ✅ Complete |
 | 1 | Core IPAM | ✅ Complete, except live checks on Supabase |
 | 2 | Allocation workflow | ✅ Complete. Email waits for a mail provider |
-| 3 | Imports and devices | ⛔ Device API done, imports need the production files |
-| 4 | Discovery | ⬜ Schema only |
+| 3 | Imports and devices | 🟨 Built. Parser needs checking against the real production files |
+| 4 | Discovery | 🟨 Built. Needs a lab run, the sensitive-networks list and SNMP credentials |
 | 5 | Integrations and reconciliation | 🟨 Findings engine done, integrations not started |
 | 6 | Reporting and dashboard | 🟨 Basic dashboard only |
 | 7 | Hardening | ⬜ Not started |
@@ -99,23 +99,25 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Device and interface API | 🟦 API done | |
-| Device and interface screens | ⬜ To do | |
-| Duplicate device matching | ⬜ To do | |
-| Production file parser | ⛔ Blocked | Needs `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt` |
-| Import preview, approval, reversal, enrichment queue | ⬜ To do | Tables exist |
+| Device and interface inventory screens | 🟦 Built, not tested | Device types and OS family with icons |
+| Duplicate device matching and merge | 🟦 Built, not tested | By serial, interface MAC, management IP or hostname |
+| Production file parser | ⛔ Blocked | Tolerant parser built (CIDR, address and mask, VDOM-prefixed lines). Needs `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt` to confirm no line is dropped |
+| Import preview, second-person approval, reversal, enrichment queue | 🟦 Built, not tested | Every line kept with a status. Migration 11 |
 
 ## Phase 4: Discovery
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Policies, schedules, jobs, exclusions | ⬜ To do | Tables exist. Job snapshots are frozen by the database |
-| Agent registration, heartbeat, credential rotation | ⬜ To do | |
-| ICMP, ARP/NDP, DNS, SNMP, Nmap collectors | ⬜ To do | |
-| Safety controls and emergency stop | ⬜ To do | Setting is seeded, nothing uses it yet |
-| Discovery Centre screen | ⬜ To do | |
-| Redis job queue | ⛔ Blocked | Needs Redis approval |
-| Sensitive network rules | ⛔ Blocked | Needs the list of banking and payment networks |
+| Policies with second-person approval, schedules, exclusions, blackouts | 🟦 Built, not tested | Saving a policy clears its approval |
+| Frozen job scope | 🟦 Built, not tested | Allowlist, exclusions win, blackouts, IPv4 up to /20, IPv6 only at recorded addresses |
+| Agent registration, heartbeat, rotation, revocation | 🟦 Built, not tested | One-time tokens; credentials stored as hashes |
+| ICMP, ARP/NDP, reverse DNS, Nmap host discovery | 🟦 Built, not tested | Agent enforces rate, concurrency and timeout limits |
+| SNMP collector | ⬜ To do | Needs SNMPv3 credential storage (Phase 5 encrypted credentials) |
+| Safety controls and emergency stop | 🟦 Built, not tested | Results re-checked against scope; discovery never changes allocation or ownership |
+| Discovery Centre screen, Explorer scan button | 🟦 Built, not tested | |
+| Redis job queue | ⛔ Blocked | Jobs use PostgreSQL with SKIP LOCKED meanwhile |
+| Sensitive network rules | ⛔ Blocked | Mechanism built (passive only unless an approved sensitive policy); needs the list of banking and payment networks |
+| Lab test of scope and emergency stop | ⬜ To do | Phase 4 exit criterion |
 
 ## Phase 5: Integrations and reconciliation
 

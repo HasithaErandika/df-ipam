@@ -1,5 +1,5 @@
 import {
-  Bell, BookCheck, Boxes, Cable, ClipboardList, FileBarChart, GitCompareArrows, LayoutDashboard, Network,
+  Bell, BookCheck, Boxes, Cable, FileUp, ClipboardList, FileBarChart, GitCompareArrows, LayoutDashboard, Network,
   Plug, Radar, ScrollText, Server, Settings, ShieldCheck, TableProperties, Users, type LucideIcon,
 } from 'lucide-react'
 
@@ -21,17 +21,15 @@ export const nav: { group: string; items: NavItem[] }[] = [
       { to: '/network', label: 'Network Management', icon: Network },
       { to: '/subnets', label: 'Subnet Management', icon: TableProperties },
       { to: '/ip-addresses', label: 'IP Address Explorer', icon: Boxes },
-      { to: '/devices', label: 'Device Inventory', icon: Server, phase: 3, summary: 'One record per device, however many sources report it.',
-        features: ['Firewalls, routers, switches, servers and VMs', 'Interfaces, MACs, IPs and services per device', 'Discovery history and source tracking'] },
-      { to: '/interfaces', label: 'Interface Inventory', icon: Cable, phase: 3, summary: 'Search interfaces across all devices.',
-        features: ['Admin and operational status', 'VLAN, VDOM and VRF context', 'Linked IP addresses'] },
+      { to: '/devices', label: 'Device Inventory', icon: Server },
+      { to: '/interfaces', label: 'Interface Inventory', icon: Cable },
     ],
   },
   {
     group: 'Operations',
     items: [
-      { to: '/discovery', label: 'Discovery Centre', icon: Radar, phase: 4, summary: 'Controlled discovery within approved scopes.',
-        features: ['Agents, policies, schedules and job history', 'ICMP, ARP/NDP, DNS, SNMP and narrow Nmap', 'Rate limits, windows and exclusions', 'Emergency stop'] },
+      { to: '/discovery', label: 'Discovery Centre', icon: Radar },
+      { to: '/imports', label: 'Imports', icon: FileUp },
       { to: '/reconciliation', label: 'Reconciliation Centre', icon: GitCompareArrows },
       { to: '/integrations', label: 'Integrations', icon: Plug, phase: 5, summary: 'Read-only connections to infrastructure platforms.',
         features: ['FortiGate, VMware, AWS, Azure, DNS and DHCP', 'Connection health and sync history'] },

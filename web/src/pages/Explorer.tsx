@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { ChevronLeft, ChevronRight, Grid3x3, List, Plus, Radar, Search } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
+import { StartJobModal } from './Discovery'
 import { allocationStates, DeviceIcon, deviceTypes, observationStates, OSBadge, StateBadges } from '../components/devices'
 import { SavedFilters } from '../components/filters'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, Modal, Mono, PageHeader, Pagination, Select, SkeletonRows, Td, Th } from '../components/ui'
@@ -270,6 +271,8 @@ function SubnetGrid({ subnet, onOpen }: { subnet: Subnet; onOpen: (id: string) =
 
 export function Explorer() {
   const canCreate = useCan('inventory:create')
+  const canScan = useCan('discovery:run')
+  const [scanning, setScanning] = useState(false)
   const [params, setParams] = useSearchParams()
   const paging = usePaging()
   const [creating, setCreating] = useState(false)
@@ -302,7 +305,7 @@ export function Explorer() {
     <>
       <PageHeader title="IP Address Explorer" description="Every tracked address, the device behind it, and its history. Allocation and observation are always shown separately."
         actions={<>
-          <Button disabled title="Scanning a subnet arrives with Phase 4 discovery, inside approved scopes only."><Radar size={15} aria-hidden /> Scan subnet <Badge>Phase 4</Badge></Button>
+          {canScan && <Button disabled={!current} title={current ? 'Discover this subnet under an approved policy' : 'Choose a subnet first'} onClick={() => setScanning(true)}><Radar size={15} aria-hidden /> Scan subnet</Button>}
           {canCreate && <Button variant="primary" onClick={() => setCreating(true)}><Plus size={15} aria-hidden /> New record</Button>}
         </>} />
       <Card>
@@ -376,6 +379,7 @@ export function Explorer() {
         )}
       </Card>
       {openId && <RecordModal key={openId} id={openId} onClose={() => set({ id: null })} />}
+      {scanning && current && <StartJobModal subnet={current} onClose={() => setScanning(false)} />}
       {creating && <NewRecord onClose={() => setCreating(false)} onCreated={(id) => set({ id })} />}
     </>
   )
