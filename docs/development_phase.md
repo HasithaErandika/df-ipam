@@ -169,7 +169,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Code size and query rules | ✅ Done | Files under 200 lines, function complexity 15 or less in production code, no query per row on read paths |
 | Feedback, confirmations and error handling | 🟦 Built, not viewed | Toasts, confirmation of edits and deletes, friendly errors, sign-out when a session ends |
 | Screens load on demand, tabs are paths | 🟦 Built, not viewed | Old `?tab=` links redirect |
-| Template imports for 17 record types | 🟦 API tested, screens to do | Excel workbook or CSV per type, checked per row, second-person approval, discard, reversible |
+| Template imports for 17 record types | 🟦 API tested, screens built, not viewed with a real sign-in | Excel workbook or CSV per type, checked per row, second-person approval, discard, reversible. Screens driven in a browser against a mocked API only |
 | Account menu and details dialog | 🟦 Built, not viewed | Top bar shows a user icon; the menu has Details and Sign out |
 
 ## Waiting on others
