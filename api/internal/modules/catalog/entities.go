@@ -87,6 +87,7 @@ var Entities = []Entity{
 	{Path: "/teams", Table: "teams", Object: "team", Order: "name", Search: "name",
 		Fields: []Field{{"name", "name", Text, true}, {"email", "email", Text, false}, {"description", "description", Text, false}}},
 	{Path: "/devices", Table: "devices", Object: "device", Stamped: true, Order: "name", Search: "name",
+		OwnerCol: "owner_id", OwnerLocked: []string{"ownerId", "businessServiceId", "sensitivity", "status"},
 		Filters: map[string]string{"siteId": "site_id", "businessServiceId": "business_service_id"},
 		Fields: []Field{{"name", "name", Text, true}, {"hostname", "hostname", Text, false}, {"managementIp", "management_ip", Inet, false},
 			{"vendor", "vendor", Text, false}, {"model", "model", Text, false}, {"serialNumber", "serial_number", Text, false},

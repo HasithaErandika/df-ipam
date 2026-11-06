@@ -140,6 +140,9 @@ func (h *Handler) update(c *gin.Context, e Entity) {
 	ctx := c.Request.Context()
 	var out json.RawMessage
 	err = db.InTx(ctx, h.conn, func(tx pgx.Tx) error {
+		if err := checkOwner(c, tx, e, id, body); err != nil {
+			return err
+		}
 		old, err := load(c, tx, e, id)
 		if err != nil {
 			return err

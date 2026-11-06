@@ -17,14 +17,14 @@ type Handler struct{ svc *Service }
 func NewHandler(svc *Service) *Handler { return &Handler{svc} }
 
 func (h *Handler) Register(g *auth.Guard) {
-	g.Handle(http.MethodGet, "/subnets", h.list, auth.InventoryView)
+	g.Handle(http.MethodGet, "/subnets", h.list, auth.InventoryView, auth.InventoryViewScoped)
 	g.Handle(http.MethodPost, "/subnets", h.create, auth.InventoryCreate)
 	g.Handle(http.MethodPost, "/subnets/calculate", h.calculate, auth.InventoryView)
 	g.Handle(http.MethodPost, "/subnets/check-overlap", h.checkOverlap, auth.InventoryView)
 	g.Handle(http.MethodPost, "/subnets/bulk", h.bulkCreate, auth.InventoryCreate)
 	g.Handle(http.MethodPost, "/subnets/bulk-archive", h.bulkArchive, auth.InventoryEdit)
-	g.Handle(http.MethodGet, "/subnets/:id", h.get, auth.InventoryView)
-	g.Handle(http.MethodPatch, "/subnets/:id", h.update, auth.InventoryEdit)
+	g.Handle(http.MethodGet, "/subnets/:id", h.get, auth.InventoryView, auth.InventoryViewScoped)
+	g.Handle(http.MethodPatch, "/subnets/:id", h.update, auth.InventoryEdit, auth.InventoryEditAssigned)
 	g.Handle(http.MethodPost, "/subnets/:id/archive", h.archive, auth.InventoryEdit)
 	g.Handle(http.MethodDelete, "/subnets/:id", h.remove, auth.InventoryDelete)
 	g.Handle(http.MethodGet, "/subnets/:id/utilisation", h.utilisation, auth.InventoryView)
@@ -50,8 +50,14 @@ func (h *Handler) list(c *gin.Context) {
 			return
 		}
 	}
+	scope, err := auth.ServiceScope(c.Request.Context(), h.svc.pool, auth.Current(c))
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
 	rows, total, err := h.svc.List(c.Request.Context(), Filter{
-		SiteID: c.Query("siteId"), VLANID: c.Query("vlanId"), VDOMID: c.Query("vdomId"),
+		Services: scope,
+		SiteID:   c.Query("siteId"), VLANID: c.Query("vlanId"), VDOMID: c.Query("vdomId"),
 		BusinessServiceID: c.Query("businessServiceId"), NetworkBlockID: c.Query("networkBlockId"),
 		Query: strings.TrimSpace(c.Query("q")), RoutingDomainID: rd, Environment: c.Query("environment"),
 		Family: family, IncludeArchived: c.Query("includeArchived") == "true", Sort: c.Query("sort"),
@@ -59,6 +65,11 @@ func (h *Handler) list(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if scope != nil {
+		for i := range rows {
+			rows[i].hideInfrastructure()
+		}
 	}
 	httpx.List(c, rows, p, total)
 }
@@ -69,6 +80,9 @@ func (h *Handler) get(c *gin.Context) {
 		return
 	}
 	row, err := h.svc.Get(c.Request.Context(), id)
+	if err == nil {
+		err = h.limit(c, &row)
+	}
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -109,7 +123,7 @@ func (h *Handler) update(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrBadRequest)
 		return
 	}
-	row, err := h.svc.Update(c.Request.Context(), auth.Current(c).UserID, id, int32(version), req)
+	row, err := h.write(c, id, int32(version), req)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

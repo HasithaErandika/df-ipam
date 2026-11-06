@@ -80,6 +80,7 @@ type Conflict struct {
 type Filter struct {
 	Query, RoutingDomainID, Environment, Sort                 string
 	SiteID, VLANID, VDOMID, BusinessServiceID, NetworkBlockID string
+	Services                                                  *[]string // nil means every business service
 	Family                                                    int
 	IncludeArchived                                           bool
 }

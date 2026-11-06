@@ -1,6 +1,7 @@
 package ipaddresses
 
 import (
+	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/httpx"
 	"fmt"
 	"net/netip"
@@ -36,8 +37,7 @@ func parseListQuery(c *gin.Context) (listQuery, error) {
 	if network, err := netip.ParsePrefix(text); err == nil {
 		q.add(`i.address <<= $%d::text::cidr`, network.Masked().String())
 	} else if text != "" {
-		q.add(`(host(i.address) ILIKE '%%' || $%[1]d || '%%' OR i.hostname ILIKE '%%' || $%[1]d || '%%'
-			OR i.fqdn ILIKE '%%' || $%[1]d || '%%' OR i.mac::text ILIKE '%%' || $%[1]d || '%%')`, text)
+		q.add(textSearch(auth.Current(c)), text)
 	}
 	for param, column := range map[string]string{"subnetId": "i.subnet_id", "routingDomainId": "i.routing_domain_id",
 		"deviceId": "i.device_id", "ownerId": "i.owner_id", "siteId": "s.site_id", "businessServiceId": "i.business_service_id"} {
@@ -78,6 +78,14 @@ func (h *Handler) list(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	scope, err := auth.ServiceScope(ctx, h.conn, auth.Current(c))
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if scope != nil {
+		q.add(inScope, *scope)
+	}
 	var total int64
 	if err := h.conn.QueryRow(ctx, "SELECT count(*)"+fromAddress+q.clause(), q.args...).Scan(&total); err != nil {
 		httpx.Fail(c, err)
@@ -93,6 +101,11 @@ func (h *Handler) list(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if scope != nil {
+		for i := range out {
+			out[i].hideInfrastructure()
+		}
 	}
 	httpx.List(c, out, p, total)
 }

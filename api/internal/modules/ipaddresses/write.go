@@ -165,6 +165,9 @@ func updateAddress(c *gin.Context, tx pgx.Tx, id string, req writeRequest) (Addr
 	if err != nil {
 		return old, err
 	}
+	if err := checkAssigned(auth.Current(c), old, req); err != nil {
+		return old, err
+	}
 	if err := changeState(c, tx, old, req, actor); err != nil {
 		return old, err
 	}

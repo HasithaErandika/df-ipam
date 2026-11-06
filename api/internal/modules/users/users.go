@@ -26,6 +26,10 @@ type User struct {
 	IsActive    bool       `json:"isActive"`
 	LastLoginAt *time.Time `json:"lastLoginAt"`
 	Roles       []string   `json:"roles"`
+	// Scoped says a role here is limited to business services, which are listed below.
+	Scoped             bool     `json:"scoped"`
+	BusinessServiceIDs []string `json:"businessServiceIds"`
+	BusinessServices   []string `json:"businessServices"`
 }
 
 // Inviter sends a sign-in invitation through the auth provider.
@@ -48,6 +52,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPost, "/users/invite", h.invite, auth.UsersManage)
 	g.Handle(http.MethodGet, "/roles", h.roles, auth.UsersManage)
 	g.Handle(http.MethodPut, "/users/:id/roles", h.setRoles, auth.UsersManage)
+	g.Handle(http.MethodPut, "/users/:id/scope", h.setScope, auth.UsersManage)
 }
 
 func (h *Handler) me(c *gin.Context) {
@@ -75,8 +80,12 @@ func (h *Handler) list(c *gin.Context) {
 	}
 	rows, err := h.pool.Query(ctx, `
 		SELECT u.id::text, u.email, u.display_name, u.is_active, u.last_login_at,
-		       COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}')
+		       COALESCE(array_agg(DISTINCT r.name) FILTER (WHERE r.name IS NOT NULL), '{}'),
+		       EXISTS (SELECT 1 FROM user_roles x `+scopedRole+` WHERE x.user_id = u.id),
+		       COALESCE(array_agg(DISTINCT bs.id::text) FILTER (WHERE bs.id IS NOT NULL), '{}'),
+		       COALESCE(array_agg(DISTINCT bs.name) FILTER (WHERE bs.id IS NOT NULL), '{}')
 		FROM users u LEFT JOIN user_roles ur ON ur.user_id = u.id LEFT JOIN roles r ON r.id = ur.role_id
+		LEFT JOIN business_services bs ON bs.id = ur.business_service_id
 		WHERE $3 = '' OR u.email ILIKE '%' || $3 || '%' OR u.display_name ILIKE '%' || $3 || '%'
 		GROUP BY u.id ORDER BY u.email, u.id LIMIT $1 OFFSET $2`, p.Size, p.Offset(), q)
 	if err != nil {
@@ -85,7 +94,7 @@ func (h *Handler) list(c *gin.Context) {
 	}
 	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (User, error) {
 		var u User
-		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName, &u.IsActive, &u.LastLoginAt, &u.Roles)
+		return u, r.Scan(&u.ID, &u.Email, &u.DisplayName, &u.IsActive, &u.LastLoginAt, &u.Roles, &u.Scoped, &u.BusinessServiceIDs, &u.BusinessServices)
 	})
 	if err != nil {
 		httpx.Fail(c, err)

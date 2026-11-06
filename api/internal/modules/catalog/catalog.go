@@ -30,6 +30,10 @@ type Entity struct {
 	Stamped             bool   // has created_by and updated_by
 	ActorCol            string // set to the acting user on create
 	WritePermission     string
+	// OwnerCol lets the person it names edit the record with inventory:edit_assigned.
+	// OwnerLocked lists the fields they can't change.
+	OwnerCol    string
+	OwnerLocked []string
 	// ReadOnly entities come from read-only sources: DF-IPAM lists them but never writes them.
 	ReadOnly bool
 	// Check validates fields that need more than a type check, such as a schedule.
@@ -76,7 +80,11 @@ func (h *Handler) Register(g *auth.Guard) {
 			continue
 		}
 		g.Handle(http.MethodPost, e.Path, func(c *gin.Context) { h.create(c, e) }, create)
-		g.Handle(http.MethodPatch, e.Path+"/:id", func(c *gin.Context) { h.update(c, e) }, edit)
+		editors := []string{edit}
+		if e.OwnerCol != "" {
+			editors = append(editors, auth.InventoryEditAssigned)
+		}
+		g.Handle(http.MethodPatch, e.Path+"/:id", func(c *gin.Context) { h.update(c, e) }, editors...)
 		g.Handle(http.MethodDelete, e.Path+"/:id", func(c *gin.Context) { h.remove(c, e) }, remove)
 	}
 }

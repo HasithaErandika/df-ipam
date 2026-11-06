@@ -25,7 +25,7 @@ var rolePages = []struct {
 	roles []string
 }{
 	{"/dashboard/summary", []string{auth.SuperAdminRole, ipamAdmin, engineer, infra, auditor}},
-	{"/subnets", []string{auth.SuperAdminRole, ipamAdmin, engineer, infra, auditor}},
+	{"/subnets", []string{auth.SuperAdminRole, ipamAdmin, engineer, infra, auditor, viewer}}, // limited to their services
 	{"/reservations", []string{auth.SuperAdminRole, ipamAdmin, engineer, infra, auditor}},
 	{"/reconciliation/summary", []string{auth.SuperAdminRole, ipamAdmin, engineer, infra, auditor}},
 	{"/requests", []string{auth.SuperAdminRole, ipamAdmin, engineer, infra, auditor}},

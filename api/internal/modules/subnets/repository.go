@@ -93,6 +93,9 @@ func (Repository) List(ctx context.Context, q querier, f Filter, p httpx.Page) (
 		clause, value := searchClause(f.Query)
 		add(clause, value)
 	}
+	if f.Services != nil {
+		add("s.business_service_id = ANY($%d::text[]::uuid[])", *f.Services)
+	}
 	if f.RoutingDomainID != "" {
 		add("s.routing_domain_id = $%d::uuid", f.RoutingDomainID)
 	}

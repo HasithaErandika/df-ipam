@@ -87,10 +87,10 @@ type Handler struct{ conn db.Conn }
 func NewHandler(conn db.Conn) *Handler { return &Handler{conn} }
 
 func (h *Handler) Register(g *auth.Guard) {
-	g.Handle(http.MethodGet, "/ip-addresses", h.list, auth.InventoryView)
+	g.Handle(http.MethodGet, "/ip-addresses", h.list, auth.InventoryView, auth.InventoryViewScoped)
 	g.Handle(http.MethodPost, "/ip-addresses", h.create, auth.InventoryCreate)
-	g.Handle(http.MethodGet, "/ip-addresses/:id", h.get, auth.InventoryView)
-	g.Handle(http.MethodPatch, "/ip-addresses/:id", h.update, auth.InventoryEdit)
+	g.Handle(http.MethodGet, "/ip-addresses/:id", h.get, auth.InventoryView, auth.InventoryViewScoped)
+	g.Handle(http.MethodPatch, "/ip-addresses/:id", h.update, auth.InventoryEdit, auth.InventoryEditAssigned)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/history", h.history, auth.InventoryView)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/evidence", h.evidence, auth.InventoryView)
 	g.Handle(http.MethodGet, "/ip-addresses/:id/device", h.device, auth.InventoryView)
@@ -114,6 +114,9 @@ func (h *Handler) get(c *gin.Context) {
 		return
 	}
 	a, err := one(c, h.conn, id)
+	if err == nil {
+		err = h.limit(c, &a)
+	}
 	if err != nil {
 		httpx.Fail(c, err)
 		return

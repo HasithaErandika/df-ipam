@@ -34,7 +34,8 @@ func (h *Handler) roles(c *gin.Context) {
 	httpx.List(c, out, httpx.Page{Number: 1, Size: len(out)}, int64(len(out)))
 }
 
-// setRoles replaces a user's unscoped roles. Nobody edits their own roles, which
+// setRoles replaces a user's roles. Business services stay with a role that is kept,
+// and go with one that is taken away. Nobody edits their own roles, which
 // prevents both self-promotion and accidental lockout.
 func (h *Handler) setRoles(c *gin.Context) {
 	target, actor := c.Param("id"), auth.Current(c).UserID
@@ -51,7 +52,8 @@ func (h *Handler) setRoles(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1::uuid`, target); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1::uuid
+			AND (business_service_id IS NULL OR role_id <> ALL($2::text[]::uuid[]))`, target, req.RoleIDs); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO user_roles (user_id, role_id) SELECT $1::uuid, role::uuid FROM unnest($2::text[]) AS t(role)`, target, req.RoleIDs); err != nil {

@@ -65,6 +65,11 @@ paths:
       summary: Replace a user's roles
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '204': { description: Updated }, '403': { $ref: '#/components/responses/Error' } }
+  /users/{id}/scope:
+    put:
+      summary: Set the business services a user's scoped roles cover
+      responses:
+        '204': { description: Saved }
   /organisations:
     get: { summary: List organisations, responses: { '200': { description: OK } } }
     post: { summary: Create an organisation and its Default routing domain, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
