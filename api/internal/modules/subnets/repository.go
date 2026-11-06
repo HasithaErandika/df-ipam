@@ -90,7 +90,8 @@ func (Repository) List(ctx context.Context, q querier, f Filter, p httpx.Page) (
 		where = append(where, "s.archived_at IS NULL")
 	}
 	if f.Query != "" {
-		add("(s.name ILIKE '%%' || $%[1]d || '%%' OR s.cidr::text ILIKE '%%' || $%[1]d || '%%')", f.Query)
+		clause, value := searchClause(f.Query)
+		add(clause, value)
 	}
 	if f.RoutingDomainID != "" {
 		add("s.routing_domain_id = $%d::uuid", f.RoutingDomainID)

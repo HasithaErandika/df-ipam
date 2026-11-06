@@ -3,6 +3,7 @@ package ipaddresses
 import (
 	"dfipam/api/internal/platform/httpx"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +32,10 @@ func (q listQuery) clause() string {
 
 func parseListQuery(c *gin.Context) (listQuery, error) {
 	var q listQuery
-	if text := strings.TrimSpace(c.Query("q")); text != "" {
+	text := strings.TrimSpace(c.Query("q"))
+	if network, err := netip.ParsePrefix(text); err == nil {
+		q.add(`i.address <<= $%d::text::cidr`, network.Masked().String())
+	} else if text != "" {
 		q.add(`(host(i.address) ILIKE '%%' || $%[1]d || '%%' OR i.hostname ILIKE '%%' || $%[1]d || '%%'
 			OR i.fqdn ILIKE '%%' || $%[1]d || '%%' OR i.mac::text ILIKE '%%' || $%[1]d || '%%')`, text)
 	}

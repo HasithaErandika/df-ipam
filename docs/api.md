@@ -58,7 +58,7 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 | --- | --- |
 | Auth | `GET /auth/me`, `GET /auth/me/profile` (sign-in itself happens in Supabase) |
 | Users and roles | `/users`, `/users/invite`, `/users/:id/roles`, `/roles`, `GET /people` (email and name only, for owner pickers) |
-| Subnets | CRUD on `/subnets`, plus `POST /subnets/:id/archive`, `POST /subnets/bulk` (all or nothing, `dryRun`), `POST /subnets/bulk-archive`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
+| Subnets | CRUD on `/subnets`. `q` takes a name or text, a CIDR for the subnets inside or around it, or an IP for the subnets holding it. `/ip-addresses` also takes a CIDR for the addresses inside it. Also `POST /subnets/:id/archive`, `POST /subnets/bulk` (all or nothing, `dryRun`), `POST /subnets/bulk-archive`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
 | Tools | `POST /tools/split`, `POST /tools/summarise`, `GET /tools/locate?address=`, `GET /network-blocks/:id/free-space` |
 | IP addresses | `GET /ip-addresses`, `POST /ip-addresses`, `GET /ip-addresses/:id`, `PATCH /ip-addresses/:id`, `GET /ip-addresses/:id/history`, `GET /ip-addresses/:id/evidence`, `GET /ip-addresses/:id/device` (inventory and read-only sources only) |
 | DNS and DHCP (read-only inventory) | `GET /dns-records`, `GET /dhcp-scopes`, `GET /dhcp-scopes/:id` |
