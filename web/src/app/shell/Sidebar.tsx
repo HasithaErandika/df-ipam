@@ -1,6 +1,6 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Link, NavLink } from 'react-router'
-import { nav } from '../nav'
+import { navFor } from '../nav'
 import { useMe } from '../../lib/session'
 
 function LogoMark() {
@@ -17,7 +17,7 @@ function LogoMark() {
 
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { permissions } = useMe()
-  const groups = nav.map((g) => ({ ...g, items: g.items.filter((i) => !i.anyOf || i.anyOf.some((p) => permissions.includes(p))) })).filter((g) => g.items.length > 0)
+  const groups = navFor(permissions)
   return (
     <aside className={`flex shrink-0 flex-col border-r border-side-border bg-side transition-[width] duration-150 ${collapsed ? 'w-[60px]' : 'w-[248px]'}`}>
       <div className={`flex h-[60px] shrink-0 items-center border-b border-side-border ${collapsed ? 'justify-center' : 'justify-between pr-2 pl-4'}`}>

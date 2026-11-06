@@ -1,11 +1,19 @@
 import { ChevronRight } from 'lucide-react'
 import { Suspense, useEffect, useState } from 'react'
-import { Navigate, Outlet, useLocation } from 'react-router'
+import { Link, Navigate, Outlet, useLocation } from 'react-router'
 import { legacyTabUrl } from '../../lib/tabs'
 import { Sidebar } from './Sidebar'
 import { AlertsBell, FindingsLink, GlobalSearch, UserMenu } from './TopBar'
-import { ErrorBoundary, SkeletonRows } from '../../components/ui'
-import { allItems } from '../nav'
+import { Card, EmptyState, ErrorBoundary, SkeletonRows } from '../../components/ui'
+import { useMe } from '../../lib/session'
+import { allItems, canOpen } from '../nav'
+
+/** A link or an old bookmark can still reach a page this role can't use. */
+function Page({ pathname }: { pathname: string }) {
+  const { permissions } = useMe()
+  if (canOpen(pathname, permissions)) return <Outlet />
+  return <Card><EmptyState title="You don't have access to this page" body="Your role doesn't include it. Ask an administrator if you need it." action={<Link className="text-accent hover:underline" to="/">Go to the dashboard</Link>} /></Card>
+}
 
 export function AppShell() {
   const { pathname, search } = useLocation()
@@ -35,7 +43,7 @@ export function AppShell() {
           </div>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1440px] px-6 py-5"><ErrorBoundary resetKey={pathname}><Suspense fallback={<SkeletonRows rows={8} />}>{legacyTab ? <Navigate to={legacyTab} replace /> : <Outlet />}</Suspense></ErrorBoundary></div>
+          <div className="mx-auto max-w-[1440px] px-6 py-5"><ErrorBoundary resetKey={pathname}><Suspense fallback={<SkeletonRows rows={8} />}>{legacyTab ? <Navigate to={legacyTab} replace /> : <Page pathname={pathname} />}</Suspense></ErrorBoundary></div>
         </main>
       </div>
     </div>

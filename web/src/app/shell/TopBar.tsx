@@ -9,7 +9,12 @@ import { useCan } from '../../lib/session'
 import type { Summary } from '../../lib/types'
 import { ProfileModal } from './ProfileModal'
 
+/** Search reads the inventory, so it is only offered to those who can. The grid keeps its place. */
 export function GlobalSearch() {
+  return useCan('inventory:view') ? <SearchBox /> : <div />
+}
+
+function SearchBox() {
   const navigate = useNavigate()
   const input = useRef<HTMLInputElement>(null)
   const [value, setValue] = useState('')

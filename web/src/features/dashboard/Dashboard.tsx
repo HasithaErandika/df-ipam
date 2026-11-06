@@ -5,8 +5,11 @@ import { BarList, LineChart } from '../../components/charts'
 import { Badge, Button, Card, EmptyState, ErrorState, Meter, Mono, PageHeader, SkeletonRows, Td, Th } from '../../components/ui'
 import { get, list } from '../../lib/api'
 import { environments, formatCount, formatDateTime, humanAction } from '../../lib/format'
-import { useCan } from '../../lib/session'
+import { useCan, useMe } from '../../lib/session'
+import { LimitedDashboard } from './LimitedDashboard'
 import type { AuditEntry, Distribution, Subnet, Summary, TrendPoint } from '../../lib/types'
+
+const tiles = 'grid grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] divide-x divide-line overflow-hidden rounded-md border border-line bg-surface'
 
 function Stat({ label, value, to, note, alert }: { label: string; value: number; to?: string; note?: string; alert?: boolean }) {
   const body: ReactNode = (
@@ -137,36 +140,43 @@ function RecentChanges() {
   )
 }
 
-export function Dashboard() {
-  const canAudit = useCan('audit:view')
+/** Inventory, shaped by what this role can act on. Tiles only link to pages it can open. */
+function InventoryDashboard() {
+  const { permissions, roles } = useMe()
+  const has = (...any: string[]) => any.some((p) => permissions.includes(p))
+  const canAudit = has('audit:view')
+  const seesIntegrations = has('integrations:manage', 'audit:view')
+  const seesDiscovery = has('discovery:run', 'discovery:manage', 'audit:view')
+  const seesRequests = has('ip:request', 'requests:approve', 'ip:allocate', 'ip:reserve', 'audit:view')
   const { data, isPending, error, refetch } = useQuery({ queryKey: ['summary'], queryFn: () => get<Summary>('/dashboard/summary') })
   return (
     <>
-      <PageHeader title="Dashboard" description="Address inventory across all routing domains." />
+      <PageHeader title="Dashboard" description={`Address inventory across all routing domains. Shown for ${roles.join(', ')}.`} />
       {isPending && <Card><SkeletonRows /></Card>}
       {error && <Card><ErrorState error={error} onRetry={refetch} /></Card>}
       {data && (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 divide-x divide-y divide-line overflow-hidden rounded-md border border-line bg-surface md:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+          <div className={tiles}>
             <Stat label="IPv4 subnets" value={data.subnetsV4} to="/subnets?family=4" />
             <Stat label="IPv6 subnets" value={data.subnetsV6} to="/subnets?family=6" />
-            <Stat label="Tracked IP records" value={data.ipRecords} />
+            <Stat label="Tracked IP records" value={data.ipRecords} to="/ip-addresses/all" />
             <Stat label="Observed active" value={data.observedActive} note="Reachability, not allocation" />
             <Stat label="Open findings" value={data.openFindings} to="/reconciliation" alert />
-            <Stat label="Devices" value={data.devices} />
+            <Stat label="Devices" value={data.devices} to="/devices" />
           </div>
-          <div className="grid grid-cols-1 divide-y divide-line overflow-hidden rounded-md border border-line bg-surface md:grid-cols-3 md:divide-x md:divide-y-0">
-            <Stat label="Pending approvals" value={data.pendingApprovals} to="/requests/all" alert />
-            <Stat label="Approved, waiting to be fulfilled" value={data.readyToFulfil} to="/requests/all" />
+          <div className={tiles}>
+            {has('requests:approve') && <Stat label="Pending approvals" value={data.pendingApprovals} to="/requests/approvals" alert />}
+            {has('ip:allocate', 'ip:reserve') && <Stat label="Approved, waiting to be fulfilled" value={data.readyToFulfil} to="/requests/all" />}
             <Stat label="Reservations ending within 7 days" value={data.reservationsExpiringSoon} to="/reservations" alert />
+            {!has('requests:approve', 'ip:allocate', 'ip:reserve') && seesRequests && <Stat label="Pending approvals" value={data.pendingApprovals} to={canAudit ? '/requests/all' : '/requests'} />}
           </div>
-          <div className="grid grid-cols-2 divide-x divide-y divide-line overflow-hidden rounded-md border border-line bg-surface md:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+          <div className={tiles}>
             <Stat label="High-utilisation subnets" value={data.highUtilisationSubnets} to="/subnets" alert note="At the latest snapshot" />
             <Stat label="Suspected conflicts" value={data.conflictSuspected} to="/reconciliation" alert />
-            <Stat label="Integrations healthy" value={data.integrationsHealthy} to="/integrations" />
-            <Stat label="Integrations failing" value={data.integrationsFailing} to="/integrations" alert />
-            <Stat label="Agents online" value={data.agentsOnline} to="/discovery" note={data.agentsOffline > 0 ? `${formatCount(data.agentsOffline)} offline` : undefined} />
-            <Stat label="Discovery jobs failed today" value={data.discoveryJobsFailedToday} to="/discovery" alert note={`${formatCount(data.discoveryJobsRunning)} running`} />
+            {seesIntegrations && <Stat label="Integrations healthy" value={data.integrationsHealthy} to="/integrations" />}
+            {seesIntegrations && <Stat label="Integrations failing" value={data.integrationsFailing} to="/integrations" alert />}
+            {seesDiscovery && <Stat label="Agents online" value={data.agentsOnline} to="/discovery/agents" note={data.agentsOffline > 0 ? `${formatCount(data.agentsOffline)} offline` : undefined} />}
+            {seesDiscovery && <Stat label="Discovery jobs failed today" value={data.discoveryJobsFailedToday} to="/discovery" alert note={`${formatCount(data.discoveryJobsRunning)} running`} />}
           </div>
           <Trends />
           <Breakdown />
@@ -181,4 +191,8 @@ export function Dashboard() {
       )}
     </>
   )
+}
+
+export function Dashboard() {
+  return useCan('inventory:view') ? <InventoryDashboard /> : <LimitedDashboard />
 }

@@ -97,6 +97,20 @@ Stored in `roles`, `permissions`, `role_permissions` and `user_roles`. Checked b
 
 The role purposes come from the brief. The ticks are a proposed default, and administrators can change them. The code checks permissions, never role names. Separation of duties is enforced regardless: nobody approves their own request, and a person decides at most one step of a request. Approval workflows and notification rules are administration, so they need `users:manage`. Anyone signed in reads their own notifications and preferences.
 
+### What each role sees
+
+`web/src/app/nav.ts` holds the rule for every page: the side panel uses it, and so does the page guard, which shows "You don't have access" for a link or bookmark the role can't use. `TestRolesReachOnlyTheirPages` checks the same table against the API, so a link never leads to a refusal. Hiding a page is for clarity: the API does the real check.
+
+| Pages | Super Admin | IPAM Admin | Network Eng | Infra Eng | Security Auditor | Business Viewer |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Dashboard, Alerts, Reports | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Inventory, Reconciliation, Reservations, Requests | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| Discovery, Imports | ✓ | ✓ | ✓ | | Read only | |
+| Integrations, Audit Logs, Roles, System | ✓ | ✓ | | | Read only | |
+| User Management | ✓ | | | | | |
+
+The dashboard follows the same rules. Approvers see pending approvals, those who allocate see what is waiting to be fulfilled, and integration and discovery tiles need access to those pages. A Business Viewer sees a short page of what the role offers, because scoped inventory isn't built. Retention can be read with `audit:view`, and changed only with `system:manage`.
+
 `user_roles` has optional scope columns (organisation, business unit, site, business service). Business Viewers see only explicitly permitted business services, and infrastructure details stay hidden unless a permission allows them.
 
 ## Keeping the swap easy

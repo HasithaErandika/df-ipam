@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Pencil } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, Modal, PageHeader, SkeletonRows, Td, Th, useConfirmSave } from '../../components/ui'
@@ -53,12 +54,13 @@ function EditRetention({ policy, onClose }: { policy: RetentionPolicy | null; on
     mutationFn: () => put(`/system/retention/${policy?.dataClass}`, { retainDays: days }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['retention'] }); onClose() },
   })
-  const checks = useChecks(check({ days: between(days, policy?.dataClass === 'audit_logs' ? 365 : 7, 36500, 'Days') }))
+  const least = policy?.dataClass === 'audit_logs' ? 365 : 7
+  const checks = useChecks(check({ days: between(days, least, 36500, 'Days') }))
   if (!policy) return null
   return (
     <Modal open onClose={onClose} title={classNames[policy.dataClass] ?? policy.dataClass}
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => checks.submit(() => confirmSave(`the ${policy?.dataClass} retention`, () => save.mutate()))}>Save</Button></>}>
-      <Field label="Keep for (days)" htmlFor="retain-days" error={checks.shown.days}><Input id="retain-days" type="number" min={7} value={days} onChange={(e) => setDays(Number(e.target.value))} /></Field>
+      <Field label="Keep for (days)" htmlFor="retain-days" error={checks.shown.days} hint={`At least ${least} days.`}><Input id="retain-days" type="number" min={least} value={days} onChange={(e) => setDays(Number(e.target.value))} /></Field>
       <div className="mt-3"><FormError error={save.error} /></div>
     </Modal>
   )
@@ -75,19 +77,20 @@ function Retention() {
       {data?.length === 0 && <EmptyState title="No retention policies" body="Run the seed to load the starting values." />}
       {data && data.length > 0 && (
         <table className="w-full border-collapse">
-          <thead><tr><Th>Data</Th><Th className="text-right">Keep for</Th><Th>Last changed</Th></tr></thead>
+          <thead><tr><Th>Data</Th><Th className="text-right">Keep for</Th><Th>Last changed</Th>{canManage && <Th />}</tr></thead>
           <tbody>
             {data.map((p) => (
               <tr key={p.dataClass} className="hover:bg-surface-2">
-                <Td>{canManage ? <button type="button" className="cursor-pointer font-medium text-ink hover:text-accent" onClick={() => setSelected(p)}>{classNames[p.dataClass] ?? p.dataClass}</button> : (classNames[p.dataClass] ?? p.dataClass)}</Td>
+                <Td className="font-medium text-ink">{classNames[p.dataClass] ?? p.dataClass}</Td>
                 <Td className="text-right text-ink-2 tabular-nums">{formatCount(p.retainDays)} days</Td>
                 <Td className="text-ink-2">{p.updatedBy ? `${p.updatedBy}, ${p.updatedAt ? formatDateTime(p.updatedAt) : ''}` : 'Starting value'}</Td>
+                {canManage && <Td className="text-right"><Button variant="ghost" className="h-7" aria-label={`Edit ${classNames[p.dataClass] ?? p.dataClass}`} onClick={() => setSelected(p)}><Pencil size={13} aria-hidden /> Edit</Button></Td>}
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      <p className="border-t border-line px-4 py-2 text-[12px] text-ink-3">These are starting values for review, not agreed policy. Audit logs aren't pruned automatically until compliance sets a period.</p>
+      <p className="border-t border-line px-4 py-2 text-[12px] text-ink-3">These are starting values for review, not agreed policy. Audit logs aren't pruned automatically until compliance sets a period.{!canManage && ' Changing these needs system:manage.'}</p>
       <EditRetention policy={selected} onClose={() => setSelected(null)} />
     </Card>
   )

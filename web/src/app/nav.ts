@@ -7,7 +7,7 @@ export interface NavItem {
   to: string
   label: string
   icon: LucideIcon
-  /** Hides the link from people holding none of these. The API still does the real check. */
+  /** Who may open the page: holding any one is enough. Keep this in step with the routes the page reads, as the API does the real check. */
   anyOf?: string[]
   /** Roadmap phase for pages that aren't built yet. */
   phase?: number
@@ -15,32 +15,34 @@ export interface NavItem {
   features?: string[]
 }
 
+const view = ['inventory:view']
+
 export const nav: { group: string; items: NavItem[] }[] = [
   { group: 'Overview', items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard }] },
   {
     group: 'Inventory',
     items: [
-      { to: '/network', label: 'Network Management', icon: Network },
-      { to: '/subnets', label: 'Subnet Management', icon: TableProperties },
-      { to: '/ip-addresses', label: 'IP Address Explorer', icon: Boxes },
-      { to: '/devices', label: 'Device Inventory', icon: Server },
-      { to: '/interfaces', label: 'Interface Inventory', icon: Cable },
+      { to: '/network', label: 'Network Management', icon: Network, anyOf: view },
+      { to: '/subnets', label: 'Subnet Management', icon: TableProperties, anyOf: view },
+      { to: '/ip-addresses', label: 'IP Address Explorer', icon: Boxes, anyOf: view },
+      { to: '/devices', label: 'Device Inventory', icon: Server, anyOf: view },
+      { to: '/interfaces', label: 'Interface Inventory', icon: Cable, anyOf: view },
     ],
   },
   {
     group: 'Operations',
     items: [
-      { to: '/discovery', label: 'Discovery Centre', icon: Radar, anyOf: ['discovery:run', 'discovery:manage', 'inventory:view'] },
-      { to: '/imports', label: 'Imports', icon: FileUp, anyOf: ['imports:run'] },
-      { to: '/reconciliation', label: 'Reconciliation Centre', icon: GitCompareArrows },
+      { to: '/discovery', label: 'Discovery Centre', icon: Radar, anyOf: ['discovery:run', 'discovery:manage', 'audit:view'] },
+      { to: '/imports', label: 'Imports', icon: FileUp, anyOf: ['imports:run', 'audit:view'] },
+      { to: '/reconciliation', label: 'Reconciliation Centre', icon: GitCompareArrows, anyOf: view },
       { to: '/integrations', label: 'Integrations', icon: Plug, anyOf: ['integrations:manage', 'audit:view'] },
     ],
   },
   {
     group: 'Governance',
     items: [
-      { to: '/requests', label: 'IP Allocation Requests', icon: ClipboardList },
-      { to: '/reservations', label: 'Reservations', icon: BookCheck },
+      { to: '/requests', label: 'IP Allocation Requests', icon: ClipboardList, anyOf: ['ip:request', 'requests:approve', 'ip:allocate', 'ip:reserve', 'audit:view'] },
+      { to: '/reservations', label: 'Reservations', icon: BookCheck, anyOf: view },
       { to: '/alerts', label: 'Alerts and Notifications', icon: Bell },
       { to: '/reports', label: 'Reports', icon: FileBarChart, anyOf: ['reports:export', 'reports:export_scoped'] },
       { to: '/audit', label: 'Audit Logs', icon: ScrollText, anyOf: ['audit:view'] },
@@ -57,3 +59,18 @@ export const nav: { group: string; items: NavItem[] }[] = [
 ]
 
 export const allItems = nav.flatMap((g) => g.items.map((item) => ({ ...item, group: g.group })))
+
+/** Pages with no menu link still have a rule. */
+const pages: Pick<NavItem, 'to' | 'anyOf'>[] = [...allItems, { to: '/search', anyOf: view }]
+
+export const canSee = (item: Pick<NavItem, 'anyOf'>, permissions: string[]) => !item.anyOf || item.anyOf.some((p) => permissions.includes(p))
+
+/** The menu for these permissions, without groups left empty. */
+export const navFor = (permissions: string[]) =>
+  nav.map((g) => ({ ...g, items: g.items.filter((i) => canSee(i, permissions)) })).filter((g) => g.items.length > 0)
+
+/** Whether this address is open to someone holding these permissions. */
+export function canOpen(pathname: string, permissions: string[]): boolean {
+  const page = pages.find((p) => (p.to === '/' ? pathname === '/' : pathname === p.to || pathname.startsWith(`${p.to}/`)))
+  return !page || canSee(page, permissions)
+}
