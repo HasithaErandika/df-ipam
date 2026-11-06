@@ -12,7 +12,7 @@ PostgreSQL with native `inet` and `cidr` types. The schema uses standard Postgre
 
 ## Full database plan
 
-The whole schema is live on Supabase: 72 application tables plus `schema_migrations`. Migrations are in `api/migrations/`, and `api/sql/supabase-setup.sql` holds everything as one file.
+The schema has 72 application tables plus `schema_migrations`. It is live in local PostgreSQL, and the Supabase test database has it up to migration 12. Migrations are in `api/migrations/`, and `api/sql/supabase-setup.sql` holds everything as one file.
 
 | Area | Purpose | Tables |
 | --- | --- | --- |
@@ -364,3 +364,9 @@ No new tables, so existing row level security and grants apply.
 | `reconciliation_results` | `confidence_breakdown` | Explains the score |
 | `report_jobs` | `content`, `content_type`, `size_bytes`, `row_count`, `truncated`, `error`, `started_at`, `finished_at` | Files live with the job, and retention removes them |
 | `roles` | `is_customised` | The seed leaves edited roles alone |
+
+## Application role
+
+`dfipam_app` has no access to `schema_migrations` or `sessions`, and can't delete `users`. It can only insert and read `audit_logs`, `discovery_observations` and `discovery_job_logs`. Migrations and seeding run as `postgres`.
+
+Migration 13 adds indexes for the busiest queries, and migration 14 narrows these rights and lowers the default discovery ceiling to 100 packets a second.

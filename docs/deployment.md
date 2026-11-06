@@ -2,16 +2,15 @@
 
 ## Topology
 
-One dedicated on-premises Ubuntu Server. Agents run on separate hosts in the network segments they cover.
+One dedicated on-premises Ubuntu Server. Discovery agents run on separate hosts in the network segments they cover, and an optional built-in agent runs on the server itself. Both can run at once.
 
 | Component | Runs as |
 | --- | --- |
-| Nginx | Serves the React build, HTTPS termination, proxies `/api` |
-| `df-ipam-api` | Docker container, published on localhost only |
-| `df-ipam-worker` | Docker container |
+| `web` | Docker container running Nginx: serves the React build, ends HTTPS and proxies `/api`. The only published service, on 80 and 443 |
+| `backend` | Docker container running the API and worker in one process. Not published |
 | `df-ipam-agent` | systemd service on each agent host, `CAP_NET_RAW` only |
-| Redis | Local, bound to localhost, password protected, pending approval |
-| PostgreSQL | Docker container with a named volume, published on localhost only |
+| `agent` | Optional Docker container for the built-in agent, started with `make agent-up`. No capabilities, read-only, not published |
+| `db` | PostgreSQL in a Docker container with a named volume. Not published |
 
 Each service has its own account with minimal file permissions. Nothing runs as root. The supplement's PHP-FPM, Laravel and Python services are replaced by the Go services above: see [requirements.md](requirements.md).
 
@@ -19,18 +18,19 @@ Each service has its own account with minimal file permissions. Nothing runs as 
 
 | From | To | Port | Purpose |
 | --- | --- | --- | --- |
-| Users | Nginx | 443/tcp | Web app and API |
+| Users | `web` | 443/tcp | Web app and API |
 | Users | Supabase | 443/tcp | Sign-in |
-| Agents | Nginx | 443/tcp | Jobs, results, heartbeats |
-| API | Supabase | 443/tcp | JWKS |
-| API, worker | PostgreSQL | 5432/tcp | Database, on Docker's private network |
-| API, worker | Redis | 6379/tcp | Localhost only |
-| Worker | FortiGate, vCenter | 443/tcp (or the configured admin port) | Read-only APIs |
-| Worker | AWS, Azure | 443/tcp | Read-only APIs |
-| Worker | Mail provider | 443/tcp (Graph) or 587/tcp (SMTP) | Notifications |
+| Agents | `web` | 443/tcp | Jobs, results, heartbeats |
+| Built-in agent | `backend` | 8080/tcp | Jobs, results, heartbeats, on Docker's private network |
+| `backend` | Supabase | 443/tcp | JWKS |
+| `backend` | `db` | 5432/tcp | Database, on Docker's private network |
+| `backend` | FortiGate, vCenter | 443/tcp (or the configured admin port) | Read-only APIs |
+| `backend` | AWS, Azure | 443/tcp | Read-only APIs |
+| `backend` | Mail provider | 443/tcp (Graph) or 587/tcp (SMTP) | Notifications |
 | Agents | Approved targets | ICMP, 161/udp, 53/udp+tcp | Discovery |
+| Built-in agent | Approved targets | ICMP, 80 and 443/tcp (Nmap), 53/udp+tcp | Discovery, from the server's address |
 
-All other traffic is blocked. PostgreSQL and Redis are never reachable from untrusted networks.
+All other traffic is blocked. PostgreSQL is never reachable from untrusted networks.
 
 ## Agent privileges
 
@@ -39,6 +39,8 @@ All other traffic is blocked. PostgreSQL and Redis are never reachable from untr
 | ICMP | `CAP_NET_RAW` |
 | Nmap host discovery | `CAP_NET_RAW` and `CAP_NET_ADMIN`, in a separate unit if used, launched with `--privileged` |
 | Reading local ARP or neighbour tables, DNS, SNMP | No special capability |
+
+The built-in agent needs none of these: ICMP uses an unprivileged socket, allowed for its user by `net.ipv4.ping_group_range`, and unprivileged Nmap discovers hosts with TCP connections.
 
 Capabilities are set only on the collector's systemd unit, with `AmbientCapabilities`, a matching `CapabilityBoundingSet` and `NoNewPrivileges=yes`. Other services get none. Exact Nmap needs are confirmed on the target Ubuntu version in Phase 4.
 
@@ -78,7 +80,9 @@ Settings live in `api/.env` and `web/.env`, in development and on the server. `m
 | `SUPABASE_DATABASE_URL`, `SUPABASE_MIGRATION_DATABASE_URL` | Supabase database, for testing only |
 | `DB_MAX_CONNS` | Connection pool size for processes run on the host |
 | `TRUSTED_PROXIES`, `API_MAX_IN_FLIGHT` | Who may state the client's address, and the most requests running at once |
-| `DOCKER_SUBNET`, `DOCKER_GATEWAY` | The Docker network. The API trusts only this gateway |
+| `DOCKER_SUBNET`, `DOCKER_GATEWAY`, `WEB_ADDRESS`, `BACKEND_ADDRESS` | The Docker network. The backend trusts only the web container's address |
+| `COMPOSE_FILE` | Set to `docker-compose.yml:docker-compose.prod.yml` on a server. Without it, everything is published on localhost only |
+| `WORKER_ENABLED` | Set `false` to run the API without background jobs |
 | `INTEGRATION_ALLOWED_HOSTS`, `INTEGRATION_ALLOWED_PRIVATE_RANGES`, `INTEGRATION_CA_FILE` | Outbound policy for connectors |
 | `SECRET_ENCRYPTION_KEY_VERSION`, `SECRET_ENCRYPTION_KEY_PREVIOUS` | Key rotation |
 | `BACKUP_GPG_RECIPIENT` | GPG key backups are encrypted to |
@@ -133,6 +137,6 @@ See [runbooks.md](runbooks.md). They haven't been rehearsed yet.
 
 ## Monitoring
 
-- `/health` (process up) and `/ready` (database and Redis reachable)
+- `/health` (process up) and `/ready` (database reachable)
 - Structured JSON logs to journald, forwarded to the central log platform
 - Alerts: service down, queue backlog, agents offline, sync failures, backup failure, certificate expiry

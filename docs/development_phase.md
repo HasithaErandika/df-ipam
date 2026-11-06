@@ -23,10 +23,10 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | 3 | Imports and devices | 🟨 Built. Parser needs checking against the real production files |
 | 4 | Discovery | 🟨 Built. Needs a lab run, the sensitive-networks list and SNMP credentials |
 | 5 | Integrations and reconciliation | 🟨 Built. Connectors need trying against real systems. DNS and DHCP servers blocked |
-| 6 | Reporting and dashboard | 🟨 Built. Not yet viewed in a browser |
+| 6 | Reporting and dashboard | 🟨 Built. Reports tested through the API. Screens not checked by hand |
 | 7 | Hardening | 🟨 Screens, Docker and runbooks built. Load test, security review and restore not yet run. Company auth blocked |
 
-**Testing status, 5 November 2026:** everything up to the role editing and report summary work passed on Supabase. That later work, and all tests on the local Docker database, have not been run: `make test test-db`.
+**Testing status, 5 November 2026:** `make lint test` and all 47 database and API tests pass, on a fresh `dfipam_test` database built from all 14 migrations. Migrations 13 and 14 aren't on the Supabase test database yet: run `make migrate-supabase`. No screen has been checked by hand since the frontend restructure, and no agent has sent real packets.
 
 **Foundation exit check passed:** a real user signed in, roles were enforced, and creating an organisation through the screens wrote an audit row on Supabase.
 
@@ -39,8 +39,9 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Env files in `api/` and `web/` | ✅ Done | |
 | Go API, worker, agent, migrate and seed programs | ✅ Done | All start and connect. The agent stays idle until Phase 4. The worker runs reconciliation hourly, and allocation expiry and email every minute |
 | Config, structured logs, correlation IDs | ✅ Done | |
-| Migrations and seed | ✅ Done | 12 migrations, applied to local PostgreSQL and to Supabase |
-| Docker | ✅ Done | PostgreSQL, API and worker through `docker-compose.yml`. `make docker-up` starts all of it |
+| Migrations and seed | ✅ Done | 14 migrations on local PostgreSQL. Supabase has the first 12 |
+| Docker | ✅ Done | `web`, `backend` and `db` through `docker-compose.yml`, with `dev` and `prod` overrides. `make docker-up` starts all of it. Production TLS config checked, not yet run on a server. The real client address needs checking from a second machine |
+| Sample network | ✅ Done | `make seed-demo` loads 190 subnets and full workflows through the real API. Development only |
 | Single-file SQL setup | ✅ Done | `api/sql/supabase-setup.sql` |
 | Supabase sign-in, token verification | ✅ Done | Tested with real ES256 signatures. MFA not set up |
 | Roles and permissions | ✅ Done | Every route is guarded, enforced by a test |
@@ -93,7 +94,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Notifications | 🟨 Partial | In-app alerts, rules, per-person preferences and deduplication work. Email is built (SMTP, STARTTLS) but waits for a mail provider |
 | Alerts page | ✅ Done | Inbox, settings, event rules, and what needs attention. Unread count in the header |
 | Requests, Reservations screens | ✅ Done | |
-| Invite users | 🟨 Partial | Built, but no real invitation has been sent |
+| Invite users | 🟨 Partial | Sends the Supabase invitation, but no real one has been tried, and the app has no screen to set or reset a password. Create accounts in the Supabase dashboard for now |
 | User role assignment | ✅ Done | Screen built. Not yet exercised with a second real user |
 
 **Phase 2 exit check passed:** concurrency tests and the no-self-approval tests pass on PostgreSQL 16 and on Supabase.
@@ -105,18 +106,18 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Device and interface inventory screens | 🟦 Built, not tested | Device types and OS family with icons |
 | Duplicate device matching and merge | 🟦 Built, not tested | By serial, interface MAC, management IP or hostname |
 | Production file parser | ⛔ Blocked | Tolerant parser built (CIDR, address and mask, VDOM-prefixed lines). Needs `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt` to confirm no line is dropped |
-| Import preview, second-person approval, reversal, enrichment queue | 🟦 Built, not tested | Every line kept with a status. Migration 11 |
+| Import preview, second-person approval, reversal, enrichment queue | 🟦 Built, API tested | Every line kept with a status. Upload, correction, approval and reversal tested on PostgreSQL. Screen not checked by hand |
 
 ## Phase 4: Discovery
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Policies with second-person approval, schedules, exclusions, blackouts | 🟦 Built, not tested | Saving a policy clears its approval |
-| Frozen job scope | 🟦 Built, not tested | Allowlist, exclusions win, blackouts, IPv4 up to /20, IPv6 only at recorded addresses |
-| Agent registration, heartbeat, rotation, revocation | 🟦 Built, not tested | One-time tokens; credentials stored as hashes |
-| ICMP, ARP/NDP, reverse DNS, Nmap host discovery | 🟦 Built, not tested | Agent enforces rate, concurrency and timeout limits |
+| Policies with second-person approval, schedules, exclusions, blackouts | 🟦 Built, API tested | Saving a policy clears its approval. A schedule runs at most every 15 minutes |
+| Frozen job scope | 🟦 Built, API tested | Allowlist, exclusions win, blackouts, IPv4 up to /20, IPv6 only at recorded addresses, 65,536 addresses per job. Multicast, loopback and link-local refused |
+| Agent registration, heartbeat, rotation, revocation | 🟦 Built, API tested | One-time tokens; credentials stored as hashes. Registration, claiming and results tested through the real API |
+| ICMP, ARP/NDP, reverse DNS, Nmap host discovery | 🟦 Built, not run | Limits are unit tested, but no agent has sent real packets. Every packet is rate limited, and the agent holds its own ceilings |
 | SNMP collector | ⬜ To do | Needs SNMPv3 credential storage (Phase 5 encrypted credentials) |
-| Safety controls and emergency stop | 🟦 Built, not tested | Results re-checked against scope; discovery never changes allocation or ownership |
+| Safety controls and emergency stop | 🟦 Built, API tested | Traffic ceiling across agents, limits rechecked between targets, results rechecked against scope. An agent that loses the server stops itself. Discovery never changes allocation or ownership |
 | Discovery screen, Explorer scan button | 🟦 Built, not tested | |
 | Redis job queue | ⛔ Blocked | Jobs use PostgreSQL with SKIP LOCKED meanwhile |
 | Sensitive network rules | ⛔ Blocked | Mechanism built (passive only unless an approved sensitive policy); needs the list of banking and payment networks |
@@ -148,7 +149,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Dashboard totals, most utilised subnets, allocation state, recent changes | ✅ Done | |
 | Trend and distribution charts | 🟦 Built, not viewed | Daily snapshots from the worker, so trends fill in over time. Hand-built SVG rather than Recharts |
 | Excel, CSV and PDF reports | ✅ Done | 13 reports, in the background. PDF stops at 5,000 rows and says so. Formulas are neutralised |
-| Reports screen and summary | 🟦 Built, not viewed | The summary hasn't had a test run |
+| Reports screen and summary | 🟦 Built, not viewed | |
 | Scoped reports | 🟨 Partial | Business Viewers get only their business services. Exit criterion "at volume" not yet measured |
 | Audit log screen and filters | 🟦 Built, not viewed | Actor, action, object, result and dates |
 
@@ -156,15 +157,24 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Roles and Permissions screen | 🟦 Built, not viewed | Edit permissions and details, create and delete roles. Keeps someone able to manage users. Editing details hasn't had a test run |
+| Roles and Permissions screen | 🟦 Built, not viewed | Edit permissions and details, create and delete roles. Keeps someone able to manage users |
 | System Administration screen | 🟦 Built, not viewed | Health, queues, retention |
 | Retention pruning | 🟨 Built | `make docker-retention`, daily timer. Audit logs are never pruned automatically. Not yet run |
 | Docker, Nginx, timers, backup script | 🟨 Built | Docker checked locally. Nginx, timers and backup not yet run on a server |
-| Setup guide and runbooks | 🟨 Written | `docs/setup.md`, `docs/runbooks.md`. Not rehearsed |
+| Setup guide, system guide and runbooks | 🟨 Written | `docs/setup.md`, `docs/runbooks.md`, and a system guide PDF kept outside git. Not rehearsed |
 | Load tests and final sizing | ⬜ To do | Tool built (`make load-test`), not run. Needs a test system and the real inventory size |
-| Security review | ⬜ To do | Checklist in `docs/security.md`. `make vuln` and a secret scan not run for this work |
+| Security review | 🟨 Partial | Data leak and flooding review done on 5 November 2026: see `docs/security.md`. `make vuln` and the full checklist not run |
 | Restore test | ⬜ To do | Exit criterion |
 | Company auth migration | ⛔ Blocked | Needs company auth details |
+| Code size and query rules | ✅ Done | Files under 200 lines, function complexity 15 or less in production code, no query per row on read paths |
+| Feedback, confirmations and error handling | 🟦 Built, not viewed | Toasts, confirmation of edits and deletes, friendly errors, sign-out when a session ends |
+| Screens load on demand, tabs are paths | 🟦 Built, not viewed | Old `?tab=` links redirect |
+| Template imports for 17 record types | 🟦 Built, not used with Supabase sign-in | Excel workbook or CSV per type, checked per row, second-person approval, discard, reversible. A real workbook was uploaded, approved and reversed through the screens on the real API, with a test signing key |
+| Built-in discovery agent | 🟦 Tested in Docker, not on a real network | Optional container, `make agent-up`, alongside local agents. No capabilities. Registration, restart and pinned jobs tested on a private Docker network |
+| IP Address Explorer subnet cards | ✅ Done | Find a subnet by name, CIDR or IP, then open it. Searching a CIDR finds what is inside or around it, on PostgreSQL. All addresses has its own tab |
+| Side panel, page guard and dashboard by role | ✅ Done | Each role reaches only its pages. A browser walked all 6 roles through every link and tab on the real API, with a test signing key. Retention has an Edit button for `system:manage` |
+| Scoped reading and editing assigned records | ✅ Done | `inventory:view_scoped` and `inventory:edit_assigned` are enforced by the API. Business services are assigned in User Management. Checked through the screens on the real API |
+| Account menu and details dialog | 🟦 Built, not viewed | Top bar shows a user icon; the menu has Details and Sign out |
 
 ## Waiting on others
 
@@ -183,3 +193,4 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 
 - Turn off public sign-ups in Supabase.
 - Change the database password and `service_role` key, because both were shared in chat.
+- Add a screen to set and reset passwords.

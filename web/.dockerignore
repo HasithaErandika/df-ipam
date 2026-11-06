@@ -1,0 +1,7 @@
+# Secrets and local output must never reach an image layer.
+.env
+.env.*
+node_modules
+dist
+coverage
+*.tsbuildinfo

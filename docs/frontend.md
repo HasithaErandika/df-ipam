@@ -7,12 +7,12 @@
 | Need | Choice |
 | --- | --- |
 | Base | React, TypeScript, Vite, Tailwind CSS |
-| Components | shadcn/ui on Radix primitives (accessible, source owned by the project) |
+| Components | Radix primitives with the project's own components in `components/ui` |
 | Routing | React Router |
 | API state | TanStack Query |
-| Tables | TanStack Table with TanStack Virtual |
-| Forms | React Hook Form with Zod |
-| Charts | Recharts |
+| Tables | Plain tables with server-side paging |
+| Forms | `useChecks` with `lib/validation.ts`. React Hook Form with Zod on sign-in and new subnet |
+| Charts | Hand-built SVG |
 | Auth | `supabase-js`, used only in `web/src/lib/auth.ts` |
 
 ## Design direction
@@ -36,9 +36,11 @@ Allocation and observation are always shown as two separate badges. "Available c
 
 **Device types and operating systems** have icons (firewall, router, switch, access point, server, virtual machine, laptop, desktop, phone, tablet, printer, camera and more; Windows, Linux, macOS, iOS, Android, network OS). An OS is shown only when a record or reliable source states it, never guessed.
 
+Device types use network-diagram symbols drawn for this project, in `web/src/components/deviceIcons.tsx`, on tiles coloured by kind. Windows, Linux, macOS, iOS and Android use their real logos, in `web/src/components/osLogos.tsx`. Network OS and Hypervisor stay generic, because they cover many vendors. Logos only identify the system a record runs, and belong to their owners.
+
 ## Dialogs
 
-Every dialog is centred over a blurred background, using `Modal` and `ConfirmDialog` in `web/src/components/ui.tsx`. Don't add side drawers.
+Every dialog is centred over a blurred background, using `Modal` and `ConfirmDialog` in `web/src/components/ui/`. Don't add side drawers.
 
 ## Pages
 
@@ -47,7 +49,7 @@ Every dialog is centred over a blurred background, using `Modal` and `ConfirmDia
 | 1 | Dashboard | Totals, charts, drill-down to records |
 | 2 | Network Management | Organisations through VLANs and blocks, with flexible relationships |
 | 3 | Subnet Management | Searchable inventory, filters (site, VDOM, VLAN, routing domain, environment), CIDR calculator, hierarchy, overlap validation, discovery settings, bulk actions |
-| 4 | IP Address Explorer | Subnet picker, colour-coded grid and table views, search, filters, bulk actions, detail view with evidence and audit history |
+| 4 | IP Address Explorer | Subnet cards found by name, CIDR or IP, an All addresses tab, colour-coded grid and table views, search, filters, bulk actions, detail view with evidence and audit history |
 | 5 | Device Inventory | Device list and detail: interfaces, MACs, IPs, services, discovery history |
 | 6 | Interface Inventory | Cross-device interface search |
 | 7 | Discovery Centre | Agents, policies, approved scopes, schedules, manual runs, job history, scan logs, error reports, exclusions, emergency stop |
@@ -60,7 +62,7 @@ Every dialog is centred over a blurred background, using `Modal` and `ConfirmDia
 | 14 | Audit Logs | Search and old/new value comparison |
 | 15 | User Management | Users and role assignment |
 | 16 | Role and Permission Management | Permission matrix |
-| 17 | System Administration | Sites, routing domains, VLANs, VDOMs, security policies, notifications, imports and enrichment queue, retention, backup settings, system health. SSO configuration is deferred |
+| 17 | System Administration | System health, queues and retention. Sites, VLANs and VDOMs are under Network Management, and imports have their own page. SSO configuration is deferred |
 
 ## Reports
 
@@ -97,9 +99,9 @@ Every data view has loading, empty and error states.
 
 ## Large data
 
-- Tables always use server-side filtering, sorting and pagination, through `usePaging` and `Pagination`. Page and page size live in the URL, so they survive refresh and the back button.
+- Tables always use server-side filtering, sorting and pagination, through `usePaging` and `Pagination`. Screens show 20 rows by default, with 50, 100 or 200 in the selector; the API default stays 50 for callers that send no size. Page and page size live in the URL, so they survive refresh and the back button.
 - Dropdowns load every option through `listAll`, never one capped page.
-- The interactive subnet grid handles small and large networks. It is colour-coded by allocation state, virtualised, and loads ranges through `GET /subnets/:id/addresses?offset=&limit=`.
+- The interactive subnet grid handles small and large networks. It is colour-coded by allocation state, and loads ranges through `GET /subnets/:id/addresses?offset=&limit=`.
 - An IPv6 subnet opens on its recorded addresses plus a jump-to-address box, never a full listing.
 - Address counts arrive as strings and are formatted without converting to a JS number.
 
@@ -114,3 +116,17 @@ Every summary links to the matching filtered list.
 ## Accessibility
 
 Target WCAG 2.2 AA: full keyboard use, visible focus, labelled form fields, errors linked to their fields, and sufficient contrast.
+
+## Code layout and addresses
+
+- **Layout:** `web/src/app` holds the router and shell, `features/<screen>` holds a screen and the parts only it uses, `components` holds what several screens share, and `lib` holds non-visual code. Keep every file under 200 lines.
+- **Loading:** each screen is loaded the first time it opens (`app/router.tsx`). Libraries sit in their own chunks, so browsers keep them across deploys.
+- **Tabs are paths:** a page's tabs use `/reconciliation/changes`, through `RouteTabs` and `useRouteTab`. The page stays one component, so its header and shared state survive a tab change.
+- **Query strings are for view state:** filters, sorting, paging and `?id=` for an open dialog. Tabs inside a dialog stay local state.
+- **Old links:** `?tab=` addresses in stored notifications and emails redirect to the path, in `AppShell`.
+
+## Feedback and errors
+
+- **Messages:** give each `useMutation` a `meta.success`, and `app/queryClient.ts` shows it as a toast. Add `meta.inlineError` when the screen shows the error itself; otherwise the error appears as a toast.
+- **Confirming:** ask before every delete, destructive action and edit save, using `useConfirm` or `useConfirmSave`. Creating a record, and instant switches such as notification preferences, don't ask.
+- **Errors:** show `errorMessage(error)`, never a raw exception. A 401 signs the person out, 4xx requests aren't retried, and a missing screen after a deploy asks for a reload.

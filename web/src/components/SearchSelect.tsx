@@ -144,7 +144,7 @@ export function RefSelect<T>({ path, toOption, filter, ...rest }: RefProps<T>) {
 }
 
 interface DomainRow { id: string; organisationName: string; name: string }
-export const domainOption = (d: DomainRow): Option => ({ value: d.id, label: `${d.organisationName} / ${d.name}` })
+const domainOption = (d: DomainRow): Option => ({ value: d.id, label: `${d.organisationName} / ${d.name}` })
 
 type Picker = Omit<RefProps<never>, 'path' | 'toOption' | 'filter'>
 

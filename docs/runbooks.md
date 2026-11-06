@@ -38,7 +38,7 @@ Use when data is lost or corrupted. First decide with the business whether the d
 3. If it looks right, stop the app, and swap the databases in `make db-shell`, connected to the `postgres` database:
 
    ```bash
-   sudo bash -c 'set -a; . api/.env; set +a; docker compose stop api worker'
+   sudo bash -c 'set -a; . api/.env; set +a; COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml docker compose stop web backend'
    ```
 
    ```sql
@@ -78,14 +78,14 @@ Stored credentials can't be recovered. Generate a new key, then enter every conn
 ## Replace an agent
 
 1. In Discovery Centre, **revoke** the old agent. Do this first if it may be compromised: it stops at once.
-2. Create a new agent, and install it as in setup step 14.
+2. Create a new agent, and install it as in Discovery agents in [setup.md](setup.md).
 3. Assign it to the same policies, and check it comes online.
 
 If the server's certificate moved to a new CA, install that CA on agent hosts first, or they refuse to connect.
 
 ## Emergency: stop all discovery
 
-Discovery Centre has an emergency stop, which takes effect on each agent's next heartbeat. If the app can't be reached, stop the agents on their hosts: `sudo systemctl stop df-ipam-agent`.
+Discovery Centre has an emergency stop, which reaches each agent at its next heartbeat, within 15 seconds. An agent that loses the server for 90 seconds stops its job by itself. If the app can't be reached, stop the agents on their hosts: `sudo systemctl stop df-ipam-agent`.
 
 ## Supabase or the internet is down
 

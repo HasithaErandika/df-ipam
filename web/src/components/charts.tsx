@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { EmptyState } from './ui'
 import { formatCount } from '../lib/format'
 
-export interface Point { label: string; value: number | null }
+interface Point { label: string; value: number | null }
 
 const width = 480
 const height = 150

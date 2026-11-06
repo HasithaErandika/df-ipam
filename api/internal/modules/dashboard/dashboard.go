@@ -26,16 +26,16 @@ type Summary struct {
 	Devices            int64 `json:"devices"`
 	Quarantined        int64 `json:"quarantined"`
 	OpenFindings       int64 `json:"openFindings"`
-	PendingApprovals   int64 `json:"pendingApprovals"`
-	ReadyToFulfil      int64 `json:"readyToFulfil"`
+	PendingApprovals   int64 `json:"pendingApprovals,omitzero"`
+	ReadyToFulfil      int64 `json:"readyToFulfil,omitzero"`
 	ExpiringSoon       int64 `json:"reservationsExpiringSoon"`
 	HighUtilisation    int64 `json:"highUtilisationSubnets"`
-	IntegrationsOK     int64 `json:"integrationsHealthy"`
-	IntegrationsBad    int64 `json:"integrationsFailing"`
-	AgentsOnline       int64 `json:"agentsOnline"`
-	AgentsOffline      int64 `json:"agentsOffline"`
-	JobsRunning        int64 `json:"discoveryJobsRunning"`
-	JobsFailed         int64 `json:"discoveryJobsFailedToday"`
+	IntegrationsOK     int64 `json:"integrationsHealthy,omitzero"`
+	IntegrationsBad    int64 `json:"integrationsFailing,omitzero"`
+	AgentsOnline       int64 `json:"agentsOnline,omitzero"`
+	AgentsOffline      int64 `json:"agentsOffline,omitzero"`
+	JobsRunning        int64 `json:"discoveryJobsRunning,omitzero"`
+	JobsFailed         int64 `json:"discoveryJobsFailedToday,omitzero"`
 }
 
 // TrendPoint is one day. Counts are strings because IPv6 totals can pass what a
@@ -110,6 +110,7 @@ func (h *Handler) summary(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	s.limitTo(auth.Current(c))
 	httpx.OK(c, http.StatusOK, s)
 }
 

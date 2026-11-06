@@ -26,7 +26,7 @@ There are two sources: the main DF-IPAM brief, and a **supplement** numbered §4
 | §2 Neon as the primary database | **Local PostgreSQL in Docker.** Supabase's database is for testing only | Project owner's decision |
 | §19 Secure cookies, CSRF protection (also Supplement §16) | Not applicable while the API uses bearer tokens | Revisit if the company auth uses cookies |
 | Supplement §15 Entra SSO, server-side sessions, group-to-role mapping; §13 SSO configuration page | Deferred, same as main §18 | Project owner chose simple Supabase Auth for now. Roles are assigned in DF-IPAM |
-| Supplement §21 PHP-FPM, Laravel queue workers, Laravel scheduler, Python services | **Not adopted.** Replaced by `df-ipam-api` and `df-ipam-worker` | Main brief §2 mandates Go. These lines look left over from an earlier stack |
+| Supplement §21 PHP-FPM, Laravel queue workers, Laravel scheduler, Python services | **Not adopted.** Replaced by the `backend` container | Main brief §2 mandates Go. These lines look left over from an earlier stack |
 | Supplement §12 Factories and seeders | Go test factories and a `seed` command | Same intent without Laravel |
 | Supplement §5 One list of nine statuses | Kept as two fields: allocation state and observation state | The supplement itself requires them to be separate |
 | Supplement §4 Environment names "DR", "Test" | Stored as `disaster_recovery`, `testing`; the UI may show the short labels | Same values, one set of stored names |

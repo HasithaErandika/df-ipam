@@ -76,13 +76,13 @@ func (s *Service) writeWorkflow(ctx context.Context, tx pgx.Tx, id string, in Wo
 	if _, err := tx.Exec(ctx, `DELETE FROM approval_workflow_steps WHERE workflow_id = $1::uuid`, id); err != nil {
 		return err
 	}
+	roles := make([]string, len(in.Steps))
 	for i, st := range in.Steps {
-		if _, err := tx.Exec(ctx, `INSERT INTO approval_workflow_steps (workflow_id, step_order, approver_role_id) VALUES ($1::uuid, $2, $3::uuid)`,
-			id, i+1, st.ApproverRoleID); err != nil {
-			return err
-		}
+		roles[i] = st.ApproverRoleID
 	}
-	return nil
+	_, err = tx.Exec(ctx, `INSERT INTO approval_workflow_steps (workflow_id, step_order, approver_role_id)
+		SELECT $1::uuid, n, role::uuid FROM unnest($2::text[]) WITH ORDINALITY AS t(role, n)`, id, roles)
+	return err
 }
 
 func workflowError(err error) error {

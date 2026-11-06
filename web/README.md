@@ -10,17 +10,19 @@ Copy `.env.example` to `.env` and fill in the Supabase URL and anon key. `VITE_A
 
 ```text
 web/src/
-├── lib/
-│   ├── auth.ts       # the only file that imports supabase-js
-│   └── api.ts        # API client
-├── components/       # shared UI
-├── layouts/          # app shell
-└── pages/            # one folder or file per page
+├── app/              # App, router (lazy screens), navigation, app shell
+├── components/
+│   ├── ui/           # design system: controls, dialogs, feedback, layout
+│   └── catalog/      # shared create/edit tables for reference data
+├── features/         # one folder per screen, with the parts only it uses
+├── lib/              # API client, auth, formatting, tabs, types
+├── index.css         # colour tokens
+└── main.tsx
 ```
 
 ## What is built
 
-Sign-in, Dashboard, Network Management, Subnet Management, User Management and Audit Logs work against the API. The other pages state their roadmap phase and show no sample data. Navigation lives in `src/lib/nav.ts`.
+Sign-in, Dashboard, Network Management, Subnet Management, User Management and Audit Logs work against the API. The other pages state their roadmap phase and show no sample data. Navigation lives in `src/app/nav.ts`.
 
 ## Rules
 
@@ -30,3 +32,7 @@ Sign-in, Dashboard, Network Management, Subnet Management, User Management and A
 - Never render a full address range. Use server-side pagination and range loading.
 
 See [docs/frontend.md](../docs/frontend.md) for pages and design rules.
+
+## Container
+
+`web/Dockerfile` builds the app and serves it from Nginx, with the settings in `web/nginx`. `make web` still runs Vite for development.

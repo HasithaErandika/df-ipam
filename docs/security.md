@@ -23,13 +23,13 @@ Grouped by STRIDE.
 | | SQL injection | Parameterised queries; allowlisted sort and filter fields |
 | **Repudiation** | User denies a change | Audit log with actor, values, source IP and correlation ID |
 | **Information disclosure** | Credentials leak | Encryption at rest, redacted logs, write-only API fields |
-| | Viewer sees out-of-scope data | Scope filter applied in the repository layer, covered by tests |
+| | Viewer sees out-of-scope data | Scoped report exports are filtered by business service. `inventory:view_scoped` opens no inventory route |
 | | Stolen token through XSS | CSP, output encoding, no `dangerouslySetInnerHTML` |
 | **Denial of service** | Huge IPv6 listing | Range limits, no enumeration, page caps |
 | | Request flood | Limits per address and person, in-flight cap, Nginx and host limits |
 | | Network flood | Upstream firewall. Models A and B aren't reachable from the internet |
-| | Discovery overloads a network | Rate and concurrency ceilings, windows, emergency stop |
-| | Large file upload | Size limits, background processing |
+| | Discovery overloads a network | Ceiling across all agents, limits held by the agent itself, every packet paced, limits rechecked between targets, job size cap, emergency stop. See [Traffic limits](discovery-and-reconciliation.md#traffic-limits) |
+| | Large file upload | Request size limits |
 | **Elevation of privilege** | Self-approval | Enforced in the service layer and database |
 | | SSRF through integration URL | See below |
 | | Command injection through Nmap | Fixed arguments, validated IPs, no shell |
@@ -80,8 +80,8 @@ Nothing in DF-IPAM changes firewalls, DNS, DHCP or cloud networks.
 - A cap on requests running at once, which refuses work instead of queueing it, and a bound on the limiter's memory
 - Nginx connection limits and timeouts for slow clients, and SYN cookies and per-source limits on the host
 - Discovery stays inside a budget across all agents, and two jobs can't scan one network at once
-- Volumetric floods are stopped upstream, not here: see [setup.md](setup.md), step 9a
-- Request size limits
+- Volumetric floods are stopped upstream, not here: see Flood protection in [setup.md](setup.md)
+- Request size limits: 1 MB on every route. The 5 MB import and 8 MB agent limits can't take effect yet
 - Errors return a generic message and a correlation ID, with detail only in the logs
 
 Secure cookies and CSRF tokens don't apply while the API uses bearer tokens. They return if the company auth uses cookies.
@@ -130,3 +130,21 @@ Used before each release.
 - [ ] `govulncheck` and `pnpm audit` are clean or exceptions are recorded
 - [ ] Security headers verified on the deployed site
 - [ ] Debug endpoints and Swagger UI are off in production
+
+## Database role
+
+`dfipam_app` can't read or change `schema_migrations`, can't touch `sessions`, and can't delete `users` (accounts are deactivated). It can't change `audit_logs`, `discovery_observations` or `discovery_job_logs`. `TestAppRoleCannotDamageHistoryOrPeople` holds this in place.
+
+## Review, 5 November 2026
+
+Data leak and flooding review, against the running system.
+
+**Checked and sound:** the Supabase Data API refuses the anon key, row level security is on for all 73 tables, secrets are hashed or encrypted and absent from responses, git history, images and the web bundle hold no secrets, and backups are encrypted.
+
+**Open:**
+
+- Role scope columns are only used for scoped report exports, so don't rely on them to hide inventory.
+- `GET /people` lists active users' emails to anyone with inventory or request access, for the owner pickers.
+- Finished reports are stored unencrypted in the database until retention removes them, after 30 days.
+- The app has no screen to set or reset a password.
+- Supabase's database couldn't be reached directly from the test machine, so the Data API result comes from REST requests only.

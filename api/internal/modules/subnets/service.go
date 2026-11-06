@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -40,27 +39,6 @@ func ParseCIDR(value string) (netip.Prefix, error) {
 		return p, httpx.Validation("cidr", fmt.Sprintf("Host bits are set. Did you mean %s?", p.Masked()))
 	}
 	return p, nil
-}
-
-func validateGateway(gateway *string, p netip.Prefix) error {
-	if gateway == nil || *gateway == "" {
-		return nil
-	}
-	a, err := netip.ParseAddr(strings.TrimSpace(*gateway))
-	if err != nil {
-		return httpx.Validation("gateway", "Enter a valid IP address.")
-	}
-	if !p.Contains(a) {
-		return httpx.Validation("gateway", "The gateway must be inside the subnet.")
-	}
-	return nil
-}
-
-func validateThresholds(warn, critical int16) error {
-	if warn < 1 || critical > 100 || warn >= critical {
-		return httpx.Validation("warnThreshold", "Thresholds must be 1 to 100, with warning below critical.")
-	}
-	return nil
 }
 
 func overlapError(conflicts []Conflict) error {
@@ -131,37 +109,6 @@ func (s *Service) load(ctx context.Context, q querier, id string, lock bool) (Su
 	return one[0], err
 }
 
-// cleanMappings validates IDs, and turns empty strings into NULL.
-func cleanMappings(m *Mappings) error {
-	for name, field := range map[string]**string{
-		"networkBlockId": &m.NetworkBlockID, "siteId": &m.SiteID, "networkZoneId": &m.NetworkZoneID, "vdomId": &m.VDOMID,
-		"vlanId": &m.VLANID, "businessUnitId": &m.BusinessUnitID, "businessServiceId": &m.BusinessServiceID,
-		"technicalOwnerId": &m.TechnicalOwnerID, "businessOwnerId": &m.BusinessOwnerID,
-	} {
-		v := *field
-		if v == nil {
-			continue
-		}
-		if *v == "" {
-			*field = nil
-		} else if !httpx.IsUUID(*v) {
-			return httpx.Validation(name, "Choose a valid record.")
-		}
-	}
-	return nil
-}
-
-func (s *Service) checkMappings(ctx context.Context, q querier, routingDomainID, cidr string, m Mappings) error {
-	field, issue, err := s.repo.MappingProblem(ctx, q, routingDomainID, cidr, m)
-	if err != nil {
-		return err
-	}
-	if field != "" {
-		return httpx.Validation(field, issue)
-	}
-	return nil
-}
-
 func (s *Service) List(ctx context.Context, f Filter, p httpx.Page) ([]Response, int64, error) {
 	rows, total, err := s.repo.List(ctx, s.pool, f, p)
 	if err != nil {
@@ -191,205 +138,6 @@ func (s *Service) CheckOverlap(ctx context.Context, req OverlapRequest) ([]Confl
 		return nil, err
 	}
 	return s.repo.Overlaps(ctx, s.pool, req.RoutingDomainID, p.String())
-}
-
-// providers maps a routing domain type to the cloud that reserves addresses in it.
-var providers = map[string]string{"vpc": "aws", "vnet": "azure"}
-
-// ProviderReserved returns the addresses AWS and Azure keep in every subnet:
-// the first four and the last. Prefixes too small to hold them get none.
-func ProviderReserved(p netip.Prefix) []netcalc.Range {
-	all := netcalc.PrefixRange(p)
-	if all.Size().Cmp(big.NewInt(8)) < 0 {
-		return nil
-	}
-	return []netcalc.Range{
-		{First: all.First, Last: netcalc.Offset(all.First, big.NewInt(3))},
-		{First: all.Last, Last: all.Last},
-	}
-}
-
-func (s *Service) Create(ctx context.Context, actor string, req CreateRequest) (Response, error) {
-	p, err := ParseCIDR(req.CIDR)
-	if err != nil {
-		return Response{}, err
-	}
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		return Response{}, httpx.Validation("name", "Enter a subnet name.")
-	}
-	if req.RoutingDomainID == "" {
-		return Response{}, httpx.Validation("routingDomainId", "Choose a routing domain.")
-	}
-	if !environments[req.Environment] {
-		return Response{}, httpx.Validation("environment", "Choose an environment.")
-	}
-	if err := validateGateway(req.Gateway, p); err != nil {
-		return Response{}, err
-	}
-	warn, critical := int16(80), int16(95)
-	if req.WarnThreshold != nil {
-		warn = *req.WarnThreshold
-	}
-	if req.CriticalThreshold != nil {
-		critical = *req.CriticalThreshold
-	}
-	if err := validateThresholds(warn, critical); err != nil {
-		return Response{}, err
-	}
-	if req.Gateway != nil && *req.Gateway == "" {
-		req.Gateway = nil
-	}
-
-	if err := cleanMappings(&req.Mappings); err != nil {
-		return Response{}, err
-	}
-	if req.OverlapExceptionID != nil && (*req.OverlapExceptionID == "" || !httpx.IsUUID(*req.OverlapExceptionID)) {
-		req.OverlapExceptionID = nil
-	}
-
-	var created Subnet
-	err = db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := s.checkMappings(ctx, tx, req.RoutingDomainID, p.String(), req.Mappings); err != nil {
-			return err
-		}
-		id, err := s.repo.Insert(ctx, tx, actor, req, p.String(), warn, critical)
-		if err != nil {
-			return err
-		}
-		var kind string
-		if err := tx.QueryRow(ctx, `SELECT kind FROM routing_domains WHERE id = $1::uuid`, req.RoutingDomainID).Scan(&kind); err != nil {
-			return err
-		}
-		if provider, ok := providers[kind]; ok {
-			for _, r := range ProviderReserved(p) {
-				if _, err := tx.Exec(ctx, `INSERT INTO subnet_reserved_ranges (subnet_id, range_start, range_end, reason, provider)
-					VALUES ($1::uuid, $2::text::inet, $3::text::inet, $4, $5)`, id, r.First.String(), r.Last.String(),
-					"Reserved by "+map[string]string{"aws": "AWS", "azure": "Azure"}[provider], provider); err != nil {
-					return err
-				}
-			}
-		}
-		if created, err = s.load(ctx, tx, id, false); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.create", ObjectType: "subnet",
-			ObjectID: id, New: toResponse(created)})
-	})
-	switch db.ErrorCode(err) {
-	case db.CodeBadValue:
-		return Response{}, httpx.Validation("body", "A value is not valid.")
-	case db.CodeExclusion:
-		conflicts, _ := s.repo.Overlaps(ctx, s.pool, req.RoutingDomainID, p.String())
-		return Response{}, overlapError(conflicts)
-	case db.CodeForeignKey:
-		return Response{}, httpx.Validation("routingDomainId", "A chosen record doesn't exist.")
-	}
-	if err != nil {
-		return Response{}, err
-	}
-	return toResponse(created), nil
-}
-
-func (s *Service) Update(ctx context.Context, actor, id string, version int32, req UpdateRequest) (Response, error) {
-	var updated Subnet
-	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
-		old, err := s.load(ctx, tx, id, true)
-		if err != nil {
-			return err
-		}
-		if old.ArchivedAt != nil {
-			return httpx.NewError(http.StatusConflict, "SUBNET_ARCHIVED", "Archived subnets can't be edited.")
-		}
-		if old.Version != version {
-			return httpx.NewError(http.StatusPreconditionFailed, "STALE_VERSION", "This subnet changed since you opened it. Reload and try again.")
-		}
-		next := old
-		if req.Name != nil {
-			if next.Name = strings.TrimSpace(*req.Name); next.Name == "" {
-				return httpx.Validation("name", "Enter a subnet name.")
-			}
-		}
-		if req.Gateway != nil {
-			if err := validateGateway(req.Gateway, netip.MustParsePrefix(old.CIDR)); err != nil {
-				return err
-			}
-			next.Gateway = req.Gateway
-			if *req.Gateway == "" {
-				next.Gateway = nil
-			}
-		}
-		if req.Environment != nil {
-			if !environments[*req.Environment] {
-				return httpx.Validation("environment", "Choose an environment.")
-			}
-			next.Environment = *req.Environment
-		}
-		if req.SecurityZone != nil {
-			next.SecurityZone = *req.SecurityZone
-		}
-		if req.Description != nil {
-			next.Description = *req.Description
-		}
-		if req.DiscoveryEnabled != nil {
-			next.DiscoveryEnabled = *req.DiscoveryEnabled
-		}
-		if req.WarnThreshold != nil {
-			next.WarnThreshold = *req.WarnThreshold
-		}
-		if req.CriticalThreshold != nil {
-			next.CriticalThreshold = *req.CriticalThreshold
-		}
-		if err := validateThresholds(next.WarnThreshold, next.CriticalThreshold); err != nil {
-			return err
-		}
-		if req.Sensitivity != nil {
-			next.Sensitivity = *req.Sensitivity
-		}
-		if err := cleanMappingUpdate(&next, req.Mappings); err != nil {
-			return err
-		}
-		if err := s.checkMappings(ctx, tx, next.RoutingDomainID, next.CIDR, Mappings{NetworkBlockID: next.NetworkBlockID, SiteID: next.SiteID,
-			NetworkZoneID: next.NetworkZoneID, VDOMID: next.VDOMID, VLANID: next.VLANID}); err != nil {
-			return err
-		}
-		if err := s.repo.Update(ctx, tx, actor, next); err != nil {
-			return err
-		}
-		if updated, err = s.load(ctx, tx, id, false); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "subnet.update", ObjectType: "subnet",
-			ObjectID: id, Old: toResponse(old), New: toResponse(updated)})
-	})
-	if err != nil {
-		return Response{}, err
-	}
-	return toResponse(updated), nil
-}
-
-// cleanMappingUpdate applies only the mappings present in the request.
-func cleanMappingUpdate(next *Subnet, m Mappings) error {
-	for name, pair := range map[string][2]**string{
-		"networkBlockId": {&m.NetworkBlockID, &next.NetworkBlockID}, "siteId": {&m.SiteID, &next.SiteID},
-		"networkZoneId": {&m.NetworkZoneID, &next.NetworkZoneID}, "vdomId": {&m.VDOMID, &next.VDOMID}, "vlanId": {&m.VLANID, &next.VLANID},
-		"businessUnitId": {&m.BusinessUnitID, &next.BusinessUnitID}, "businessServiceId": {&m.BusinessServiceID, &next.BusinessServiceID},
-		"technicalOwnerId": {&m.TechnicalOwnerID, &next.TechnicalOwnerID}, "businessOwnerId": {&m.BusinessOwnerID, &next.BusinessOwnerID},
-	} {
-		v := *pair[0]
-		if v == nil {
-			continue
-		}
-		switch {
-		case *v == "":
-			*pair[1] = nil
-		case httpx.IsUUID(*v):
-			*pair[1] = v
-		default:
-			return httpx.Validation(name, "Choose a valid record.")
-		}
-	}
-	return nil
 }
 
 func (s *Service) Archive(ctx context.Context, actor, id string) error {

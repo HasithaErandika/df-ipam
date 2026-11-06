@@ -15,7 +15,7 @@
 | [integrations.md](integrations.md) | FortiGate, vCenter, AWS, Azure, file imports |
 | [frontend.md](frontend.md) | Pages, design system, UX rules |
 | [security.md](security.md) | Threat model and review checklist |
-| [setup.md](setup.md) | **Step-by-step company installation**, by network zone and access model |
+| [setup.md](setup.md) | **How to set up, run and deploy the project** |
 | [deployment.md](deployment.md) | Ubuntu server, Docker, Nginx, backups |
 | [runbooks.md](runbooks.md) | Recovery procedures |
 | [roadmap.md](roadmap.md) | Delivery phases and exit criteria |

@@ -74,24 +74,9 @@ func (s *Service) BulkCreate(ctx context.Context, actor string, req BulkRequest)
 	err := db.InTx(ctx, s.pool, func(tx pgx.Tx) error {
 		inner := &Service{pool: tx}
 		for i, row := range req.Subnets {
-			env := row.Environment
-			if env == "" {
-				env = req.Environment
+			if err := inner.createRow(ctx, actor, req, i, row, &out); err != nil {
+				return err
 			}
-			res := BulkResult{Row: i + 1, CIDR: row.CIDR, Name: row.Name}
-			created, err := inner.Create(ctx, actor, CreateRequest{RoutingDomainID: req.RoutingDomainID, CIDR: row.CIDR, Name: row.Name,
-				Gateway: row.Gateway, Environment: env, Description: row.Description})
-			if err != nil {
-				res.Code, res.Issue = issue(err)
-				if res.Code == "INTERNAL_ERROR" {
-					return err
-				}
-				out.Invalid++
-			} else {
-				res.OK, res.ID, res.CIDR = true, &created.ID, created.Calculated.CIDR
-				out.Valid++
-			}
-			out.Results = append(out.Results, res)
 		}
 		if req.DryRun || out.Invalid > 0 {
 			return errBulkRolledBack
@@ -106,6 +91,30 @@ func (s *Service) BulkCreate(ctx context.Context, actor string, req BulkRequest)
 	}
 	out.Created = err == nil
 	return out, err
+}
+
+// createRow creates one row and records how it went. Only an unexpected failure
+// stops the batch.
+func (s *Service) createRow(ctx context.Context, actor string, req BulkRequest, i int, row BulkRow, out *BulkResponse) error {
+	env := row.Environment
+	if env == "" {
+		env = req.Environment
+	}
+	res := BulkResult{Row: i + 1, CIDR: row.CIDR, Name: row.Name}
+	created, err := s.Create(ctx, actor, CreateRequest{RoutingDomainID: req.RoutingDomainID, CIDR: row.CIDR, Name: row.Name,
+		Gateway: row.Gateway, Environment: env, Description: row.Description})
+	if err != nil {
+		res.Code, res.Issue = issue(err)
+		if res.Code == "INTERNAL_ERROR" {
+			return err
+		}
+		out.Invalid++
+	} else {
+		res.OK, res.ID, res.CIDR = true, &created.ID, created.Calculated.CIDR
+		out.Valid++
+	}
+	out.Results = append(out.Results, res)
+	return nil
 }
 
 // BulkArchive archives the listed subnets together. Any missing one stops all.

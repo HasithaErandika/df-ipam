@@ -12,7 +12,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 ## Hard rules
 
 - **The Supabase `service_role` key stays in `api/.env`,** used only by `api/internal/auth/supabase_admin.go`. Never put it in `web/`, logs or responses.
-- **PostgreSQL runs locally in Docker,** with the API and worker, through `docker-compose.yml`. Supabase provides sign-in. Its database is for testing only, through `SUPABASE_DATABASE_URL` and `SUPABASE_MIGRATION_DATABASE_URL`.
+- **PostgreSQL runs locally in Docker,** with the backend and web containers, through `docker-compose.yml`. Supabase provides sign-in. Its database is for testing only, through `SUPABASE_DATABASE_URL` and `SUPABASE_MIGRATION_DATABASE_URL`.
 - **Every table stays closed to the Supabase Data API,** because Supabase is still used for testing. The browser never queries tables through `supabase-js`; all data goes through the Go API.
 - **Env files are `api/.env` and `web/.env` only, none at the root.** Don't commit them, and don't put secrets in code, logs or API responses.
 - **Discovery never changes allocation state or ownership.** Evidence stays separate from inventory, and people approve authoritative changes.
@@ -29,6 +29,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 - Write the audit row in the same transaction as the change.
 - Return DTOs, never database rows. Use the shared error format with a stable error code.
 - All SQL is parameterised, and sort and filter fields are allowlisted.
+- Never run a query per row. Keep files under 200 lines, and function cognitive complexity at 15 or less.
 
 ## Database conventions
 
@@ -48,3 +49,5 @@ Supabase is temporary and will be replaced by company auth. Only `api/internal/a
 - Every data view needs loading, empty and error states.
 - Dialogs are centred with a blurred background (`Modal`). No side drawers.
 - Don't show fake data. Pages not built yet say so.
+- Screens live in `web/src/features/<screen>`. Tabs are paths, and the query string is for filters, paging and open dialogs.
+- Give each mutation a `meta.success` message, and confirm deletes and edit saves.

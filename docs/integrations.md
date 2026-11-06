@@ -62,6 +62,21 @@ Read-only. DF-IPAM never changes DNS or DHCP.
 - **DHCP:** FortiGate scopes and leases come through the FortiGate connector. Other servers need a connector once their type is confirmed (see [requirements.md](requirements.md), open item 8).
 - **Storage:** results go to `dns_records`, `dhcp_scopes` and `dhcp_reservations`, with raw evidence kept as observations.
 
+## Template import
+
+People load their own data from a template, so nothing has to be typed in by hand. `GET /imports/templates/workbook` gives one Excel file with a sheet per type, and `GET /imports/templates/:key` gives one type as CSV.
+
+The 17 types are organisations, routing domains, business units, sites, network zones, business services, applications, teams, devices, VDOMs, VLANs, interfaces, network blocks, subnets, IP addresses, reserved ranges and DHCP scopes. Users, roles and discovery settings aren't imported, because they grant access or start traffic.
+
+- Sheets run parents first, and rows refer to each other by name or code, in the inventory or on an earlier sheet. A name used twice must be written with its parent, such as `DF/Default`.
+- Rows starting with `#` are skipped, which is how the example row works. Unknown or missing columns refuse the whole file.
+- An import only adds. A row that already exists is marked duplicate and skipped, never changed.
+- Every row is checked on upload and again on approval, since the inventory may have changed. Someone other than the uploader approves, and if any row fails then, nothing is imported.
+- A file that sets `allocation_state` needs an approver who may allocate or reserve addresses.
+- Rows are fixed in the file: discard the batch and upload again. A discarded or reversed file can be uploaded again.
+- Reversal removes everything the import made, children first. It stops if a record is in use, or an imported address has changed.
+- Files are limited to 5 MB and 10,000 rows.
+
 ## Production file import
 
 Formats: `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt`.
@@ -73,18 +88,17 @@ flowchart LR
   U[Upload] --> V[Format validation]
   V --> P[Parse every line to import_records]
   P --> W[Preview: valid, duplicate, overlap, invalid]
-  W --> A[Approval if required]
+  W --> A[Approval by a second person]
   A --> C[Commit in one transaction]
   C -.-> X[Controlled reversal]
 ```
 
-**Extracts:** interface names, IPs, masks, types, status, VDOM where present, and any other explicit fields. CIDR and ranges are calculated.
+**Extracts:** the network (CIDR, or address and mask), gateway, VDOM, VLAN and name, where present. A committed line becomes a subnet.
 
 **Rules:**
 
 - Every source line is stored in `import_records` with its status and raw text. Invalid records are never silently dropped.
 - Missing VDOM, VLAN, site, business service or owner data stays empty, and is never guessed. These records appear in an enrichment queue for manual completion.
-- Imports are idempotent: the same file (matched by hash) can't create records twice.
-- Tunnel interfaces without IPs become interfaces with no subnet record.
+- Imports are idempotent: the same file (matched by hash) can't create records twice while it is imported or waiting for approval.
 - Reversal removes only what that batch created and is blocked for records changed since.
-- Automated parser tests use representative, anonymised records from the real files.
+- The real production files haven't been received, so the parser is tolerant: it finds the network on each line however it is written. Check the first real upload line by line.

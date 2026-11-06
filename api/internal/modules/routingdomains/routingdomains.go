@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
@@ -54,67 +53,6 @@ func (h *Handler) one(c *gin.Context, tx pgx.Tx, id string) (RoutingDomain, erro
 	return d, err
 }
 
-// update renames a routing domain or changes its route distinguisher or
-// isolation. Its organisation and type stay fixed, because subnets and
-// provider-reserved ranges depend on them.
-func (h *Handler) update(c *gin.Context) {
-	id, ok := httpx.PathID(c)
-	if !ok {
-		return
-	}
-	var req struct {
-		Name       *string `json:"name"`
-		RD         *string `json:"routeDistinguisher"`
-		IsIsolated *bool   `json:"isIsolated"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
-		return
-	}
-	ctx, actor := c.Request.Context(), auth.Current(c).UserID
-	var out RoutingDomain
-	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT 1 FROM routing_domains WHERE id = $1::uuid FOR UPDATE`, id); err != nil {
-			return err
-		}
-		old, err := h.one(c, tx, id)
-		if err != nil {
-			return err
-		}
-		next := old
-		if req.Name != nil {
-			if next.Name = strings.TrimSpace(*req.Name); next.Name == "" {
-				return httpx.Validation("name", "Enter a name.")
-			}
-		}
-		if req.RD != nil {
-			next.RD = req.RD
-			if strings.TrimSpace(*req.RD) == "" {
-				next.RD = nil
-			}
-		}
-		if req.IsIsolated != nil {
-			next.IsIsolated = *req.IsIsolated
-		}
-		if _, err := tx.Exec(ctx, `UPDATE routing_domains SET name = $2, route_distinguisher = $3, is_isolated = $4, updated_by = $5::uuid
-			WHERE id = $1::uuid`, id, next.Name, next.RD, next.IsIsolated, actor); err != nil {
-			return err
-		}
-		if out, err = h.one(c, tx, id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "routing_domain.update", ObjectType: "routing_domain", ObjectID: id, Old: old, New: out})
-	})
-	if db.ErrorCode(err) == db.CodeUnique {
-		err = httpx.NewError(http.StatusConflict, "ALREADY_EXISTS", "This organisation already has a routing domain with that name.")
-	}
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	httpx.OK(c, http.StatusOK, out)
-}
-
 // remove deletes a routing domain nothing refers to. Archived subnets still
 // count, because their history refers to the domain.
 func (h *Handler) remove(c *gin.Context) {
@@ -128,10 +66,7 @@ func (h *Handler) remove(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM routing_domains WHERE id = $1::uuid`, id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "routing_domain.delete", ObjectType: "routing_domain", ObjectID: id, Old: old})
+		return Remove(ctx, tx, actor, id, old)
 	})
 	if db.ErrorCode(err) == db.CodeForeignKey {
 		err = httpx.NewError(http.StatusConflict, "ROUTING_DOMAIN_IN_USE", "Subnets, blocks or other records use this routing domain. Archive or move them first.")
@@ -172,13 +107,7 @@ func (h *Handler) list(c *gin.Context) {
 }
 
 func (h *Handler) create(c *gin.Context) {
-	var req struct {
-		OrganisationID string  `json:"organisationId"`
-		Name           string  `json:"name"`
-		Kind           string  `json:"kind"`
-		RD             *string `json:"routeDistinguisher"`
-		IsIsolated     bool    `json:"isIsolated"`
-	}
+	var req NewDomain
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Fail(c, httpx.ErrBadRequest)
 		return
@@ -194,13 +123,9 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	ctx, actor := c.Request.Context(), auth.Current(c).UserID
 	var id string
-	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO routing_domains (organisation_id, name, kind, route_distinguisher, is_isolated, created_by, updated_by)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid, $6::uuid) RETURNING id::text`,
-			req.OrganisationID, req.Name, req.Kind, req.RD, req.IsIsolated, actor).Scan(&id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "routing_domain.create", ObjectType: "routing_domain", ObjectID: id, New: req})
+	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) (err error) {
+		id, err = Insert(ctx, tx, actor, req)
+		return err
 	})
 	switch db.ErrorCode(err) {
 	case db.CodeUnique:

@@ -1,6 +1,8 @@
-# Local PostgreSQL plus the API and worker. Run it through make (see `make help`):
+# PostgreSQL, the backend and the web app. Run it through make (see `make help`):
 # make loads api/.env and passes values through by name, so a `$` in a secret stays
-# literal. There is no env file at the repository root, by design.
+# literal. There is no env file at the repository root, by design. No port is published
+# here: docker-compose.dev.yml does that on localhost, and docker-compose.prod.yml on 80
+# and 443 for the web container only.
 name: df-ipam
 
 x-backend: &backend
@@ -47,9 +49,6 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
-    # Localhost only: the host's own tools can reach it, and no other machine can.
-    ports:
-      - 127.0.0.1:${POSTGRES_PORT:-5432}:5432
     healthcheck:
       test: [CMD-SHELL, 'pg_isready -U postgres -d "$$POSTGRES_DB"']
       interval: 5s
@@ -66,20 +65,23 @@ services:
       db:
         condition: service_healthy
 
-  api:
+  # The API and the background worker, in one process.
+  backend:
     <<: *backend
-    command: [/app/api]
+    command: [/app/server]
     restart: unless-stopped
     environment:
       <<: *backend-env
       API_LISTEN_ADDR: 0.0.0.0:8080
-      # Nginx reaches this container from the gateway. Without this, every user would
-      # share one rate limit, and audit logs would show the wrong address.
-      TRUSTED_PROXIES: ${DOCKER_GATEWAY:-172.30.0.1}
+      # Only the web container may set the client address. Without this, every user
+      # would share one rate limit, and audit logs would show the wrong address.
+      TRUSTED_PROXIES: ${WEB_ADDRESS:-172.30.0.10}
       API_MAX_IN_FLIGHT:
-      DB_MAX_CONNS: ${API_DB_MAX_CONNS:-20}
-    ports:
-      - 127.0.0.1:${API_PORT:-8080}:8080
+      WORKER_ENABLED:
+      DB_MAX_CONNS: ${BACKEND_DB_MAX_CONNS:-30}
+    networks:
+      default:
+        ipv4_address: ${BACKEND_ADDRESS:-172.30.0.11}
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/ready]
       interval: 10s
@@ -90,18 +92,65 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  worker:
-    <<: *backend
-    command: [/app/worker]
+  # Nginx: serves the web app, and is the only way in to the API.
+  web:
+    image: df-ipam-web:local
+    build:
+      context: ./web
+      args:
+        VITE_SUPABASE_URL:
+        VITE_SUPABASE_ANON_KEY:
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /etc/nginx/conf.d:uid=101,gid=101
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
     environment:
-      <<: *backend-env
-      DB_MAX_CONNS: ${WORKER_DB_MAX_CONNS:-10}
+      SUPABASE_URL:
+      NGINX_ENVSUBST_FILTER: ^SUPABASE_URL$
+    networks:
+      default:
+        ipv4_address: ${WEB_ADDRESS:-172.30.0.10}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8081/nginx-health]
+      interval: 10s
+      timeout: 3s
+      retries: 6
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
 
-# Fixed, so the API can trust its gateway and no other address.
+  # Optional built-in discovery agent: `make agent-up`. It scans what this server can
+  # route to, alongside any agents installed in the segments. No capabilities: ICMP
+  # uses the unprivileged socket that ping_group_range allows for this user alone.
+  agent:
+    profiles: [agent]
+    image: df-ipam-agent:local
+    build:
+      context: ./api
+      target: agent
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    sysctls:
+      net.ipv4.ping_group_range: 10001 10001
+    environment:
+      AGENT_API_URL: http://backend:8080
+      AGENT_CREDENTIAL_FILE: /var/lib/df-ipam-agent/credential
+      AGENT_REGISTRATION_TOKEN:
+      AGENT_MAX_PPS:
+      AGENT_POLL_SECONDS:
+    volumes:
+      - agent-data:/var/lib/df-ipam-agent
+    depends_on:
+      backend:
+        condition: service_healthy
+
+# Fixed, so the backend can trust the web container and no other address.
 networks:
   default:
     ipam:
@@ -111,3 +160,4 @@ networks:
 
 volumes:
   db-data:
+  agent-data:

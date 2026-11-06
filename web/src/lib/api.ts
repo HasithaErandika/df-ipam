@@ -1,6 +1,6 @@
 import { getAccessToken } from './auth'
 
-export interface FieldIssue { field: string; issue: string }
+interface FieldIssue { field: string; issue: string }
 
 export class ApiError extends Error {
   constructor(
@@ -14,6 +14,35 @@ export class ApiError extends Error {
   }
 }
 
+const byStatus: Record<number, string> = {
+  0: "Can't reach the server. Check your connection and try again.",
+  401: 'Your session has ended. Sign in again.',
+  403: "You don't have permission to do this.",
+  404: 'This record no longer exists. It may have been removed.',
+  409: 'This record changed while you were working. Reload and try again.',
+  429: 'Too many requests. Wait a moment and try again.',
+  503: 'The server is busy. Try again shortly.',
+}
+
+/** What to tell a person about a failure. Technical messages never reach the screen. */
+export function errorMessage(error: unknown): string {
+  if (!(error instanceof ApiError)) return 'Something went wrong. Try again.'
+  if (error.status === 0 || error.status === 401) return byStatus[error.status]
+  return error.message || byStatus[error.status] || 'Something went wrong. Try again.'
+}
+
+/** A screen's code is missing because a newer version was deployed. */
+export function isStaleBuild(error: unknown): boolean {
+  return error instanceof Error && /dynamically imported module|Importing a module script failed|error loading dynamically/i.test(error.message)
+}
+
+/** The server's field errors, by field name. */
+export function fieldIssues(error: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (error instanceof ApiError) for (const d of error.details) out[d.field] = d.issue
+  return out
+}
+
 export interface PageMeta {
   page: number
   pageSize: number
@@ -23,7 +52,7 @@ export interface PageMeta {
   hasPrev: boolean
 }
 
-export interface ListResult<T> {
+interface ListResult<T> {
   data: T[]
   meta: PageMeta
 }

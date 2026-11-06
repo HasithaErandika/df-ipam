@@ -1,0 +1,11 @@
+DROP INDEX ip_requests_workflow_idx;
+DROP INDEX role_permissions_permission_idx;
+DROP INDEX user_roles_role_idx;
+DROP INDEX dns_records_ip_address_idx;
+DROP INDEX subnet_reserved_ranges_subnet_idx;
+DROP INDEX dhcp_scopes_subnet_idx;
+DROP INDEX network_routes_device_idx;
+DROP INDEX discovery_jobs_schedule_idx;
+DROP INDEX discovery_jobs_agent_idx;
+DROP INDEX discovery_job_targets_domain_idx;
+DROP INDEX discovery_job_targets_job_idx;

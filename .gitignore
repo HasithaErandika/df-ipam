@@ -16,6 +16,9 @@ Thumbs.db
 *.log
 logs/
 
+# The system guide is shared outside git
+docs/DF-IPAM-System-Guide.pdf
+
 # Local Claude Code settings
 .claude/settings.local.json
 CLAUDE.local.md

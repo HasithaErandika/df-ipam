@@ -53,6 +53,8 @@ components:
 paths:
   /auth/me:
     get: { summary: Current user, roles and permissions, responses: { '200': { description: OK } } }
+  /auth/me/profile:
+    get: { summary: The signed-in user's own account details and role assignments, responses: { '200': { description: OK } } }
   /users:
     get: { summary: List users, responses: { '200': { description: OK } } }
   /roles:
@@ -63,6 +65,11 @@ paths:
       summary: Replace a user's roles
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '204': { description: Updated }, '403': { $ref: '#/components/responses/Error' } }
+  /users/{id}/scope:
+    put:
+      summary: Set the business services a user's scoped roles cover
+      responses:
+        '204': { description: Saved }
   /organisations:
     get: { summary: List organisations, responses: { '200': { description: OK } } }
     post: { summary: Create an organisation and its Default routing domain, responses: { '201': { description: Created }, '409': { $ref: '#/components/responses/Error' } } }
@@ -143,6 +150,8 @@ paths:
     get: { summary: Raw evidence, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
   /reconciliation/results:
     get: { summary: List findings, responses: { '200': { description: OK } } }
+  /reconciliation/last-run:
+    get: { summary: When reconciliation last ran and what it found, responses: { '200': { description: OK } } }
   /reconciliation/summary:
     get: { summary: Open findings by classification, responses: { '200': { description: OK } } }
   /reconciliation/run:
@@ -404,6 +413,13 @@ paths:
   /imports:
     get: { summary: List import batches, responses: { '200': { description: OK } } }
     post: { summary: Upload a production export. Every line is kept and checked; nothing is imported until approved, responses: { '201': { description: Validated }, '409': { $ref: '#/components/responses/Error' }, '422': { $ref: '#/components/responses/Error' } } }
+  /imports/templates:
+    get: { summary: List the import templates and their columns, responses: { '200': { description: OK } } }
+  /imports/templates/{key}:
+    get:
+      summary: Download a template, as the Excel workbook (key workbook) or one type's CSV
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: The file }, '404': { $ref: '#/components/responses/Error' } }
   /imports/enrichment-queue:
     get: { summary: Lines waiting for a correction before approval, responses: { '200': { description: OK } } }
   /imports/records/{id}:
@@ -414,6 +430,11 @@ paths:
     get: { summary: The batch's lines with their status. Supports status, page and pageSize, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
   /imports/{id}/approve:
     post: { summary: Commit every valid line as a subnet. Someone other than the uploader must approve, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Error' }, '409': { $ref: '#/components/responses/Error' } } }
+  /imports/{id}/discard:
+    post:
+      summary: Close a batch that is waiting for approval, keeping its rows on record
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: Discarded }, '409': { $ref: '#/components/responses/Error' } }
   /imports/{id}/reverse:
     post: { summary: Remove the subnets a batch created, while they are untouched, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Error' } } }
   /devices/duplicates:
@@ -482,7 +503,7 @@ paths:
   /agent-api/jobs:
     get: { summary: 'Agent: claim the next job allowed to run now', responses: { '200': { description: A job }, '204': { description: Nothing to do } } }
   /agent-api/jobs/{id}/results:
-    post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    post: { summary: 'Agent: post results. Out-of-scope results are dropped. The reply says continue, pause or stop, and lists targets closed by a new exclusion or blackout', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
   /audit-logs/filters:
     get: { summary: Actions and object types that exist, for filter pickers, responses: { '200': { description: OK } } }
   /roles/{id}/permissions:

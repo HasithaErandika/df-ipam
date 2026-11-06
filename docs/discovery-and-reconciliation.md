@@ -5,7 +5,7 @@ Discovery produces **evidence**. Reconciliation compares evidence with inventory
 ```mermaid
 flowchart LR
   P[Approved policy] --> J[Job with frozen scope]
-  J --> A[Agent or worker]
+  J --> A[Agent]
   A --> O[(discovery_observations)]
   O --> R[Reconciliation engine]
   I[(Authoritative inventory)] --> R
@@ -30,49 +30,49 @@ flowchart LR
 | Method | Behaviour |
 | --- | --- |
 | ICMP | Echo requests with configurable concurrency, timeout, retries, rate limit and scan window. Replies are stored as observations |
-| ARP / NDP | Collected from approved local collectors, routers, switches and firewalls, and linked to interface, VLAN and routing context |
-| DNS | Forward and reverse lookups for A, AAAA, PTR and relevant CNAME records, with mismatch detection |
-| SNMP | Read-only interface, neighbour, identity and network data, using standard MIBs. Each vendor extension is documented before use |
-| Nmap | Narrow host discovery on approved ranges |
+| ARP / NDP | Read from the agent host's own neighbour tables, so a segment needs its own agent. FortiGate ARP comes through the connector |
+| DNS | Reverse lookups, at most 20 a second, through the agent host's resolver |
+| SNMP | **Not built.** A policy may list it, and the agent logs that it isn't collected. It needs SNMPv3 credential storage |
+| Nmap | Host discovery only (`-sn`) on approved ranges, if Nmap is installed on the agent host |
 | DHCP | Scopes and leases through integrations, read-only |
 
 ## Safety controls
 
-Every job passes all of these before it starts, enforced on the server. The agent re-checks them too.
+Every job passes all of these on the server. The limits that can change are checked again between targets, and every result is checked against the scope.
 
 1. Target is inside an explicit **allowlist**.
 2. Target is not in `discovery_exclusions`. Exclusions always win.
-3. Target is not classified as sensitive, at subnet or device level. Core banking, payment switching and other sensitive systems are **passive/API-only** until explicitly authorised.
+3. Target is not classified as sensitive, at subnet level or through its business service. Core banking, payment switching and other sensitive systems are **passive/API-only** until explicitly authorised.
 4. Time is inside the policy's window and outside maintenance blackouts.
 5. Policy has the required approval.
-6. The global **emergency stop** is off. Turning it on cancels queued discovery, tells running agents to stop, and blocks new scans until an administrator clears it.
+6. The global **emergency stop** is off. The button appears only while jobs are queued, running or paused, or if their status can't be read. Turning it on stops those jobs, tells agents to halt at their next heartbeat (within 15 seconds), and blocks new scans until someone with `discovery:manage` lifts it.
 
 Users can't get around scopes with their own input: manual runs can only select from approved scopes.
 
-Each policy sets maximum concurrency, packet rate, timeout and retries. Server-side hard ceilings cap what a policy may ask for.
+Each policy sets maximum concurrency, packet rate, timeout and retries. Hard ceilings cap what a policy may ask for: see Traffic limits below.
 
 Defaults:
 
-- SNMPv3 only. SNMPv2c needs a documented, approved exception.
 - Nmap runs host discovery only, with fixed arguments. User input is never passed to the command line. OS detection, service scans and scripts are not available.
 - Large IPv6 subnets are not swept. They rely on neighbour tables, DNS, integrations and known addresses.
 
 ## Scheduling and jobs
 
-- Supports manual, per-subnet and per-agent schedules, with priorities and queues.
+- Jobs start by hand, or from a schedule on one subnet. Either can be pinned to one agent, and jobs have a priority.
 - States: `queued`, `running`, `paused`, `completed`, `failed`, `cancelled`, `stopped`.
 - At creation, a job stores an **immutable snapshot** of its approved targets and configuration. Later policy edits do not affect it.
-- Bounded retries with backoff. Retention rules prune old job detail, and audit records are kept.
-- Jobs are resumable from per-target checkpoints, and safe to retry: results only add observations, so a rerun can't duplicate authoritative records.
-- Multiple workers and agents can run at once. Limits apply per network, so several agents can't add up to more than one network's rate limit.
+- Retention rules prune old job detail, and audit records are kept.
+- A job resumes from its unfinished targets, and is safe to repeat: results only add observations, so a rerun can't duplicate authoritative records.
+- Several agents can run at once. One ceiling covers all of them, and two jobs can't scan overlapping targets at the same time.
 
 ## Agents
 
+- **Where they run:** a local agent runs on a host inside a segment. The optional built-in agent runs in a container on the server and scans what the server can route to, without ARP from remote segments. Any number of both can run together, under the same limits and emergency stop. A job with no agent goes to whichever asks first, so pin a job when only one agent can reach its targets.
 - **Registration:** an administrator creates a single-use, expiring token. The agent exchanges it for its own credential.
-- **Authentication:** each agent has its own credential, stored only as a hash. mTLS can be added later.
+- **Authentication:** each agent has its own credential, stored only as a hash.
 - **Least privilege:** an agent can only fetch its own jobs, and post results and heartbeats. It runs as a dedicated user with `CAP_NET_RAW` only, not root.
-- **Lifecycle:** revocation takes effect on the next request. Rotation overlaps old and new credentials briefly.
-- **Health:** heartbeats go to `agent_heartbeats`. Missed heartbeats raise an offline alert.
+- **Lifecycle:** revocation takes effect on the next request. Rotation issues a new one-time token, and the old credential works until the agent registers with it. A token left in place after use is ignored with a warning, so a restart can't stop the agent.
+- **Health:** heartbeats go to `agent_heartbeats` every 15 seconds. An agent silent for 5 minutes shows as offline. No alert is sent yet.
 
 ## Reconciliation
 
@@ -104,3 +104,22 @@ The worker's code path has no method for the right-hand column, and tests check 
 ### Confidence score
 
 A 0-100 score built from source reliability, evidence age and agreement between sources, with each contribution saved in `confidence_breakdown` so the UI can explain it. The weights add up to 1, and a cap keeps weak findings low: several MACs alone never pass 50. Classifications with no weights keep the fixed confidence in their rule. The starting weights are in the seed and need review.
+
+## Traffic limits
+
+Discovery must never harm the network it maps. These limits hold together:
+
+| Limit | Value | Enforced by |
+| --- | --- | --- |
+| All discovery at once | `discovery.max_total_pps`, default 100, never above 500 | API: an agent only receives what is left of the ceiling |
+| One policy | 1 to 500 packets a second, 1 to 64 probes at once | API, then the agent again |
+| One agent | `AGENT_MAX_PPS`, and a built-in ceiling of 500 | Agent, whatever the job says |
+| Every packet | Retries wait for the rate limiter too | Agent |
+| Reverse DNS | 20 lookups a second | Agent |
+| One job | 65,536 addresses, 512 targets | API |
+| One schedule | At most every 15 minutes, whatever its cron says | Worker |
+| Address types | Multicast, loopback and link-local are never swept | API and agent |
+
+**Limits that change mid-job:** after each target the API checks the job again. A closed maintenance window puts the job back in the queue for its next window. A new exclusion or blackout closes the targets it touches, even if it only covers part of one, and they are skipped before any packet goes out.
+
+**Losing the server:** an agent that hears nothing for 90 seconds stops its job, because it can no longer receive the emergency stop.

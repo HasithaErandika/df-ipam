@@ -8,7 +8,7 @@ Each phase ends with something usable. The order puts the core inventory first, 
 | **1. Core IPAM** | Hierarchy, blocks, subnets, IP inventory, teams, DNS and DHCP records, overlap rules and exceptions, IPv4/IPv6 calculators, Explorer | Overlaps blocked per routing domain, including against exception subnets; edge prefixes tested | `btree_gist` confirmed on target DB |
 | **2. Allocation workflow** | Requests, approvals, allocations, reservations, releases, expiry, notifications | Concurrency tests pass; no self-approval | Mail provider |
 | **3. Imports and devices** | Production file import, device and interface inventory | Real files parse with no record dropped; reversal works | The two production files |
-| **4. Discovery** | Policies, scheduler, agents, ICMP, ARP/NDP, DNS, SNMP, Nmap, safety controls | Scope and emergency stop tests pass in a lab | Redis approval; sensitive networks list |
+| **4. Discovery** | Policies, scheduler, agents, ICMP, ARP/NDP, reverse DNS, Nmap, safety controls. SNMP still to come | Scope and emergency stop tests pass in a lab | Redis approval; sensitive networks list |
 | **5. Integrations and reconciliation** | FortiGate, vCenter, AWS, Azure, DNS/DHCP, reconciliation engine | Read-only confirmed per connector; rule tests pass | Service accounts; DNS/DHCP server types |
 | **6. Reporting and dashboard** | Full dashboard, async reports, saved filters | Reports honour permissions at volume | |
 | **7. Hardening** | Load tests, final sizing, security review, backups, recovery runbooks, company auth migration | Checklist in [security.md](security.md) complete; restore tested | Company auth details |
@@ -22,4 +22,4 @@ Each phase ends with something usable. The order puts the core inventory first, 
 | API | Permission matrix for every route, DTOs, error codes |
 | Connector | Recorded fixtures; no live systems in CI |
 | Safety | Discovery out of scope, exclusions, emergency stop, "discovery never writes allocation data" |
-| End to end | Playwright for main journeys |
+| End to end | Not built yet. API journeys run through the real router in `internal/server` |

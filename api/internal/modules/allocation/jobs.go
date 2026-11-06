@@ -44,67 +44,68 @@ func (s *Service) RunJobs(ctx context.Context) (JobResult, error) {
 	return res, nil
 }
 
+// eachDueReservation runs fn on reservations selected by cond, read in one query.
+func (s *Service) eachDueReservation(ctx context.Context, tx pgx.Tx, cond string, fn func(Reservation) error) (int, error) {
+	ids, err := s.repo.due(ctx, tx, cond, jobBatch)
+	if err != nil {
+		return 0, err
+	}
+	list, err := s.repo.ReservationsByID(ctx, tx, ids)
+	if err != nil {
+		return 0, err
+	}
+	for _, rv := range list {
+		if err := fn(rv); err != nil {
+			return 0, err
+		}
+	}
+	return len(list), nil
+}
+
 func (s *Service) expireReservations(ctx context.Context) (int, error) {
 	n := 0
-	err := db.InTx(ctx, s.conn, func(tx pgx.Tx) error {
-		ids, err := s.repo.due(ctx, tx, "expires_at <= now()", jobBatch)
-		if err != nil {
-			return err
-		}
-		for _, id := range ids {
-			rv, err := s.repo.GetReservation(ctx, tx, id, false)
-			if err != nil {
-				return err
-			}
-			if err := s.endReservation(ctx, tx, rv, "expired", ""); err != nil {
-				return err
-			}
-			if err := audit.Write(ctx, tx, audit.Entry{ActorType: "system", Action: "ip_reservation.expire", ObjectType: "ip_reservation",
-				ObjectID: id, Old: rv, New: map[string]string{"status": "expired"}}); err != nil {
-				return err
-			}
-			if err := notifications.Enqueue(ctx, tx, "", notifications.Event{Type: notifications.ReservationExpired,
-				ObjectType: "ip_reservation", ObjectID: id, DedupeKey: "reservation_expired:" + id,
-				Title: "Reservation expired: " + rv.Address,
-				Body:  fmt.Sprintf("Your reservation of %s in %s (%s) has expired, and the address is an available candidate again.", rv.Address, rv.SubnetName, rv.SubnetCIDR),
-				Link:  reservationLink(id), Recipients: []string{rv.ReservedBy}}); err != nil {
-				return err
-			}
-			n++
-		}
-		return nil
+	err := db.InTx(ctx, s.conn, func(tx pgx.Tx) (err error) {
+		n, err = s.eachDueReservation(ctx, tx, "expires_at <= now()", func(rv Reservation) error { return s.expireReservation(ctx, tx, rv) })
+		return err
 	})
 	return n, err
 }
 
+func (s *Service) expireReservation(ctx context.Context, tx pgx.Tx, rv Reservation) error {
+	if err := s.endReservation(ctx, tx, rv, "expired", ""); err != nil {
+		return err
+	}
+	if err := audit.Write(ctx, tx, audit.Entry{ActorType: "system", Action: "ip_reservation.expire", ObjectType: "ip_reservation",
+		ObjectID: rv.ID, Old: rv, New: map[string]string{"status": "expired"}}); err != nil {
+		return err
+	}
+	return notifications.Enqueue(ctx, tx, "", notifications.Event{Type: notifications.ReservationExpired,
+		ObjectType: "ip_reservation", ObjectID: rv.ID, DedupeKey: "reservation_expired:" + rv.ID,
+		Title: "Reservation expired: " + rv.Address,
+		Body:  fmt.Sprintf("Your reservation of %s in %s (%s) has expired, and the address is an available candidate again.", rv.Address, rv.SubnetName, rv.SubnetCIDR),
+		Link:  reservationLink(rv.ID), Recipients: []string{rv.ReservedBy}})
+}
+
 func (s *Service) remindReservations(ctx context.Context) (int, error) {
 	n := 0
-	err := db.InTx(ctx, s.conn, func(tx pgx.Tx) error {
-		ids, err := s.repo.due(ctx, tx, "reminded_at IS NULL AND expires_at > now() AND expires_at <= now() + interval '"+ReminderWindow+"'", jobBatch)
-		if err != nil {
-			return err
-		}
-		for _, id := range ids {
-			rv, err := s.repo.GetReservation(ctx, tx, id, false)
-			if err != nil {
-				return err
-			}
-			if _, err := tx.Exec(ctx, `UPDATE ip_reservations SET reminded_at = now() WHERE id = $1::uuid`, id); err != nil {
-				return err
-			}
-			if err := notifications.Enqueue(ctx, tx, "", notifications.Event{Type: notifications.ReservationExpiring,
-				ObjectType: "ip_reservation", ObjectID: id, DedupeKey: fmt.Sprintf("reservation_expiring:%s:%s", id, rv.ExpiresAt.UTC().Format(dateLayout)),
-				Title: "Reservation ending soon: " + rv.Address,
-				Body: fmt.Sprintf("Your reservation of %s in %s ends on %s UTC. Extend it or request an allocation if you still need the address.",
-					rv.Address, rv.SubnetName, rv.ExpiresAt.UTC().Format("2 Jan 2006 15:04")),
-				Link: reservationLink(id), Recipients: []string{rv.ReservedBy}}); err != nil {
-				return err
-			}
-			n++
-		}
-		return nil
+	err := db.InTx(ctx, s.conn, func(tx pgx.Tx) (err error) {
+		n, err = s.eachDueReservation(ctx, tx, "reminded_at IS NULL AND expires_at > now() AND expires_at <= now() + interval '"+ReminderWindow+"'",
+			func(rv Reservation) error { return remindReservation(ctx, tx, rv) })
+		return err
 	})
 	return n, err
+}
+
+func remindReservation(ctx context.Context, tx pgx.Tx, rv Reservation) error {
+	if _, err := tx.Exec(ctx, `UPDATE ip_reservations SET reminded_at = now() WHERE id = $1::uuid`, rv.ID); err != nil {
+		return err
+	}
+	return notifications.Enqueue(ctx, tx, "", notifications.Event{Type: notifications.ReservationExpiring,
+		ObjectType: "ip_reservation", ObjectID: rv.ID, DedupeKey: fmt.Sprintf("reservation_expiring:%s:%s", rv.ID, rv.ExpiresAt.UTC().Format(dateLayout)),
+		Title: "Reservation ending soon: " + rv.Address,
+		Body: fmt.Sprintf("Your reservation of %s in %s ends on %s UTC. Extend it or request an allocation if you still need the address.",
+			rv.Address, rv.SubnetName, rv.ExpiresAt.UTC().Format("2 Jan 2006 15:04")),
+		Link: reservationLink(rv.ID), Recipients: []string{rv.ReservedBy}})
 }
 
 // expireRequests ends approvals nobody acted on, and reservation requests whose
@@ -123,22 +124,12 @@ func (s *Service) expireRequests(ctx context.Context) (int, error) {
 		if err != nil {
 			return err
 		}
-		for _, id := range ids {
-			r, err := s.repo.GetRequest(ctx, tx, id, false)
-			if err != nil {
-				return err
-			}
-			if err := s.repo.SetStatus(ctx, tx, id, StatusExpired, ""); err != nil {
-				return err
-			}
-			if err := audit.Write(ctx, tx, audit.Entry{ActorType: "system", Action: "ip_request.expire", ObjectType: "ip_request", ObjectID: id,
-				Old: map[string]string{"status": r.Status}, New: map[string]string{"status": StatusExpired}}); err != nil {
-				return err
-			}
-			if err := notifications.Enqueue(ctx, tx, "", notifications.Event{Type: notifications.RequestExpired,
-				ObjectType: "ip_request", ObjectID: id, DedupeKey: "request_expired:" + id,
-				Title: "Expired: " + describe(r), Body: fmt.Sprintf("Your %s expired before it was fulfilled. Make a new request if you still need it.", describe(r)),
-				Link: requestLink(id), Recipients: []string{r.RequestedBy}}); err != nil {
+		list, err := s.repo.RequestsByID(ctx, tx, ids)
+		if err != nil {
+			return err
+		}
+		for _, r := range list {
+			if err := s.expireRequest(ctx, tx, r); err != nil {
 				return err
 			}
 			n++
@@ -146,4 +137,18 @@ func (s *Service) expireRequests(ctx context.Context) (int, error) {
 		return nil
 	})
 	return n, err
+}
+
+func (s *Service) expireRequest(ctx context.Context, tx pgx.Tx, r Request) error {
+	if err := s.repo.SetStatus(ctx, tx, r.ID, StatusExpired, ""); err != nil {
+		return err
+	}
+	if err := audit.Write(ctx, tx, audit.Entry{ActorType: "system", Action: "ip_request.expire", ObjectType: "ip_request", ObjectID: r.ID,
+		Old: map[string]string{"status": r.Status}, New: map[string]string{"status": StatusExpired}}); err != nil {
+		return err
+	}
+	return notifications.Enqueue(ctx, tx, "", notifications.Event{Type: notifications.RequestExpired,
+		ObjectType: "ip_request", ObjectID: r.ID, DedupeKey: "request_expired:" + r.ID,
+		Title: "Expired: " + describe(r), Body: fmt.Sprintf("Your %s expired before it was fulfilled. Make a new request if you still need it.", describe(r)),
+		Link: requestLink(r.ID), Recipients: []string{r.RequestedBy}})
 }

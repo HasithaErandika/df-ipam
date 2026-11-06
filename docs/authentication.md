@@ -17,7 +17,7 @@ Supabase Row Level Security is not used. DF-IPAM data lives in its own PostgreSQ
 
 ## Supabase project setup
 
-- Turn **off** public sign-ups. Users are invited from the Supabase dashboard.
+- Turn **off** public sign-ups. Add users in the Supabase dashboard with a password. The app has no screen to set one, so an invitation alone isn't enough yet.
 - Use asymmetric JWT signing keys (ES256 or RS256), and confirm the JWKS URL returns keys. It returns none on the legacy HS256 secret.
 - Put only the project URL and anon key in the frontend. The `service_role` key stays in `api/.env`.
 
@@ -97,7 +97,37 @@ Stored in `roles`, `permissions`, `role_permissions` and `user_roles`. Checked b
 
 The role purposes come from the brief. The ticks are a proposed default, and administrators can change them. The code checks permissions, never role names. Separation of duties is enforced regardless: nobody approves their own request, and a person decides at most one step of a request. Approval workflows and notification rules are administration, so they need `users:manage`. Anyone signed in reads their own notifications and preferences.
 
-`user_roles` has optional scope columns (organisation, business unit, site, business service). Business Viewers see only explicitly permitted business services, and infrastructure details stay hidden unless a permission allows them.
+### What each role sees
+
+`web/src/app/nav.ts` holds the rule for every page: the side panel uses it, and so does the page guard, which shows "You don't have access" for a link or bookmark the role can't use. `TestRolesReachOnlyTheirPages` checks the same table against the API, so a link never leads to a refusal. Hiding a page is for clarity: the API does the real check.
+
+| Pages | Super Admin | IPAM Admin | Network Eng | Infra Eng | Security Auditor | Business Viewer |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| Dashboard, Alerts, Reports | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| IP Address Explorer | ✓ | ✓ | ✓ | ✓ | ✓ | Scoped |
+| Other inventory, Reconciliation, Reservations, Requests | ✓ | ✓ | ✓ | ✓ | ✓ | |
+| Discovery, Imports | ✓ | ✓ | ✓ | | Read only | |
+| Integrations, Audit Logs, Roles, System | ✓ | ✓ | | | Read only | |
+| User Management | ✓ | | | | | |
+
+The dashboard follows the same rules, and the API leaves out totals of areas a person can't open. Approvers see pending approvals, those who allocate see what is waiting to be fulfilled, and integration and discovery tiles need access to those pages. A Business Viewer sees a short page of what the role offers. Retention can be read with `audit:view`, and changed only with `system:manage`.
+
+### Scoped reading
+
+`inventory:view_scoped` limits a person to the business services assigned in User Management, stored as `user_roles.business_service_id`. The other scope columns (organisation, business unit, site) aren't used yet. No services means nothing is shown, never everything.
+
+- A subnet is in scope through its business service, and an address through its own or its subnet's.
+- Gateway, VLAN, VDOM, network block and zone, MAC, device, OS, confidence, notes, evidence and history stay hidden. Search doesn't match hidden fields.
+- A record out of scope answers 404, so its existence isn't confirmed. The subnet grid needs `inventory:view`, because it walks the whole subnet.
+- A role that is kept keeps its services. One that is taken away loses them. Nobody changes their own.
+
+### Editing assigned records
+
+`inventory:edit_assigned` lets someone edit what they own: an address or device whose Owner they are, or a subnet where they are technical or business owner. Owners are set by people with `inventory:edit`.
+
+- Owners can't change who owns a record, or what it belongs to, or it could be handed on. Allocation state still needs `ip:allocate` or `ip:reserve`.
+- On a subnet they change the name and description only. On a device, everything but owner, business service, sensitivity and status.
+- Every change is audited as usual.
 
 ## Keeping the swap easy
 

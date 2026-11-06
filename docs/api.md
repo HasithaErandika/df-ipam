@@ -56,12 +56,13 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 
 | Area | Endpoints |
 | --- | --- |
-| Auth | `GET /auth/me` (sign-in itself happens in Supabase) |
-| Users and roles | `/users`, `/users/:id/roles`, `/roles`, `/permissions`, `GET /people` (email and name only, for owner pickers) |
-| Subnets | CRUD on `/subnets`, plus `POST /subnets/:id/archive`, `POST /subnets/bulk` (all or nothing, `dryRun`), `POST /subnets/bulk-archive`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
+| Auth | `GET /auth/me`, `GET /auth/me/profile` (sign-in itself happens in Supabase) |
+| Users and roles | `/users`, `/users/invite`, `/users/:id/roles`, `/roles`, `GET /people` (email and name only, for owner pickers) |
+| Scope | `PUT /users/:id/scope` sets the business services of a scoped role. See [authentication.md](authentication.md) for scoped reading and editing assigned records. `GET /dashboard/summary` leaves out totals of areas the caller can't open |
+| Subnets | CRUD on `/subnets`. `q` takes a name or text, a CIDR for the subnets inside or around it, or an IP for the subnets holding it. `/ip-addresses` also takes a CIDR for the addresses inside it. Also `POST /subnets/:id/archive`, `POST /subnets/bulk` (all or nothing, `dryRun`), `POST /subnets/bulk-archive`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
 | Tools | `POST /tools/split`, `POST /tools/summarise`, `GET /tools/locate?address=`, `GET /network-blocks/:id/free-space` |
-| IP addresses | `GET /ip-addresses`, `POST /ip-addresses`, `GET /ip-addresses/:id`, `PATCH /ip-addresses/:id`, `GET /ip-addresses/:id/history`, `GET /ip-addresses/:id/evidence`, `GET /ip-addresses/:id/device` (inventory and read-only sources only), `POST /ip-addresses/bulk` |
-| DNS and DHCP (read-only inventory) | `GET /dns-records`, `GET /dhcp-scopes`, `GET /dhcp-scopes/:id/reservations` |
+| IP addresses | `GET /ip-addresses`, `POST /ip-addresses`, `GET /ip-addresses/:id`, `PATCH /ip-addresses/:id`, `GET /ip-addresses/:id/history`, `GET /ip-addresses/:id/evidence`, `GET /ip-addresses/:id/device` (inventory and read-only sources only) |
+| DNS and DHCP (read-only inventory) | `GET /dns-records`, `GET /dhcp-scopes`, `GET /dhcp-scopes/:id` |
 | Imports enrichment | `GET /imports/enrichment-queue`, `PATCH /imports/records/:id` |
 | Requests | CRUD on `/requests` (edit and delete drafts only, by the requester), plus `POST /requests/:id/submit`, `POST /requests/:id/cancel`. Without a wider permission, people see only their own |
 | Approvals | `GET /approvals` (steps the caller may decide now), `POST /approvals/:id/approve`, `POST /approvals/:id/reject`; `GET`, `POST`, `PUT /:id`, `DELETE /:id` on `/approval-workflows` |
@@ -69,15 +70,12 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 | Reservations | `GET /reservations`, `GET /reservations/:id`, `POST /reservations` (fulfil an approved request), `POST /reservations/:id/extend`, `POST /reservations/:id/release`. History is kept, so there is no delete |
 | Discovery | `/discovery/policies`, `/discovery/schedules`, `/discovery/exclusions`, `/discovery/jobs`, `POST /discovery/jobs/:id/{pause,resume,cancel}`, `POST /discovery/emergency-stop` |
 | Agents (admin) | `/agents`, `POST /agents/:id/{revoke,rotate}` |
-| Agents (agent credential) | `POST /agent-api/register`, `POST /agent-api/heartbeat`, `GET /agent-api/jobs`, `POST /agent-api/jobs/:id/results` |
-| Reconciliation | `GET /reconciliation/results`, `GET /reconciliation/summary`, `POST /reconciliation/run`, `POST /reconciliation/results/:id/review`, `/reconciliation/rules` |
-| Integrations | CRUD on `/integrations`, plus `POST /integrations/:id/{test,sync}`, `GET /integrations/:id/sync-jobs` |
-| Imports | `POST /imports`, `GET /imports/:id/preview`, `POST /imports/:id/{approve,reverse}`, `GET /imports` |
+| Agents (agent credential) | `POST /agent-api/register`, `POST /agent-api/heartbeat`, `GET /agent-api/jobs`, `POST /agent-api/jobs/:id/results`. A job's `maxPps` is what is left of the ceiling, not the policy's figure. The reply to results holds `instruction` (`continue`, `pause` or `stop`) and `skipTargets` |
+| Reconciliation | `GET /reconciliation/results`, `GET /reconciliation/summary`, `GET /reconciliation/last-run`, `POST /reconciliation/run`, `POST /reconciliation/results/:id/review`, `/reconciliation/rules` |
+| Imports | `POST /imports`, `GET /imports/:id/preview`, `POST /imports/:id/{approve,reverse,discard}`, `GET /imports`, `GET /imports/templates`, `GET /imports/templates/:key` (`workbook` for the Excel file, or a type for its CSV) |
 | Notifications | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`, `GET`/`PUT /notifications/preferences` (own), `GET /notifications/rules`, `PUT /notifications/rules/:eventType` |
-| Reports | `GET /reports/types`, `POST /reports`, `GET /reports/:id`, `GET /reports/:id/download` |
-| Audit | `GET /audit-logs`, `GET /audit-logs/:id` |
+| Audit | `GET /audit-logs`, `GET /audit-logs/filters` |
 | Dashboard and search | `GET /dashboard/summary`, `GET /dashboard/trends`, `GET /search?q=`, `GET`/`POST /saved-filters`, `DELETE /saved-filters/:id` (own) |
-| Administration | `/administration/settings`, `GET /administration/health` |
 
 ## Key error codes
 

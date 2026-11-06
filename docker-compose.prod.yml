@@ -1,0 +1,12 @@
+# Production. Set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in api/.env.
+# Only the web container is published, and the lists it mounts decide who gets in.
+services:
+  web:
+    ports:
+      - 80:8080
+      - 443:8443
+    volumes:
+      - ./web/nginx/site-tls.conf:/etc/nginx/site/site.conf:ro
+      - ${NGINX_ACCESS_FILE:-./deploy/nginx/access-private.conf}:/etc/nginx/rules/access.conf:ro
+      - ${NGINX_AGENTS_FILE:-./deploy/nginx/agents-allow.conf}:/etc/nginx/rules/agents.conf:ro
+      - /etc/ssl/df-ipam:/etc/ssl/df-ipam:ro

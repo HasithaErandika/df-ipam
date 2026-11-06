@@ -87,9 +87,48 @@ func (h *Handler) duplicates(c *gin.Context) {
 	httpx.OK(c, http.StatusOK, out)
 }
 
-// merge folds the device in the path into another. Interfaces and address
-// links move across, empty fields on the survivor are filled, and the merged
-// device is deleted. The audit row keeps the whole merged record.
+// ChangeFields lists what a change request may set on a device.
+var ChangeFields = []db.Field{
+	{Name: "ownerId", Column: "owner_id", Cast: "uuid", Nullable: true},
+	{Name: "businessServiceId", Column: "business_service_id", Cast: "uuid", Nullable: true},
+	{Name: "notes", Column: "notes"},
+}
+
+// ApplyChange applies an approved change request.
+func ApplyChange(ctx context.Context, tx pgx.Tx, id, actor string, changes map[string]string) (map[string]string, map[string]string, error) {
+	return db.ApplyFields(ctx, tx, "devices", id, actor, "", ChangeFields, changes)
+}
+
+// mergeStatements move everything from device $1 to device $2. Interfaces with the
+// same name on the survivor keep the survivor's; the rest move. $3 is the actor.
+var mergeStatements = []string{
+	`UPDATE device_interfaces SET device_id = $2::uuid WHERE device_id = $1::uuid
+	   AND NOT EXISTS (SELECT 1 FROM device_interfaces k WHERE k.device_id = $2::uuid AND k.name = device_interfaces.name
+	                   AND k.vdom_id IS NOT DISTINCT FROM device_interfaces.vdom_id)`,
+	`UPDATE ip_addresses SET interface_id = (SELECT k.id FROM device_interfaces k JOIN device_interfaces o ON o.name = k.name
+	   AND o.vdom_id IS NOT DISTINCT FROM k.vdom_id WHERE o.id = ip_addresses.interface_id AND k.device_id = $2::uuid)
+	 WHERE interface_id IN (SELECT id FROM device_interfaces WHERE device_id = $1::uuid)`,
+	`UPDATE ip_addresses SET device_id = $2::uuid WHERE device_id = $1::uuid`,
+	`UPDATE vdoms SET device_id = $2::uuid WHERE device_id = $1::uuid
+	   AND NOT EXISTS (SELECT 1 FROM vdoms k WHERE k.device_id = $2::uuid AND k.name = vdoms.name)`,
+	`UPDATE dhcp_scopes SET server_device_id = $2::uuid WHERE server_device_id = $1::uuid`,
+	`UPDATE network_routes SET device_id = $2::uuid WHERE device_id = $1::uuid`,
+}
+
+const mergeFields = `UPDATE devices k SET
+	   hostname = CASE WHEN k.hostname = '' THEN o.hostname ELSE k.hostname END,
+	   management_ip = coalesce(k.management_ip, o.management_ip),
+	   vendor = CASE WHEN k.vendor = '' THEN o.vendor ELSE k.vendor END,
+	   model = CASE WHEN k.model = '' THEN o.model ELSE k.model END,
+	   serial_number = coalesce(k.serial_number, o.serial_number),
+	   os_version = CASE WHEN k.os_version = '' THEN o.os_version ELSE k.os_version END,
+	   os_family = CASE WHEN k.os_family = 'unknown' THEN o.os_family ELSE k.os_family END,
+	   site_id = coalesce(k.site_id, o.site_id), owner_id = coalesce(k.owner_id, o.owner_id),
+	   business_service_id = coalesce(k.business_service_id, o.business_service_id),
+	   first_discovered = least(k.first_discovered, o.first_discovered),
+	   last_discovered = greatest(k.last_discovered, o.last_discovered), updated_by = $3::uuid
+	 FROM devices o WHERE k.id = $2::uuid AND o.id = $1::uuid`
+
 func (h *Handler) merge(c *gin.Context) {
 	id, ok := httpx.PathID(c)
 	if !ok {
@@ -107,61 +146,7 @@ func (h *Handler) merge(c *gin.Context) {
 		return
 	}
 	ctx, actor := c.Request.Context(), auth.Current(c).UserID
-	err := db.InTx(ctx, h.conn, func(tx pgx.Tx) error {
-		var old map[string]any
-		err := tx.QueryRow(ctx, `SELECT to_jsonb(d) FROM devices d WHERE id = $1::uuid FOR UPDATE`, id).Scan(&old)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return httpx.ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		var keep string
-		if err := tx.QueryRow(ctx, `SELECT id::text FROM devices WHERE id = $1::uuid FOR UPDATE`, req.IntoID).Scan(&keep); errors.Is(err, pgx.ErrNoRows) {
-			return httpx.Validation("intoId", "That device doesn't exist.")
-		} else if err != nil {
-			return err
-		}
-		stmts := []string{
-			// Interfaces with the same name on the survivor keep the survivor's; the rest move.
-			`UPDATE device_interfaces SET device_id = $2::uuid WHERE device_id = $1::uuid
-			   AND NOT EXISTS (SELECT 1 FROM device_interfaces k WHERE k.device_id = $2::uuid AND k.name = device_interfaces.name
-			                   AND k.vdom_id IS NOT DISTINCT FROM device_interfaces.vdom_id)`,
-			`UPDATE ip_addresses SET interface_id = (SELECT k.id FROM device_interfaces k JOIN device_interfaces o ON o.name = k.name
-			   AND o.vdom_id IS NOT DISTINCT FROM k.vdom_id WHERE o.id = ip_addresses.interface_id AND k.device_id = $2::uuid)
-			 WHERE interface_id IN (SELECT id FROM device_interfaces WHERE device_id = $1::uuid)`,
-			`UPDATE ip_addresses SET device_id = $2::uuid WHERE device_id = $1::uuid`,
-			`UPDATE vdoms SET device_id = $2::uuid WHERE device_id = $1::uuid
-			   AND NOT EXISTS (SELECT 1 FROM vdoms k WHERE k.device_id = $2::uuid AND k.name = vdoms.name)`,
-			`UPDATE dhcp_scopes SET server_device_id = $2::uuid WHERE server_device_id = $1::uuid`,
-			`UPDATE network_routes SET device_id = $2::uuid WHERE device_id = $1::uuid`,
-			`UPDATE devices k SET
-			   hostname = CASE WHEN k.hostname = '' THEN o.hostname ELSE k.hostname END,
-			   management_ip = coalesce(k.management_ip, o.management_ip),
-			   vendor = CASE WHEN k.vendor = '' THEN o.vendor ELSE k.vendor END,
-			   model = CASE WHEN k.model = '' THEN o.model ELSE k.model END,
-			   serial_number = coalesce(k.serial_number, o.serial_number),
-			   os_version = CASE WHEN k.os_version = '' THEN o.os_version ELSE k.os_version END,
-			   os_family = CASE WHEN k.os_family = 'unknown' THEN o.os_family ELSE k.os_family END,
-			   site_id = coalesce(k.site_id, o.site_id), owner_id = coalesce(k.owner_id, o.owner_id),
-			   business_service_id = coalesce(k.business_service_id, o.business_service_id),
-			   first_discovered = least(k.first_discovered, o.first_discovered),
-			   last_discovered = greatest(k.last_discovered, o.last_discovered), updated_by = $3::uuid
-			 FROM devices o WHERE k.id = $2::uuid AND o.id = $1::uuid`,
-			`DELETE FROM devices WHERE id = $1::uuid`,
-		}
-		for i, s := range stmts {
-			args := []any{id, req.IntoID}
-			if i == 6 {
-				args = append(args, actor)
-			}
-			if _, err := tx.Exec(ctx, s, args...); err != nil {
-				return err
-			}
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "device.merge", ObjectType: "device", ObjectID: req.IntoID,
-			Old: old, New: map[string]string{"mergedInto": req.IntoID, "removed": id}})
-	})
+	err := db.InTx(ctx, h.conn, func(tx pgx.Tx) error { return mergeDevice(ctx, tx, actor, id, req.IntoID) })
 	if db.ErrorCode(err) == db.CodeForeignKey {
 		err = httpx.NewError(http.StatusConflict, "DEVICE_IN_USE", "Another record still points at this device. Unlink it first.")
 	}
@@ -172,14 +157,32 @@ func (h *Handler) merge(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// ChangeFields lists what a change request may set on a device.
-var ChangeFields = []db.Field{
-	{Name: "ownerId", Column: "owner_id", Cast: "uuid", Nullable: true},
-	{Name: "businessServiceId", Column: "business_service_id", Cast: "uuid", Nullable: true},
-	{Name: "notes", Column: "notes"},
-}
-
-// ApplyChange applies an approved change request.
-func ApplyChange(ctx context.Context, tx pgx.Tx, id, actor string, changes map[string]string) (map[string]string, map[string]string, error) {
-	return db.ApplyFields(ctx, tx, "devices", id, actor, "", ChangeFields, changes)
+func mergeDevice(ctx context.Context, tx pgx.Tx, actor, id, into string) error {
+	var old map[string]any
+	err := tx.QueryRow(ctx, `SELECT to_jsonb(d) FROM devices d WHERE id = $1::uuid FOR UPDATE`, id).Scan(&old)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return httpx.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var keep string
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM devices WHERE id = $1::uuid FOR UPDATE`, into).Scan(&keep); errors.Is(err, pgx.ErrNoRows) {
+		return httpx.Validation("intoId", "That device doesn't exist.")
+	} else if err != nil {
+		return err
+	}
+	for _, s := range mergeStatements {
+		if _, err := tx.Exec(ctx, s, id, into); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(ctx, mergeFields, id, into, actor); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM devices WHERE id = $1::uuid`, id); err != nil {
+		return err
+	}
+	return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "device.merge", ObjectType: "device", ObjectID: into,
+		Old: old, New: map[string]string{"mergedInto": into, "removed": id}})
 }

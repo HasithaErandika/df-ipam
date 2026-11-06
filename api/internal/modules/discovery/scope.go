@@ -6,11 +6,7 @@
 package discovery
 
 import (
-	"fmt"
 	"net/netip"
-	"strconv"
-	"strings"
-	"time"
 
 	"dfipam/api/internal/netcalc"
 )
@@ -31,6 +27,7 @@ const (
 	MaxIPv6Bits     = 120
 	MaxKnownTargets = 1024
 	MaxTargets      = 512
+	MaxJobAddresses = 65536 // about 22 minutes at the default 50 packets a second
 )
 
 // Target is one frozen piece of a job's scope.
@@ -43,6 +40,22 @@ type Target struct {
 type Exclusion struct {
 	RoutingDomainID string // empty means every routing domain
 	CIDR            netip.Prefix
+}
+
+// Probeable refuses networks that reach many hosts at once, or that never belong on
+// a sweep. A sweep of multicast space is amplified by every listener.
+func Probeable(p netip.Prefix) bool {
+	a := p.Masked().Addr()
+	return !a.IsMulticast() && !a.IsLoopback() && !a.IsUnspecified() && !a.IsLinkLocalUnicast() && !a.IsLinkLocalMulticast()
+}
+
+// addressesIn counts a target that has already passed TooLarge, so it stays small.
+func addressesIn(cidr string) int {
+	p, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return 0
+	}
+	return 1 << (p.Addr().BitLen() - p.Bits())
 }
 
 // Allowed reports whether the whole prefix sits inside the allowlist.
@@ -97,141 +110,4 @@ func FilterMethods(methods []string, sensitiveTarget, sensitivePolicy bool) []st
 		out = append(out, m)
 	}
 	return out
-}
-
-// Window is a time of week when active discovery may run.
-type Window struct {
-	Days  []int  `json:"days"` // 1 Monday ... 7 Sunday; empty means every day
-	Start string `json:"start"`
-	End   string `json:"end"` // may be earlier than Start, crossing midnight
-}
-
-func minutes(hhmm string) (int, error) {
-	h, m, ok := strings.Cut(hhmm, ":")
-	if !ok {
-		return 0, fmt.Errorf("time %q must be HH:MM", hhmm)
-	}
-	hi, err1 := strconv.Atoi(h)
-	mi, err2 := strconv.Atoi(m)
-	if err1 != nil || err2 != nil || hi < 0 || hi > 23 || mi < 0 || mi > 59 {
-		return 0, fmt.Errorf("time %q must be HH:MM", hhmm)
-	}
-	return hi*60 + mi, nil
-}
-
-// ValidateWindows checks window definitions.
-func ValidateWindows(ws []Window) error {
-	for _, w := range ws {
-		if _, err := minutes(w.Start); err != nil {
-			return err
-		}
-		if _, err := minutes(w.End); err != nil {
-			return err
-		}
-		for _, d := range w.Days {
-			if d < 1 || d > 7 {
-				return fmt.Errorf("days run from 1 (Monday) to 7 (Sunday)")
-			}
-		}
-	}
-	return nil
-}
-
-// InWindow reports whether t falls in any window. No windows means any time.
-func InWindow(ws []Window, t time.Time) bool {
-	if len(ws) == 0 {
-		return true
-	}
-	day := int(t.Weekday())
-	if day == 0 {
-		day = 7
-	}
-	now := t.Hour()*60 + t.Minute()
-	for _, w := range ws {
-		start, err1 := minutes(w.Start)
-		end, err2 := minutes(w.End)
-		if err1 != nil || err2 != nil {
-			continue
-		}
-		dayOK := len(w.Days) == 0
-		for _, d := range w.Days {
-			// A window crossing midnight belongs to the day it started.
-			if d == day || (end < start && now < end && d == day-1) || (end < start && now < end && day == 1 && d == 7) {
-				dayOK = true
-			}
-		}
-		if !dayOK {
-			continue
-		}
-		if start <= end && now >= start && now < end {
-			return true
-		}
-		if start > end && (now >= start || now < end) {
-			return true
-		}
-	}
-	return false
-}
-
-// Cron is a parsed five-field schedule: minute, hour, day of month, month, day of week.
-type Cron struct{ fields [5]map[int]bool }
-
-var cronRanges = [5][2]int{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
-
-// ParseCron reads "*", "n", "a-b", "*/n", "a-b/n" and comma lists.
-func ParseCron(spec string) (Cron, error) {
-	var c Cron
-	parts := strings.Fields(spec)
-	if len(parts) != 5 {
-		return c, fmt.Errorf("a schedule needs five fields: minute hour day month weekday")
-	}
-	for i, part := range parts {
-		set := map[int]bool{}
-		lo, hi := cronRanges[i][0], cronRanges[i][1]
-		for _, item := range strings.Split(part, ",") {
-			step := 1
-			if base, s, ok := strings.Cut(item, "/"); ok {
-				n, err := strconv.Atoi(s)
-				if err != nil || n < 1 {
-					return c, fmt.Errorf("bad step in %q", item)
-				}
-				step, item = n, base
-			}
-			from, to := lo, hi
-			switch {
-			case item == "*":
-			case strings.Contains(item, "-"):
-				a, b, _ := strings.Cut(item, "-")
-				x, err1 := strconv.Atoi(a)
-				y, err2 := strconv.Atoi(b)
-				if err1 != nil || err2 != nil {
-					return c, fmt.Errorf("bad range %q", item)
-				}
-				from, to = x, y
-			default:
-				x, err := strconv.Atoi(item)
-				if err != nil {
-					return c, fmt.Errorf("bad value %q", item)
-				}
-				from, to = x, x
-			}
-			if i == 4 && to == 7 { // Sunday as 7
-				to = 6
-				set[0] = true
-			}
-			if from < lo || to > hi || from > to {
-				return c, fmt.Errorf("%q is out of range %d-%d", item, lo, hi)
-			}
-			for v := from; v <= to; v += step {
-				set[v] = true
-			}
-		}
-		c.fields[i] = set
-	}
-	return c, nil
-}
-
-// Matches reports whether the schedule fires in the minute of t.
-func (c Cron) Matches(t time.Time) bool {
-	return c.fields[0][t.Minute()] && c.fields[1][t.Hour()] && c.fields[2][t.Day()] && c.fields[3][int(t.Month())] && c.fields[4][int(t.Weekday())]
 }
