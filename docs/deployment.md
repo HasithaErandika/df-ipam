@@ -2,13 +2,14 @@
 
 ## Topology
 
-One dedicated on-premises Ubuntu Server. Agents run on separate hosts in the network segments they cover.
+One dedicated on-premises Ubuntu Server. Discovery agents run on separate hosts in the network segments they cover, and an optional built-in agent runs on the server itself. Both can run at once.
 
 | Component | Runs as |
 | --- | --- |
 | `web` | Docker container running Nginx: serves the React build, ends HTTPS and proxies `/api`. The only published service, on 80 and 443 |
 | `backend` | Docker container running the API and worker in one process. Not published |
 | `df-ipam-agent` | systemd service on each agent host, `CAP_NET_RAW` only |
+| `agent` | Optional Docker container for the built-in agent, started with `make agent-up`. No capabilities, read-only, not published |
 | `db` | PostgreSQL in a Docker container with a named volume. Not published |
 
 Each service has its own account with minimal file permissions. Nothing runs as root. The supplement's PHP-FPM, Laravel and Python services are replaced by the Go services above: see [requirements.md](requirements.md).
@@ -20,12 +21,14 @@ Each service has its own account with minimal file permissions. Nothing runs as 
 | Users | `web` | 443/tcp | Web app and API |
 | Users | Supabase | 443/tcp | Sign-in |
 | Agents | `web` | 443/tcp | Jobs, results, heartbeats |
+| Built-in agent | `backend` | 8080/tcp | Jobs, results, heartbeats, on Docker's private network |
 | `backend` | Supabase | 443/tcp | JWKS |
 | `backend` | `db` | 5432/tcp | Database, on Docker's private network |
 | `backend` | FortiGate, vCenter | 443/tcp (or the configured admin port) | Read-only APIs |
 | `backend` | AWS, Azure | 443/tcp | Read-only APIs |
 | `backend` | Mail provider | 443/tcp (Graph) or 587/tcp (SMTP) | Notifications |
 | Agents | Approved targets | ICMP, 161/udp, 53/udp+tcp | Discovery |
+| Built-in agent | Approved targets | ICMP, 80 and 443/tcp (Nmap), 53/udp+tcp | Discovery, from the server's address |
 
 All other traffic is blocked. PostgreSQL is never reachable from untrusted networks.
 
@@ -36,6 +39,8 @@ All other traffic is blocked. PostgreSQL is never reachable from untrusted netwo
 | ICMP | `CAP_NET_RAW` |
 | Nmap host discovery | `CAP_NET_RAW` and `CAP_NET_ADMIN`, in a separate unit if used, launched with `--privileged` |
 | Reading local ARP or neighbour tables, DNS, SNMP | No special capability |
+
+The built-in agent needs none of these: ICMP uses an unprivileged socket, allowed for its user by `net.ipv4.ping_group_range`, and unprivileged Nmap discovers hosts with TCP connections.
 
 Capabilities are set only on the collector's systemd unit, with `AmbientCapabilities`, a matching `CapabilityBoundingSet` and `NoNewPrivileges=yes`. Other services get none. Exact Nmap needs are confirmed on the target Ubuntu version in Phase 4.
 

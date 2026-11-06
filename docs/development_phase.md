@@ -170,6 +170,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Feedback, confirmations and error handling | 🟦 Built, not viewed | Toasts, confirmation of edits and deletes, friendly errors, sign-out when a session ends |
 | Screens load on demand, tabs are paths | 🟦 Built, not viewed | Old `?tab=` links redirect |
 | Template imports for 17 record types | 🟦 API tested, screens built, not viewed with a real sign-in | Excel workbook or CSV per type, checked per row, second-person approval, discard, reversible. Screens driven in a browser against a mocked API only |
+| Built-in discovery agent | 🟦 Tested in Docker, not on a real network | Optional container, `make agent-up`, alongside local agents. No capabilities. Registration, restart and pinned jobs tested on a private Docker network |
 | Account menu and details dialog | 🟦 Built, not viewed | Top bar shows a user icon; the menu has Details and Sign out |
 
 ## Waiting on others

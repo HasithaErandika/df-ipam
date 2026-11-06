@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,7 +32,7 @@ type Config struct {
 }
 
 // ConfigFromEnv reads AGENT_API_URL, AGENT_REGISTRATION_TOKEN, AGENT_CREDENTIAL_FILE
-// and AGENT_POLL_SECONDS. Plain http is refused except to localhost.
+// and AGENT_POLL_SECONDS. Plain http is refused except to plainHTTPAllowed hosts.
 func ConfigFromEnv() (Config, error) {
 	c := Config{
 		APIURL:            strings.TrimRight(strings.TrimSpace(os.Getenv("AGENT_API_URL")), "/"),
@@ -54,10 +55,16 @@ func ConfigFromEnv() (Config, error) {
 	if c.APIURL == "" || err != nil {
 		return c, errors.New("AGENT_API_URL must be the DF-IPAM address, such as https://ipam.example.com")
 	}
-	if u.Scheme != "https" && u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1" {
+	if u.Scheme != "https" && !plainHTTPAllowed(u.Hostname()) {
 		return c, errors.New("AGENT_API_URL must use https")
 	}
 	return c, nil
+}
+
+// plainHTTPAllowed names the hosts reached without crossing a network: this machine,
+// and the backend container from the built-in agent on Docker's private network.
+func plainHTTPAllowed(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "backend"
 }
 
 // Client calls the agent API.
@@ -116,24 +123,33 @@ func (c *Client) call(ctx context.Context, method, path string, body, out any) (
 	return res.StatusCode, nil
 }
 
-// Authenticate loads the stored credential, or registers with the one-time
-// token and stores the credential with owner-only permissions.
+// Authenticate loads the stored credential, or registers with the one-time token
+// and stores the credential with owner-only permissions. A token is tried even with
+// a stored credential, because rotation works that way. A token that was already
+// used then fails, and the stored credential carries on, so a restart is safe.
 func (c *Client) Authenticate(ctx context.Context) error {
-	if raw, err := os.ReadFile(c.cfg.CredentialFile); err == nil && strings.TrimSpace(string(raw)) != "" {
-		c.credential = strings.TrimSpace(string(raw))
-		if c.cfg.RegistrationToken == "" {
-			return nil
-		}
+	var stored string
+	if raw, err := os.ReadFile(c.cfg.CredentialFile); err == nil {
+		stored = strings.TrimSpace(string(raw))
 	}
 	if c.cfg.RegistrationToken == "" {
-		return errors.New("no stored credential: set AGENT_REGISTRATION_TOKEN to register this agent")
+		if stored == "" {
+			return errors.New("no stored credential: set AGENT_REGISTRATION_TOKEN to register this agent")
+		}
+		c.credential = stored
+		return nil
 	}
 	var out struct {
 		Credential string `json:"credential"`
 	}
 	c.credential = ""
 	if _, err := c.call(ctx, http.MethodPost, "/register", map[string]string{"token": c.cfg.RegistrationToken, "version": Version}, &out); err != nil {
-		return fmt.Errorf("register: %w", err)
+		if stored == "" {
+			return fmt.Errorf("register: %w", err)
+		}
+		slog.Warn("registration token not accepted: using the stored credential", "error", err)
+		c.credential = stored
+		return nil
 	}
 	c.credential = out.Credential
 	return os.WriteFile(c.cfg.CredentialFile, []byte(out.Credential+"\n"), 0o600)

@@ -11,7 +11,7 @@ BIN := api/bin
 
 COMPOSE := docker compose
 
-.PHONY: help setup env-check dev backend agent web \
+.PHONY: help setup env-check dev backend agent agent-up agent-down agent-logs web \
         docker-build docker-up docker-down docker-restart docker-logs docker-ps docker-migrate docker-retention docker-rotate-secrets \
         db-up db-down db-shell db-reset db-backup test-db-supabase migrate-supabase \
         migrate-up migrate-down migrate-version seed seed-demo db-setup retention rotate-secrets load-test \
@@ -40,8 +40,8 @@ docker-build: ## Build the backend image
 docker-up: ## Start PostgreSQL, migrate, seed, then start the backend and web app
 	@$(LOAD_ENV) $(COMPOSE) up -d --build --wait --remove-orphans db backend web
 
-docker-down: ## Stop the containers. Data stays in the volume
-	@$(LOAD_ENV) $(COMPOSE) down
+docker-down: ## Stop the containers, built-in agent included. Data stays in the volume
+	@$(LOAD_ENV) $(COMPOSE) --profile agent down
 
 docker-restart: ## Restart the backend and web app
 	@$(LOAD_ENV) $(COMPOSE) restart backend web
@@ -80,8 +80,17 @@ db-backup: ## Write an encrypted backup. Needs BACKUP_GPG_RECIPIENT
 backend: ## Run the API and worker without Docker
 	@$(LOAD_ENV) cd api && go run ./cmd/server
 
-agent: ## Run the discovery agent
+agent: ## Run the discovery agent on this machine
 	@$(LOAD_ENV) cd api && go run ./cmd/agent
+
+agent-up: ## Start the built-in discovery agent. First run needs AGENT_REGISTRATION_TOKEN in api/.env
+	@$(LOAD_ENV) $(COMPOSE) --profile agent up -d --build agent
+
+agent-down: ## Stop the built-in discovery agent. Its credential stays in the volume
+	@$(LOAD_ENV) $(COMPOSE) --profile agent stop agent
+
+agent-logs: ## Follow the built-in discovery agent's logs
+	@$(LOAD_ENV) $(COMPOSE) --profile agent logs -f agent
 
 web: ## Run the web app dev server
 	cd web && pnpm dev

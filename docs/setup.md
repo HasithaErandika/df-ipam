@@ -10,7 +10,7 @@ How to run DF-IPAM on your own machine, and how to deploy it to a server. To ent
 | `backend` | The API and the background worker, in one process | `web` only |
 | `db` | PostgreSQL, with its data in the `df-ipam_db-data` volume | `backend` only |
 
-A `migrate` step runs first, applies migrations and the seed, and exits. Discovery agents aren't containers: they run on hosts in the networks they cover.
+A `migrate` step runs first, applies migrations and the seed, and exits. Discovery agents run on hosts in the networks they cover. An optional built-in agent runs as a container: see [step 13](#13-discovery-agents).
 
 Supabase provides sign-in only. All network data stays in your PostgreSQL.
 
@@ -298,6 +298,26 @@ Do this **only after** the sensitive-networks list is agreed. Until then, integr
 | Restricted, approved for scanning | One inside the segment. Add its address to `agents-allow.conf` and the firewall |
 | Restricted, not approved | **None.** Use platform data only |
 | Cloud | **None.** Inventory comes from the APIs |
+
+#### Built-in agent
+
+Runs on this server, so nothing is installed elsewhere. It scans whatever the server can route to, and it can run alongside local agents.
+
+1. In **Discovery Centre**, create an agent, such as `Built-in agent`, and copy its one-time token.
+2. Set `AGENT_REGISTRATION_TOKEN` in `api/.env`.
+3. Run `make agent-up`, and check it shows as active. `make agent-logs` shows what it is doing.
+4. Delete the token line from `api/.env`. The credential is kept in the `agent-data` volume.
+
+| It can | It can't |
+| --- | --- |
+| Ping, reverse DNS and Nmap host discovery on routable segments | Read ARP from remote segments, so MAC addresses come from a local agent or the FortiGate connector |
+| | Reach a network with no route from this server, or the second of two routing domains using the same addresses |
+
+Allow the server's address through the firewall to each segment. Hosts that block ping and those ports won't be seen, so a quiet result doesn't prove an address is unused.
+
+**Choose the agent when it matters.** A job or schedule with no agent goes to whichever agent asks first. Pin it to the local agent if only that one can reach the segment.
+
+#### Local agents
 
 Build the agent with `make build-api`, which writes `api/bin/agent`. On each agent host:
 

@@ -122,6 +122,34 @@ services:
       backend:
         condition: service_healthy
 
+  # Optional built-in discovery agent: `make agent-up`. It scans what this server can
+  # route to, alongside any agents installed in the segments. No capabilities: ICMP
+  # uses the unprivileged socket that ping_group_range allows for this user alone.
+  agent:
+    profiles: [agent]
+    image: df-ipam-agent:local
+    build:
+      context: ./api
+      target: agent
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    sysctls:
+      net.ipv4.ping_group_range: 10001 10001
+    environment:
+      AGENT_API_URL: http://backend:8080
+      AGENT_CREDENTIAL_FILE: /var/lib/df-ipam-agent/credential
+      AGENT_REGISTRATION_TOKEN:
+      AGENT_MAX_PPS:
+      AGENT_POLL_SECONDS:
+    volumes:
+      - agent-data:/var/lib/df-ipam-agent
+    depends_on:
+      backend:
+        condition: service_healthy
+
 # Fixed, so the backend can trust the web container and no other address.
 networks:
   default:
@@ -132,3 +160,4 @@ networks:
 
 volumes:
   db-data:
+  agent-data:

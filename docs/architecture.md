@@ -22,7 +22,7 @@ flowchart LR
 | --- | --- |
 | `cmd/server` | Gin HTTP server, authentication, authorisation, validation and business logic, with the background worker in the same process |
 | `internal/worker` | Discovery scheduling, integration sync, reconciliation, utilisation snapshots, reports, reservation and request expiry, email , run by `cmd/server` unless `WORKER_ENABLED=false` |
-| `cmd/agent` | Runs inside network segments: approved ICMP, ARP/NDP, reverse DNS, Nmap host discovery. Pulls jobs and posts results to the API. Never connects to the database |
+| `cmd/agent` | Runs inside network segments, or as the optional built-in container on the server: approved ICMP, ARP/NDP, reverse DNS, Nmap host discovery. Pulls jobs and posts results to the API. Never connects to the database |
 
 **Containers:** `web` is Nginx, and the only way in. `backend` runs `cmd/server`. `db` is PostgreSQL. `migrate` runs once and exits, so the database owner's password never sits in a running service. A panic in a background job is caught, so it can't stop the API.
 

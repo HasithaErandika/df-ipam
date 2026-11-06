@@ -63,7 +63,7 @@ export function StartJobModal({ subnet: initial, onClose }: { subnet?: Subnet | 
             <SubnetPicker id="job-subnet" value={null} onChange={(s) => s && !subnets.some((x) => x.id === s.id) && setSubnets([...subnets, s])} />
           </>
         </Field>
-        <Field label="Agent (optional)" htmlFor="job-agent" hint="Leave empty to let any active agent take it.">
+        <Field label="Agent (optional)" htmlFor="job-agent" hint="Empty lets any active agent take it. Choose one if only that agent can reach these subnets.">
           <SearchSelect id="job-agent" value={agentId} onChange={setAgentId} emptyLabel="Any agent" loading={agents.isPending} fetchError={agents.error} onRetry={() => agents.refetch()}
             options={agents.data?.data.filter((a) => a.status !== 'revoked').map((a) => ({ value: a.id, label: a.name, detail: a.status })) ?? []} />
         </Field>

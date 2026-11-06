@@ -67,10 +67,11 @@ Defaults:
 
 ## Agents
 
+- **Where they run:** a local agent runs on a host inside a segment. The optional built-in agent runs in a container on the server and scans what the server can route to, without ARP from remote segments. Any number of both can run together, under the same limits and emergency stop. A job with no agent goes to whichever asks first, so pin a job when only one agent can reach its targets.
 - **Registration:** an administrator creates a single-use, expiring token. The agent exchanges it for its own credential.
 - **Authentication:** each agent has its own credential, stored only as a hash.
 - **Least privilege:** an agent can only fetch its own jobs, and post results and heartbeats. It runs as a dedicated user with `CAP_NET_RAW` only, not root.
-- **Lifecycle:** revocation takes effect on the next request. Rotation issues a new one-time token, and the old credential works until the agent registers with it.
+- **Lifecycle:** revocation takes effect on the next request. Rotation issues a new one-time token, and the old credential works until the agent registers with it. A token left in place after use is ignored with a warning, so a restart can't stop the agent.
 - **Health:** heartbeats go to `agent_heartbeats` every 15 seconds. An agent silent for 5 minutes shows as offline. No alert is sent yet.
 
 ## Reconciliation
