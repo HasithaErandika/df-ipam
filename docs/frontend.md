@@ -49,7 +49,7 @@ Every dialog is centred over a blurred background, using `Modal` and `ConfirmDia
 | 1 | Dashboard | Totals, charts, drill-down to records |
 | 2 | Network Management | Organisations through VLANs and blocks, with flexible relationships |
 | 3 | Subnet Management | Searchable inventory, filters (site, VDOM, VLAN, routing domain, environment), CIDR calculator, hierarchy, overlap validation, discovery settings, bulk actions |
-| 4 | IP Address Explorer | Subnet picker, colour-coded grid and table views, search, filters, bulk actions, detail view with evidence and audit history |
+| 4 | IP Address Explorer | Subnet cards found by name, CIDR or IP, an All addresses tab, colour-coded grid and table views, search, filters, bulk actions, detail view with evidence and audit history |
 | 5 | Device Inventory | Device list and detail: interfaces, MACs, IPs, services, discovery history |
 | 6 | Interface Inventory | Cross-device interface search |
 | 7 | Discovery Centre | Agents, policies, approved scopes, schedules, manual runs, job history, scan logs, error reports, exclusions, emergency stop |
