@@ -169,10 +169,11 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Code size and query rules | ✅ Done | Files under 200 lines, function complexity 15 or less in production code, no query per row on read paths |
 | Feedback, confirmations and error handling | 🟦 Built, not viewed | Toasts, confirmation of edits and deletes, friendly errors, sign-out when a session ends |
 | Screens load on demand, tabs are paths | 🟦 Built, not viewed | Old `?tab=` links redirect |
-| Template imports for 17 record types | 🟦 API tested, screens built, not viewed with a real sign-in | Excel workbook or CSV per type, checked per row, second-person approval, discard, reversible. Screens driven in a browser against a mocked API only |
+| Template imports for 17 record types | 🟦 Built, not used with Supabase sign-in | Excel workbook or CSV per type, checked per row, second-person approval, discard, reversible. A real workbook was uploaded, approved and reversed through the screens on the real API, with a test signing key |
 | Built-in discovery agent | 🟦 Tested in Docker, not on a real network | Optional container, `make agent-up`, alongside local agents. No capabilities. Registration, restart and pinned jobs tested on a private Docker network |
-| IP Address Explorer subnet cards | 🟦 API tested, screens driven against a mocked API | Find a subnet by name, CIDR or IP, then open it. Searching a CIDR finds what is inside or around it, on PostgreSQL. All addresses has its own tab |
-| Side panel, page guard and dashboard by role | 🟦 API tested, screens driven against a mocked API | Each role reaches only its pages, checked on the API. Retention has an Edit button for `system:manage` |
+| IP Address Explorer subnet cards | ✅ Done | Find a subnet by name, CIDR or IP, then open it. Searching a CIDR finds what is inside or around it, on PostgreSQL. All addresses has its own tab |
+| Side panel, page guard and dashboard by role | ✅ Done | Each role reaches only its pages. A browser walked all 6 roles through every link and tab on the real API, with a test signing key. Retention has an Edit button for `system:manage` |
+| Scoped reading and editing assigned records | ✅ Done | `inventory:view_scoped` and `inventory:edit_assigned` are enforced by the API. Business services are assigned in User Management. Checked through the screens on the real API |
 | Account menu and details dialog | 🟦 Built, not viewed | Top bar shows a user icon; the menu has Details and Sign out |
 
 ## Waiting on others

@@ -3,9 +3,10 @@ import { useState } from 'react'
 import { Button, ConfirmDialog, ErrorState, Modal, Mono, SkeletonRows } from '../../components/ui'
 import { del, get, post } from '../../lib/api'
 import { environments, formatCapacity, formatDateTime } from '../../lib/format'
-import { useCan } from '../../lib/session'
+import { useCan, useMe } from '../../lib/session'
 import type { FreeRanges, Subnet, Utilisation } from '../../lib/types'
 import { EditSubnetModal } from './EditSubnetModal'
+import { OwnerEditModal } from './OwnerEditModal'
 import { Calculated, Detail } from './Calculated'
 
 const heading = 'mb-1 text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase'
@@ -14,6 +15,8 @@ export function DetailModal({ subnet: initial, onClose }: { subnet: Subnet | nul
   const queryClient = useQueryClient()
   const canEdit = useCan('inventory:edit')
   const canDelete = useCan('inventory:delete')
+  const me = useMe()
+  const editsOwn = !canEdit && me.permissions.includes('inventory:edit_assigned')
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -40,6 +43,7 @@ export function DetailModal({ subnet: initial, onClose }: { subnet: Subnet | nul
   const usage = useQuery({ queryKey: ['subnets', subnet?.id, 'utilisation'], enabled: subnet !== null, queryFn: () => get<Utilisation>(`/subnets/${subnet?.id}/utilisation`) })
   const free = useQuery({ queryKey: ['subnets', subnet?.id, 'free'], enabled: subnet !== null, queryFn: () => get<FreeRanges>(`/subnets/${subnet?.id}/free-ranges`) })
   if (!subnet) return null
+  const owned = editsOwn && (subnet.technicalOwner?.id === me.id || subnet.businessOwner?.id === me.id)
   return (
     <>
       <Modal
@@ -48,10 +52,10 @@ export function DetailModal({ subnet: initial, onClose }: { subnet: Subnet | nul
         onClose={onClose}
         title={subnet.name}
         subtitle={<Mono>{subnet.calculated.cidr}</Mono>}
-        footer={!subnet.archived && (canEdit || canDelete) ? <>
+        footer={!subnet.archived && (canEdit || canDelete || owned) ? <>
           {canDelete && <Button onClick={() => { remove.reset(); setDeleting(true) }}>Delete</Button>}
           {canEdit && <Button onClick={() => setConfirming(true)}>Archive subnet</Button>}
-          {canEdit && <Button variant="primary" onClick={() => setEditing(true)}>Edit subnet</Button>}
+          {(canEdit || owned) && <Button variant="primary" onClick={() => setEditing(true)}>Edit subnet</Button>}
         </> : undefined}
       >
         <div className="grid gap-5 md:grid-cols-2">
@@ -125,7 +129,8 @@ export function DetailModal({ subnet: initial, onClose }: { subnet: Subnet | nul
         onConfirm={() => remove.mutate(subnet.id)}
         onCancel={() => setDeleting(false)}
       />
-      {editing && <EditSubnetModal subnet={subnet} onClose={() => setEditing(false)} onSaved={setSaved} />}
+      {editing && canEdit && <EditSubnetModal subnet={subnet} onClose={() => setEditing(false)} onSaved={setSaved} />}
+      {editing && owned && <OwnerEditModal subnet={subnet} onClose={() => setEditing(false)} onSaved={(s) => { setSaved(s); setEditing(false) }} />}
     </>
   )
 }

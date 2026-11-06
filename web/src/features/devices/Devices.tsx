@@ -16,6 +16,7 @@ const options = (m: Record<string, { label: string }>) => Object.fromEntries(Obj
 
 const deviceDef: EntityDef = {
   key: 'devices', label: 'Devices', singular: 'device', path: '/devices', searchLabel: 'Search devices by name',
+  ownerKey: 'ownerId', ownerLocked: ['ownerId', 'businessServiceId', 'sensitivity', 'status'],
   description: 'One record per machine, however many sources report it. Device type and OS come from people, imports, integrations and discovery evidence; nothing is guessed.',
   fields: [
     { key: 'name', label: 'Name', type: 'text', required: true },

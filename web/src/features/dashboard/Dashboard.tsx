@@ -165,18 +165,18 @@ function InventoryDashboard() {
             <Stat label="Devices" value={data.devices} to="/devices" />
           </div>
           <div className={tiles}>
-            {has('requests:approve') && <Stat label="Pending approvals" value={data.pendingApprovals} to="/requests/approvals" alert />}
-            {has('ip:allocate', 'ip:reserve') && <Stat label="Approved, waiting to be fulfilled" value={data.readyToFulfil} to="/requests/all" />}
+            {has('requests:approve') && <Stat label="Pending approvals" value={data.pendingApprovals ?? 0} to="/requests/approvals" alert />}
+            {has('ip:allocate', 'ip:reserve') && <Stat label="Approved, waiting to be fulfilled" value={data.readyToFulfil ?? 0} to="/requests/all" />}
             <Stat label="Reservations ending within 7 days" value={data.reservationsExpiringSoon} to="/reservations" alert />
-            {!has('requests:approve', 'ip:allocate', 'ip:reserve') && seesRequests && <Stat label="Pending approvals" value={data.pendingApprovals} to={canAudit ? '/requests/all' : '/requests'} />}
+            {!has('requests:approve', 'ip:allocate', 'ip:reserve') && seesRequests && <Stat label="Pending approvals" value={data.pendingApprovals ?? 0} to={canAudit ? '/requests/all' : '/requests'} />}
           </div>
           <div className={tiles}>
             <Stat label="High-utilisation subnets" value={data.highUtilisationSubnets} to="/subnets" alert note="At the latest snapshot" />
             <Stat label="Suspected conflicts" value={data.conflictSuspected} to="/reconciliation" alert />
-            {seesIntegrations && <Stat label="Integrations healthy" value={data.integrationsHealthy} to="/integrations" />}
-            {seesIntegrations && <Stat label="Integrations failing" value={data.integrationsFailing} to="/integrations" alert />}
-            {seesDiscovery && <Stat label="Agents online" value={data.agentsOnline} to="/discovery/agents" note={data.agentsOffline > 0 ? `${formatCount(data.agentsOffline)} offline` : undefined} />}
-            {seesDiscovery && <Stat label="Discovery jobs failed today" value={data.discoveryJobsFailedToday} to="/discovery" alert note={`${formatCount(data.discoveryJobsRunning)} running`} />}
+            {seesIntegrations && <Stat label="Integrations healthy" value={data.integrationsHealthy ?? 0} to="/integrations" />}
+            {seesIntegrations && <Stat label="Integrations failing" value={data.integrationsFailing ?? 0} to="/integrations" alert />}
+            {seesDiscovery && <Stat label="Agents online" value={data.agentsOnline ?? 0} to="/discovery/agents" note={data.agentsOffline ? `${formatCount(data.agentsOffline)} offline` : undefined} />}
+            {seesDiscovery && <Stat label="Discovery jobs failed today" value={data.discoveryJobsFailedToday ?? 0} to="/discovery" alert note={`${formatCount(data.discoveryJobsRunning ?? 0)} running`} />}
           </div>
           <Trends />
           <Breakdown />

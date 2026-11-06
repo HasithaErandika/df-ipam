@@ -1,5 +1,6 @@
 
 
+/** The API leaves out totals of areas this person can't open, and any total of zero. */
 export interface Summary {
   subnetsV4: number
   subnetsV6: number
@@ -13,16 +14,16 @@ export interface Summary {
   devices: number
   quarantined: number
   openFindings: number
-  pendingApprovals: number
-  readyToFulfil: number
+  pendingApprovals?: number
+  readyToFulfil?: number
   reservationsExpiringSoon: number
   highUtilisationSubnets: number
-  integrationsHealthy: number
-  integrationsFailing: number
-  agentsOnline: number
-  agentsOffline: number
-  discoveryJobsRunning: number
-  discoveryJobsFailedToday: number
+  integrationsHealthy?: number
+  integrationsFailing?: number
+  agentsOnline?: number
+  agentsOffline?: number
+  discoveryJobsRunning?: number
+  discoveryJobsFailedToday?: number
 }
 
 /** Counts are strings, because IPv6 totals can pass what a JS number holds. Empty means no snapshot that day. */

@@ -6,6 +6,7 @@ import { RoutingDomainSelect } from '../../components/SearchSelect'
 import { Badge, Card, EmptyState, ErrorState, Input, Meter, Mono, Pagination, Select, SkeletonRows } from '../../components/ui'
 import { useDebounced } from '../../components/workflow'
 import { list, queryString } from '../../lib/api'
+import { useCan } from '../../lib/session'
 import { environments } from '../../lib/format'
 import { useClampPage, usePaging } from '../../lib/paging'
 import type { Subnet } from '../../lib/types'
@@ -28,6 +29,7 @@ function SubnetCard({ subnet, onOpen }: { subnet: Subnet; onOpen: () => void }) 
 
 /** The way into the explorer: find a subnet by name, CIDR or an address inside it. */
 export function SubnetCards({ onOpen }: { onOpen: (s: Subnet) => void }) {
+  const seesAll = useCan('inventory:view')
   const [params, setParams] = useSearchParams()
   const paging = usePaging('subnets', 24)
   const [text, setText] = useState(params.get('subnetQ') ?? '')
@@ -57,7 +59,7 @@ export function SubnetCards({ onOpen }: { onOpen: (s: Subnet) => void }) {
           <Search size={14} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <Input aria-label="Search subnets" placeholder="Name, CIDR such as 10.20.0.0/16, or an IP address" className="pl-8" value={text} onChange={(e) => setText(e.target.value)} />
         </div>
-        <div className="w-56"><RoutingDomainSelect aria-label="Routing domain" emptyLabel="Any routing domain" value={routingDomainId} onChange={(v) => set('routingDomainId', v)} /></div>
+        {seesAll && <div className="w-56"><RoutingDomainSelect aria-label="Routing domain" emptyLabel="Any routing domain" value={routingDomainId} onChange={(v) => set('routingDomainId', v)} /></div>}
         <Select aria-label="Environment" className="w-44!" value={environment} onChange={(e) => set('environment', e.target.value)}>
           <option value="">Any environment</option>
           {Object.entries(environments).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -67,7 +69,8 @@ export function SubnetCards({ onOpen }: { onOpen: (s: Subnet) => void }) {
       {error && <ErrorState error={error} onRetry={refetch} />}
       {data?.data.length === 0 && (filtered
         ? <EmptyState title="No subnets match" body="A CIDR finds the subnets inside it and around it. An IP address finds the subnet holding it." />
-        : <EmptyState title="No subnets yet" body="Add one first, then its addresses appear here." action={<Link className="text-accent hover:underline" to="/subnets">Go to Subnet Management</Link>} />)}
+        : (seesAll ? <EmptyState title="No subnets yet" body="Add one first, then its addresses appear here." action={<Link className="text-accent hover:underline" to="/subnets">Go to Subnet Management</Link>} />
+          : <EmptyState title="Nothing to show yet" body="You see subnets of the business services assigned to you. Ask an administrator to assign them." />))}
       {data && data.data.length > 0 && (
         <>
           <div className="grid gap-2.5 p-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

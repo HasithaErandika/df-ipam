@@ -32,7 +32,7 @@ describe('the menu follows the role', () => {
   })
 
   it('offers Business Viewers only what works for them', () => {
-    expect(labels('Business Viewer')).toEqual(['Dashboard', 'Alerts and Notifications', 'Reports'])
+    expect(labels('Business Viewer')).toEqual(['Dashboard', 'IP Address Explorer', 'Alerts and Notifications', 'Reports'])
   })
 })
 
@@ -42,6 +42,7 @@ describe('canOpen', () => {
     expect(canOpen('/discovery/agents', roles['Security Auditor'])).toBe(true)
     expect(canOpen('/users', roles['IPAM Administrator'])).toBe(false)
     expect(canOpen('/subnets', roles['Business Viewer'])).toBe(false)
+    expect(canOpen('/ip-addresses/all', roles['Business Viewer'])).toBe(true)
   })
 
   it('guards pages with no menu link', () => {

@@ -24,7 +24,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/network', label: 'Network Management', icon: Network, anyOf: view },
       { to: '/subnets', label: 'Subnet Management', icon: TableProperties, anyOf: view },
-      { to: '/ip-addresses', label: 'IP Address Explorer', icon: Boxes, anyOf: view },
+      { to: '/ip-addresses', label: 'IP Address Explorer', icon: Boxes, anyOf: ['inventory:view', 'inventory:view_scoped'] },
       { to: '/devices', label: 'Device Inventory', icon: Server, anyOf: view },
       { to: '/interfaces', label: 'Interface Inventory', icon: Cable, anyOf: view },
     ],

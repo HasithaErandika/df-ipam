@@ -36,6 +36,9 @@ export interface User {
   isActive: boolean
   lastLoginAt: string | null
   roles: string[]
+  scoped: boolean
+  businessServiceIds: string[]
+  businessServices: string[]
 }
 
 export interface Role { id: string; name: string; description: string }

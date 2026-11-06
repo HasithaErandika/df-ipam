@@ -25,6 +25,9 @@ export interface FieldDef {
 interface ColumnDef { label: string; render: (r: Row) => ReactNode; className?: string }
 
 export interface EntityDef {
+  /** The field naming who owns a record. Its owner may edit it with inventory:edit_assigned, apart from ownerLocked. */
+  ownerKey?: string
+  ownerLocked?: string[]
   key: string
   label: string
   singular: string

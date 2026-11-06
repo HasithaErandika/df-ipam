@@ -16,8 +16,11 @@ import { SubnetCards } from './SubnetCards'
 import { SubnetGrid } from './SubnetGrid'
 import { SubnetSummary } from './SubnetSummary'
 
-function SubnetView({ subnet, grid, params, set, onBack }: { subnet: Subnet; grid: boolean; params: URLSearchParams; set: SetParams; onBack: () => void }) {
-  const toggle = (
+function SubnetView({ subnet, grid: wanted, params, set, onBack }: { subnet: Subnet; grid: boolean; params: URLSearchParams; set: SetParams; onBack: () => void }) {
+  // The grid walks the whole subnet, so it needs the whole inventory.
+  const seesAll = useCan('inventory:view')
+  const grid = wanted && seesAll
+  const toggle = seesAll && (
     <div className="ml-auto flex gap-1" role="group" aria-label="View">
       <Button variant={grid ? 'secondary' : 'primary'} aria-pressed={!grid} onClick={() => set({ view: null })}><List size={14} aria-hidden /> Table</Button>
       <Button variant={grid ? 'primary' : 'secondary'} aria-pressed={grid} onClick={() => set({ view: 'grid' })}><Grid3x3 size={14} aria-hidden /> Grid</Button>

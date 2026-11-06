@@ -7,7 +7,7 @@ import { Detail, Tabs } from '../../components/workflow'
 import { useChecks } from '../../components/workflow'
 import { ApiError, get, patchPlain, post } from '../../lib/api'
 import { formatDateTime, humanAction } from '../../lib/format'
-import { useCan } from '../../lib/session'
+import { useCan, useMe } from '../../lib/session'
 import type { EvidenceItem, HistoryEntry, IPRecord } from '../../lib/types'
 import { choose, ip, issues as check, optionalMAC } from '../../lib/validation'
 import { DevicePanel, heading } from './DevicePanel'
@@ -66,13 +66,17 @@ function EditRecord({ record, onClose }: { record: IPRecord; onClose: () => void
 }
 
 export function RecordModal({ id, onClose }: { id: string; onClose: () => void }) {
-  const canEdit = useCan('inventory:edit')
+  const me = useMe()
+  const seesAll = me.permissions.includes('inventory:view')
+  const editsAll = me.permissions.includes('inventory:edit')
+  const editsOwn = me.permissions.includes('inventory:edit_assigned')
   const [tab, setTab] = useState('device')
   const [editing, setEditing] = useState(false)
   const record = useQuery({ queryKey: ['ip', id], queryFn: () => get<IPRecord>(`/ip-addresses/${id}`) })
   const history = useQuery({ queryKey: ['ip', id, 'history'], enabled: tab === 'history', queryFn: () => get<HistoryEntry[]>(`/ip-addresses/${id}/history`) })
   const evidence = useQuery({ queryKey: ['ip', id, 'evidence'], enabled: tab === 'evidence', queryFn: () => get<EvidenceItem[]>(`/ip-addresses/${id}/evidence`) })
   const r = record.data
+  const canEdit = editsAll || (editsOwn && r?.ownerId === me.id)
   return (
     <>
       <Modal open onClose={onClose} size="xl" title={r ? r.address : 'Address'}
@@ -81,18 +85,18 @@ export function RecordModal({ id, onClose }: { id: string; onClose: () => void }
         {record.isPending && <SkeletonRows rows={6} />}
         {record.error && <ErrorState error={record.error} onRetry={record.refetch} />}
         {r && (
-          <div className="grid gap-5 md:grid-cols-[1fr_1.2fr]">
+          <div className={seesAll ? 'grid gap-5 md:grid-cols-[1fr_1.2fr]' : ''}>
             <section>
               <h3 className={heading}>Record</h3>
               <dl>
                 <Detail label="Hostname">{r.hostname || '—'}</Detail>
                 <Detail label="FQDN">{r.fqdn || '—'}</Detail>
-                <Detail label="MAC">{r.mac ? <Mono>{r.mac}</Mono> : '—'}</Detail>
+                {seesAll && <Detail label="MAC">{r.mac ? <Mono>{r.mac}</Mono> : '—'}</Detail>}
                 <Detail label="Owner">{r.ownerEmail ?? '—'}</Detail>
                 <Detail label="Application">{r.applicationName ?? '—'}</Detail>
                 <Detail label="Business service">{r.businessServiceName ?? '—'}</Detail>
                 <Detail label="Site">{r.siteName ?? '—'}</Detail>
-                <Detail label="Confidence">{r.confidenceScore === null ? '—' : `${r.confidenceScore}%`}</Detail>
+                {seesAll && <Detail label="Confidence">{r.confidenceScore === null ? '—' : `${r.confidenceScore}%`}</Detail>}
                 {r.confidenceExplanation && <Detail label="Why">{r.confidenceExplanation}</Detail>}
                 <Detail label="First seen">{r.firstSeen ? formatDateTime(r.firstSeen) : '—'}</Detail>
                 <Detail label="Last seen">{r.lastSeen ? formatDateTime(r.lastSeen) : '—'}</Detail>
@@ -100,7 +104,7 @@ export function RecordModal({ id, onClose }: { id: string; onClose: () => void }
               </dl>
               {r.notes && <p className="mt-2 text-[13px] text-ink-2">{r.notes}</p>}
             </section>
-            <section>
+            {seesAll && <section>
               <Tabs tabs={[{ key: 'device', label: 'Device' }, { key: 'evidence', label: 'Evidence' }, { key: 'history', label: 'History' }]} active={tab} onChange={setTab} />
               {tab === 'device' && <DevicePanel id={id} />}
               {tab === 'evidence' && (evidence.isPending ? <SkeletonRows rows={3} /> : evidence.error ? <ErrorState error={evidence.error} /> :
@@ -111,7 +115,7 @@ export function RecordModal({ id, onClose }: { id: string; onClose: () => void }
                 history.data!.length === 0 ? <p className="text-[13px] text-ink-3">No changes recorded.</p> : (
                   <ul>{history.data!.map((h, i) => <li key={i} className="flex justify-between border-b border-line py-1 text-[13px] last:border-0"><span>{humanAction(h.action)}</span><span className="text-ink-3">{h.actorEmail ?? 'System'} · {formatDateTime(h.occurredAt)}</span></li>)}</ul>
                 ))}
-            </section>
+            </section>}
           </div>
         )}
       </Modal>

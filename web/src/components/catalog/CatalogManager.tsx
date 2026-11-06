@@ -3,7 +3,7 @@ import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { del, list, queryString } from '../../lib/api'
 import { useClampPage, usePaging } from '../../lib/paging'
-import { useCan } from '../../lib/session'
+import { useCan, useMe } from '../../lib/session'
 import { Button, Card, ConfirmDialog, EmptyState, ErrorState, Input, Pagination, SkeletonRows, Td, Th } from '../ui'
 import { useDebounced } from '../workflow'
 import { EditModal } from './EditModal'
@@ -15,6 +15,9 @@ export function CatalogManager({ def }: { def: EntityDef }) {
   const canCreate = useCan(def.writePermission ?? 'inventory:create')
   const canEdit = useCan(def.writePermission ?? 'inventory:edit')
   const canDelete = useCan(def.writePermission ?? 'inventory:delete')
+  const me = useMe()
+  const editsOwn = Boolean(def.ownerKey) && !canEdit && me.permissions.includes('inventory:edit_assigned')
+  const mayEdit = (r: Row) => canEdit || (editsOwn && r[def.ownerKey ?? ''] === me.id)
   const writable = !def.readOnly
   const paging = usePaging(def.key)
   const [search, setSearch] = useState('')
@@ -34,7 +37,7 @@ export function CatalogManager({ def }: { def: EntityDef }) {
       setRemoving(null)
     },
   })
-  const showActions = writable && (canEdit || canDelete)
+  const showActions = writable && (canEdit || canDelete || editsOwn)
   return (
     <Card title={def.label} action={writable && canCreate && <Button variant="primary" className="h-7" onClick={() => setEditing('new')}><Plus size={14} aria-hidden /> New {def.singular}</Button>}>
       <p className="border-b border-line px-4 py-2 text-[12.5px] text-ink-2">{def.description}</p>
@@ -62,7 +65,7 @@ export function CatalogManager({ def }: { def: EntityDef }) {
                     {(showActions || def.rowAction) && (
                       <Td className="text-right whitespace-nowrap">
                         {def.rowAction?.(r)}
-                        {writable && canEdit && <Button variant="ghost" className="h-7 px-1.5" aria-label={`Edit ${def.singular}`} onClick={() => setEditing(r)}><Pencil size={14} /></Button>}
+                        {writable && mayEdit(r) && <Button variant="ghost" className="h-7 px-1.5" aria-label={`Edit ${def.singular}`} onClick={() => setEditing(r)}><Pencil size={14} /></Button>}
                         {writable && canDelete && <Button variant="ghost" className="h-7 px-1.5" aria-label={`Delete ${def.singular}`} onClick={() => { remove.reset(); setRemoving(r) }}><Trash2 size={14} /></Button>}
                       </Td>
                     )}
@@ -74,7 +77,7 @@ export function CatalogManager({ def }: { def: EntityDef }) {
           <Pagination meta={data.meta} onPage={paging.setPage} onPageSize={paging.setPageSize} />
         </>
       )}
-      {editing && <EditModal def={def} row={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && <EditModal def={canEdit ? def : { ...def, fields: def.fields.filter((f) => !def.ownerLocked?.includes(f.key)) }} row={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       <ConfirmDialog open={removing !== null} title={`Delete this ${def.singular}?`}
         body="Records that still use it block the delete. The change is recorded in the audit log."
         confirmLabel="Delete" busy={remove.isPending} error={remove.error} onConfirm={() => removing && remove.mutate(removing.id)} onCancel={() => setRemoving(null)} />

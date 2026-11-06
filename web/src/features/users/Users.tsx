@@ -2,7 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Plus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, FormError, Input, Modal, PageHeader, Pagination, SkeletonRows, Td, Th, useConfirmSave } from '../../components/ui'
-import { list, post, put, queryString } from '../../lib/api'
+import { list, listAll, post, put, queryString } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
 import { useClampPage, usePaging } from '../../lib/paging'
 import { useMe } from '../../lib/session'
@@ -46,6 +46,42 @@ function RolesDrawer({ user, onClose }: { user: User | null; onClose: () => void
   )
 }
 
+function ScopeDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const services = useQuery({ queryKey: ['business-services', 'all'], enabled: user !== null, queryFn: () => listAll<{ id: string; name: string }>('/business-services') })
+  const [chosen, setChosen] = useState<Set<string>>(new Set())
+  useEffect(() => { setChosen(new Set(user?.businessServiceIds ?? [])) }, [user])
+  const confirmSave = useConfirmSave()
+  const save = useMutation({ meta: { success: 'Business services saved.', inlineError: true },
+    mutationFn: () => put(`/users/${user?.id}/scope`, { businessServiceIds: [...chosen] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['users'] }); onClose() },
+  })
+  const toggle = (id: string) => setChosen((prev) => {
+    const next = new Set(prev)
+    if (!next.delete(id)) next.add(id)
+    return next
+  })
+  return (
+    <Modal open={user !== null} onClose={onClose} title="Assign business services" subtitle={user?.email}
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => confirmSave(`the business services of ${user?.email}`, () => save.mutate())}>Save</Button></>}>
+      <p className="mb-2 text-[13px] text-ink-2">They see subnets and addresses of these services, and scoped reports, without infrastructure details.</p>
+      {services.isPending && <SkeletonRows rows={5} />}
+      {services.error && <ErrorState error={services.error} onRetry={services.refetch} />}
+      {services.data?.length === 0 && <EmptyState title="No business services yet" body="Add them under Network Management first." />}
+      <fieldset className="max-h-72 space-y-0.5 overflow-y-auto">
+        <legend className="sr-only">Business services</legend>
+        {services.data?.map((s) => (
+          <label key={s.id} className="flex cursor-pointer items-center gap-2.5 rounded-md p-1.5 hover:bg-surface-2">
+            <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={chosen.has(s.id)} onChange={() => toggle(s.id)} />
+            <span className="text-ink">{s.name}</span>
+          </label>
+        ))}
+      </fieldset>
+      <div className="mt-3"><FormError error={save.error} /></div>
+    </Modal>
+  )
+}
+
 function InviteDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [email, setEmail] = useState('')
   const invite = useMutation({ meta: { success: 'Invitation sent.', inlineError: true },
@@ -72,6 +108,7 @@ export function Users() {
   const canManage = me.permissions.includes('users:manage')
   const paging = usePaging()
   const [editing, setEditing] = useState<User | null>(null)
+  const [scoping, setScoping] = useState<User | null>(null)
   const [inviting, setInviting] = useState(false)
   const [search, setSearch] = useState('')
   const q = useDebounced(search.trim())
@@ -100,10 +137,11 @@ export function Users() {
                   {data.data.map((u) => (
                     <tr key={u.id}>
                       <Td className="font-medium text-ink">{u.email}</Td>
-                      <Td><div className="flex flex-wrap gap-1">{u.roles.length ? u.roles.map((r) => <Badge key={r} tone="accent">{r}</Badge>) : <span className="text-ink-3">No role</span>}</div></Td>
+                      <Td><div className="flex flex-wrap gap-1">{u.roles.length ? u.roles.map((r) => <Badge key={r} tone="accent">{r}</Badge>) : <span className="text-ink-3">No role</span>}</div>
+                        {u.scoped && <span className="mt-0.5 block text-[12px] text-ink-3">{u.businessServices.length ? u.businessServices.join(', ') : 'No business services yet'}</span>}</Td>
                       <Td>{u.isActive ? <Badge tone="ok">Active</Badge> : <Badge tone="danger">Inactive</Badge>}</Td>
                       <Td className="text-ink-2">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : '—'}</Td>
-                      <Td className="text-right">{u.id !== me.id && <Button variant="ghost" className="h-7 px-2" onClick={() => setEditing(u)}>Roles</Button>}</Td>
+                      <Td className="text-right whitespace-nowrap">{u.id !== me.id && <>{u.scoped && <Button variant="ghost" className="h-7 px-2" onClick={() => setScoping(u)}>Business services</Button>}<Button variant="ghost" className="h-7 px-2" onClick={() => setEditing(u)}>Roles</Button></>}</Td>
                     </tr>
                   ))}
                 </tbody>
@@ -114,6 +152,7 @@ export function Users() {
         )}
       </Card>
       <RolesDrawer user={editing} onClose={() => setEditing(null)} />
+      <ScopeDialog user={scoping} onClose={() => setScoping(null)} />
       <InviteDrawer open={inviting} onClose={() => setInviting(false)} />
     </>
   )

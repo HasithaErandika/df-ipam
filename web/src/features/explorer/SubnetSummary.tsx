@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react'
 import { type ReactNode } from 'react'
 import { Badge, Button, Card, Meter, Mono } from '../../components/ui'
 import { environments } from '../../lib/format'
+import { useCan } from '../../lib/session'
 import type { Subnet } from '../../lib/types'
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -11,6 +12,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 /** The open subnet at a glance, above its addresses. */
 export function SubnetSummary({ subnet, onBack }: { subnet: Subnet; onBack: () => void }) {
   const net = subnet.calculated
+  const seesAll = useCan('inventory:view')
   return (
     <Card className="mb-3">
       <div className="flex flex-wrap items-start justify-between gap-3 p-3">
@@ -27,8 +29,8 @@ export function SubnetSummary({ subnet, onBack }: { subnet: Subnet; onBack: () =
       <dl className="grid grid-cols-2 gap-3 border-t border-line p-3 md:grid-cols-3 xl:grid-cols-[1fr_1fr_1fr_1fr_2fr_1fr]">
         <Fact label="Routing domain">{subnet.routingDomainName}</Fact>
         <Fact label="Site">{subnet.site?.name ?? '—'}</Fact>
-        <Fact label="VLAN">{subnet.vlan?.name ?? '—'}</Fact>
-        <Fact label="Gateway">{subnet.gateway ? <Mono>{subnet.gateway}</Mono> : '—'}</Fact>
+        {seesAll && <Fact label="VLAN">{subnet.vlan?.name ?? '—'}</Fact>}
+        {seesAll && <Fact label="Gateway">{subnet.gateway ? <Mono>{subnet.gateway}</Mono> : '—'}</Fact>}
         <Fact label="Usable range"><Mono>{net.firstUsable} – {net.lastUsable}</Mono></Fact>
         <Fact label="Usable addresses"><span className="tabular-nums">{net.usableAddresses}</span></Fact>
       </dl>

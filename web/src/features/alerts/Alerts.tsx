@@ -154,8 +154,8 @@ function Attention() {
   const { data } = useQuery({ queryKey: ['summary'], enabled: canView, queryFn: () => get<Summary>('/dashboard/summary') })
   if (!data) return null
   const items = [
-    { n: data.pendingApprovals, label: 'requests waiting for approval', to: '/requests/all', tone: 'warn' as const },
-    { n: data.readyToFulfil, label: 'approved requests ready to fulfil', to: '/requests/all', tone: 'accent' as const },
+    { n: data.pendingApprovals ?? 0, label: 'requests waiting for approval', to: '/requests/all', tone: 'warn' as const },
+    { n: data.readyToFulfil ?? 0, label: 'approved requests ready to fulfil', to: '/requests/all', tone: 'accent' as const },
     { n: data.reservationsExpiringSoon, label: 'reservations ending within a week', to: '/reservations', tone: 'warn' as const },
     { n: data.conflictSuspected, label: 'addresses with a suspected conflict', to: '/reconciliation', tone: 'danger' as const },
     { n: data.openFindings, label: 'open reconciliation findings', to: '/reconciliation', tone: 'accent' as const },
