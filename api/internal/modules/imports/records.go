@@ -58,7 +58,7 @@ func (h *Handler) queue(c *gin.Context) {
 	p := httpx.ParsePage(c)
 	ctx := c.Request.Context()
 	const where = ` FROM import_records r JOIN import_batches b ON b.id = r.batch_id WHERE b.status = 'validated' AND r.status IN ('needs_enrichment','invalid')
-		AND NOT coalesce((r.parsed->>'comment')::boolean, false)`
+		AND NOT coalesce((r.parsed->>'comment')::boolean, false) AND b.format <> 'template'`
 	var total int64
 	if err := h.conn.QueryRow(ctx, "SELECT count(*)"+where).Scan(&total); err != nil {
 		httpx.Fail(c, err)
@@ -120,6 +120,9 @@ func lockRecord(ctx context.Context, tx pgx.Tx, id string) (lockedRecord, error)
 	}
 	if err == nil && r.batchStatus != "validated" {
 		return r, httpx.NewError(http.StatusConflict, "IMPORT_LOCKED", "Only batches waiting for approval can be corrected.")
+	}
+	if err == nil && r.routingDomain == "" {
+		return r, httpx.NewError(http.StatusConflict, "IMPORT_FIX_IN_FILE", "Template rows are corrected in the file: discard this import, fix the row and upload again.")
 	}
 	return r, err
 }

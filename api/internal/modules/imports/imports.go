@@ -16,6 +16,7 @@ import (
 )
 
 const maxBytes = 5 << 20 // larger exports are split before upload
+const maxBody = 7 << 20  // a 5 MB workbook arrives as base64
 
 type Batch struct {
 	ID                string          `json:"id"`
@@ -56,12 +57,15 @@ func NewHandler(conn db.Conn) *Handler { return &Handler{conn} }
 func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/imports", h.list, auth.ImportsRun, auth.AuditView)
 	g.Handle(http.MethodPost, "/imports", h.upload, auth.ImportsRun)
+	g.Handle(http.MethodGet, "/imports/templates", h.templates, auth.ImportsRun)
+	g.Handle(http.MethodGet, "/imports/templates/:key", h.template, auth.ImportsRun)
 	g.Handle(http.MethodGet, "/imports/enrichment-queue", h.queue, auth.ImportsRun)
 	g.Handle(http.MethodPatch, "/imports/records/:id", h.enrich, auth.ImportsRun)
 	g.Handle(http.MethodGet, "/imports/:id", h.get, auth.ImportsRun, auth.AuditView)
 	g.Handle(http.MethodGet, "/imports/:id/preview", h.preview, auth.ImportsRun, auth.AuditView)
 	g.Handle(http.MethodPost, "/imports/:id/approve", h.approve, auth.ImportsRun)
 	g.Handle(http.MethodPost, "/imports/:id/reverse", h.reverse, auth.ImportsRun)
+	g.Handle(http.MethodPost, "/imports/:id/discard", h.discard, auth.ImportsRun)
 }
 
 const batchCols = `b.id::text, b.file_name, b.file_hash, b.format, b.status, b.summary, b.routing_domain_id::text, rd.name, b.environment,
@@ -135,7 +139,9 @@ func recount(ctx context.Context, tx pgx.Tx, batchID string) error {
 		  'duplicate', count(*) FILTER (WHERE status = 'duplicate'),
 		  'overlap', count(*) FILTER (WHERE status = 'overlap'),
 		  'needsEnrichment', count(*) FILTER (WHERE status = 'needs_enrichment'),
-		  'committed', count(*) FILTER (WHERE status = 'committed'))
+		  'committed', count(*) FILTER (WHERE status = 'committed'),
+		  'sheets', coalesce((SELECT jsonb_object_agg(k.sheet, k.n) FROM (SELECT parsed->>'sheet' AS sheet, count(*) AS n FROM import_records
+		    WHERE batch_id = $1::uuid AND status IN ('valid','committed') AND parsed ? 'sheet' GROUP BY 1) k), '{}'::jsonb))
 		FROM import_records WHERE batch_id = $1::uuid) WHERE id = $1::uuid`, batchID)
 	return err
 }

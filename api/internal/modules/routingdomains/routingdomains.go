@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
@@ -67,10 +66,7 @@ func (h *Handler) remove(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM routing_domains WHERE id = $1::uuid`, id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "routing_domain.delete", ObjectType: "routing_domain", ObjectID: id, Old: old})
+		return Remove(ctx, tx, actor, id, old)
 	})
 	if db.ErrorCode(err) == db.CodeForeignKey {
 		err = httpx.NewError(http.StatusConflict, "ROUTING_DOMAIN_IN_USE", "Subnets, blocks or other records use this routing domain. Archive or move them first.")
@@ -111,13 +107,7 @@ func (h *Handler) list(c *gin.Context) {
 }
 
 func (h *Handler) create(c *gin.Context) {
-	var req struct {
-		OrganisationID string  `json:"organisationId"`
-		Name           string  `json:"name"`
-		Kind           string  `json:"kind"`
-		RD             *string `json:"routeDistinguisher"`
-		IsIsolated     bool    `json:"isIsolated"`
-	}
+	var req NewDomain
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Fail(c, httpx.ErrBadRequest)
 		return
@@ -133,13 +123,9 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	ctx, actor := c.Request.Context(), auth.Current(c).UserID
 	var id string
-	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO routing_domains (organisation_id, name, kind, route_distinguisher, is_isolated, created_by, updated_by)
-			VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid, $6::uuid) RETURNING id::text`,
-			req.OrganisationID, req.Name, req.Kind, req.RD, req.IsIsolated, actor).Scan(&id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "routing_domain.create", ObjectType: "routing_domain", ObjectID: id, New: req})
+	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) (err error) {
+		id, err = Insert(ctx, tx, actor, req)
+		return err
 	})
 	switch db.ErrorCode(err) {
 	case db.CodeUnique:

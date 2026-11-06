@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
@@ -64,14 +63,7 @@ func (h *Handler) remove(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM routing_domains rd WHERE rd.organisation_id = $1::uuid AND rd.kind = 'default'
-			AND NOT EXISTS (SELECT 1 FROM subnets s WHERE s.routing_domain_id = rd.id)`, id); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM organisations WHERE id = $1::uuid`, id); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "organisation.delete", ObjectType: "organisation", ObjectID: id, Old: old})
+		return Remove(ctx, tx, actor, id, old)
 	})
 	if db.ErrorCode(err) == db.CodeForeignKey {
 		err = httpx.NewError(http.StatusConflict, "ORGANISATION_IN_USE", "This organisation still has routing domains, sites or other records. Remove them first.")
@@ -128,16 +120,9 @@ func (h *Handler) create(c *gin.Context) {
 	ctx, actor := c.Request.Context(), auth.Current(c).UserID
 	var o Organisation
 	err := db.InTx(ctx, h.pool, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `INSERT INTO organisations (name, code, created_by, updated_by)
-			VALUES ($1, $2, $3::uuid, $3::uuid) RETURNING id::text, name, code, created_at`, req.Name, req.Code, actor).
-			Scan(&o.ID, &o.Name, &o.Code, &o.CreatedAt); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO routing_domains (organisation_id, name, kind, created_by, updated_by)
-			VALUES ($1::uuid, 'Default', 'default', $2::uuid, $2::uuid)`, o.ID, actor); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "organisation.create", ObjectType: "organisation", ObjectID: o.ID, New: o})
+		var err error
+		o, err = Insert(ctx, tx, actor, req.Name, req.Code)
+		return err
 	})
 	if db.ErrorCode(err) == db.CodeUnique {
 		httpx.Fail(c, httpx.NewError(http.StatusConflict, "ALREADY_EXISTS", "An organisation with this name or code already exists."))

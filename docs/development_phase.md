@@ -106,7 +106,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Device and interface inventory screens | 🟦 Built, not tested | Device types and OS family with icons |
 | Duplicate device matching and merge | 🟦 Built, not tested | By serial, interface MAC, management IP or hostname |
 | Production file parser | ⛔ Blocked | Tolerant parser built (CIDR, address and mask, VDOM-prefixed lines). Needs `Prod_Subnets.txt` and `Prod_VDOMs_Subnets.txt` to confirm no line is dropped |
-| Import preview, second-person approval, reversal, enrichment queue | 🟦 Built, API tested | Every line kept with a status. Upload, correction, approval and reversal tested on PostgreSQL. Screen not checked by hand. Uploads over 1 MB are refused by the global body limit, so the 5 MB limit can't be reached yet |
+| Import preview, second-person approval, reversal, enrichment queue | 🟦 Built, API tested | Every line kept with a status. Upload, correction, approval and reversal tested on PostgreSQL. Screen not checked by hand |
 
 ## Phase 4: Discovery
 
@@ -169,6 +169,7 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 | Code size and query rules | ✅ Done | Files under 200 lines, function complexity 15 or less in production code, no query per row on read paths |
 | Feedback, confirmations and error handling | 🟦 Built, not viewed | Toasts, confirmation of edits and deletes, friendly errors, sign-out when a session ends |
 | Screens load on demand, tabs are paths | 🟦 Built, not viewed | Old `?tab=` links redirect |
+| Template imports for 17 record types | 🟦 API tested, screens to do | Excel workbook or CSV per type, checked per row, second-person approval, discard, reversible |
 | Account menu and details dialog | 🟦 Built, not viewed | Top bar shows a user icon; the menu has Details and Sign out |
 
 ## Waiting on others
@@ -189,4 +190,3 @@ Everything DF-IPAM has to deliver, and where it stands. Update this file when a 
 - Turn off public sign-ups in Supabase.
 - Change the database password and `service_role` key, because both were shared in chat.
 - Add a screen to set and reset passwords.
-- Fix the global 1 MB body limit, which also caps the 5 MB import and 8 MB agent routes.

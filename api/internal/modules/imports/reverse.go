@@ -34,19 +34,12 @@ func reverseBatch(ctx context.Context, tx pgx.Tx, actor, id string) (Batch, erro
 	if b.Status != "committed" {
 		return b, httpx.NewError(http.StatusConflict, "IMPORT_LOCKED", "Only committed batches can be reversed.")
 	}
-	rows, err := tx.Query(ctx, `SELECT id::text, line_number, created_object_id::text FROM import_records
-		WHERE batch_id = $1::uuid AND status = 'committed' AND created_object_type = 'subnet' ORDER BY line_number DESC`, id)
-	if err != nil {
-		return b, err
+	if b.Format == templateFormat {
+		err = reverseSheets(ctx, tx, actor, b)
+	} else {
+		err = reverseSubnets(ctx, tx, actor, id)
 	}
-	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (madeSubnet, error) {
-		var m madeSubnet
-		return m, r.Scan(&m.record, &m.line, &m.subnet)
-	})
 	if err != nil {
-		return b, err
-	}
-	if err := deleteSubnets(ctx, tx, actor, list); err != nil {
 		return b, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE import_batches SET status = 'reversed', reversed_at = now(), reversed_by = $2::uuid WHERE id = $1::uuid`, id, actor); err != nil {
@@ -60,7 +53,23 @@ func reverseBatch(ctx context.Context, tx pgx.Tx, actor, id string) (Batch, erro
 		return out, err
 	}
 	return out, audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "import.reverse", ObjectType: "import_batch", ObjectID: id,
-		Old: map[string]any{"subnets": len(list)}})
+		Old: map[string]any{"format": b.Format, "summary": b.Summary}})
+}
+
+func reverseSubnets(ctx context.Context, tx pgx.Tx, actor, id string) error {
+	rows, err := tx.Query(ctx, `SELECT id::text, line_number, created_object_id::text FROM import_records
+		WHERE batch_id = $1::uuid AND status = 'committed' AND created_object_type = 'subnet' ORDER BY line_number DESC`, id)
+	if err != nil {
+		return err
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (madeSubnet, error) {
+		var m madeSubnet
+		return m, r.Scan(&m.record, &m.line, &m.subnet)
+	})
+	if err != nil {
+		return err
+	}
+	return deleteSubnets(ctx, tx, actor, list)
 }
 
 func deleteSubnets(ctx context.Context, tx pgx.Tx, actor string, list []madeSubnet) error {

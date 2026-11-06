@@ -30,6 +30,11 @@ func (r uploadRequest) validate() error {
 	switch {
 	case r.FileName == "" || len(r.FileName) > 255:
 		return httpx.Validation("fileName", "Name the file.")
+	case r.Format == templateFormat:
+		if strings.TrimSpace(r.Content) == "" || len(r.Content) > maxBody {
+			return httpx.Validation("content", "Upload a non-empty file of at most 5 MB.")
+		}
+		return nil
 	case Formats[r.Format] == "":
 		return httpx.Validation("format", "Choose a file format.")
 	case !httpx.IsUUID(r.RoutingDomainID):
@@ -44,7 +49,7 @@ func (r uploadRequest) validate() error {
 
 func (h *Handler) upload(c *gin.Context) {
 	var req uploadRequest
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes+1<<16)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBody+1<<16)
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Fail(c, httpx.ErrBadRequest)
 		return
@@ -57,12 +62,16 @@ func (h *Handler) upload(c *gin.Context) {
 	ctx, actor := c.Request.Context(), auth.Current(c).UserID
 	var out Batch
 	err := db.InTx(ctx, h.conn, func(tx pgx.Tx) (err error) {
-		out, err = storeUpload(ctx, tx, actor, req)
+		if req.Format == templateFormat {
+			out, err = storeTemplate(ctx, tx, actor, req)
+		} else {
+			out, err = storeUpload(ctx, tx, actor, req)
+		}
 		return err
 	})
 	switch db.ErrorCode(err) {
 	case db.CodeUnique:
-		err = httpx.NewError(http.StatusConflict, "IMPORT_DUPLICATE_FILE", "This exact file was uploaded before.")
+		err = httpx.NewError(http.StatusConflict, "IMPORT_DUPLICATE_FILE", "This exact file is already imported or waiting for approval.")
 	case db.CodeForeignKey:
 		err = httpx.Validation("routingDomainId", "That routing domain doesn't exist.")
 	}

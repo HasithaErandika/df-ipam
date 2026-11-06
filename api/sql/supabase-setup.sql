@@ -1209,6 +1209,15 @@ REVOKE DELETE, TRUNCATE ON users FROM dfipam_app;
 -- A safer ceiling on all discovery traffic. A value someone chose is left alone.
 UPDATE system_settings SET value = '100' WHERE key = 'discovery.max_total_pps' AND value = '500';
 
+-- 000015_import_discard.up.sql
+-- A batch waiting for approval can be discarded. A file may come back after it was
+-- discarded or reversed, so only live batches hold its hash.
+ALTER TABLE import_batches DROP CONSTRAINT import_batches_status_check;
+ALTER TABLE import_batches ADD CONSTRAINT import_batches_status_check CHECK (status IN
+  ('uploaded','validated','approved','committed','reversed','failed','discarded'));
+ALTER TABLE import_batches DROP CONSTRAINT import_batches_file_hash_key;
+CREATE UNIQUE INDEX import_batches_live_file_idx ON import_batches (file_hash) WHERE status NOT IN ('reversed','discarded');
+
 -- Seed data
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view') ON CONFLICT (resource, action) DO NOTHING;
 INSERT INTO permissions (resource, action) VALUES ('inventory', 'view_scoped') ON CONFLICT (resource, action) DO NOTHING;
@@ -1331,6 +1340,6 @@ INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('
 INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_requested', 'info', 'People who can approve requests') ON CONFLICT (event_type) DO NOTHING;
 INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_decided', 'info', 'Person who proposed it') ON CONFLICT (event_type) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (14, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (15, false);
 
 COMMIT;

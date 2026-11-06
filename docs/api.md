@@ -71,7 +71,7 @@ Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) appl
 | Agents (admin) | `/agents`, `POST /agents/:id/{revoke,rotate}` |
 | Agents (agent credential) | `POST /agent-api/register`, `POST /agent-api/heartbeat`, `GET /agent-api/jobs`, `POST /agent-api/jobs/:id/results`. A job's `maxPps` is what is left of the ceiling, not the policy's figure. The reply to results holds `instruction` (`continue`, `pause` or `stop`) and `skipTargets` |
 | Reconciliation | `GET /reconciliation/results`, `GET /reconciliation/summary`, `GET /reconciliation/last-run`, `POST /reconciliation/run`, `POST /reconciliation/results/:id/review`, `/reconciliation/rules` |
-| Imports | `POST /imports`, `GET /imports/:id/preview`, `POST /imports/:id/{approve,reverse}`, `GET /imports` |
+| Imports | `POST /imports`, `GET /imports/:id/preview`, `POST /imports/:id/{approve,reverse,discard}`, `GET /imports`, `GET /imports/templates`, `GET /imports/templates/:key` (`workbook` for the Excel file, or a type for its CSV) |
 | Notifications | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`, `GET`/`PUT /notifications/preferences` (own), `GET /notifications/rules`, `PUT /notifications/rules/:eventType` |
 | Audit | `GET /audit-logs`, `GET /audit-logs/filters` |
 | Dashboard and search | `GET /dashboard/summary`, `GET /dashboard/trends`, `GET /search?q=`, `GET`/`POST /saved-filters`, `DELETE /saved-filters/:id` (own) |

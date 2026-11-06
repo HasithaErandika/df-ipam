@@ -74,9 +74,15 @@ func SecurityHeaders() gin.HandlerFunc {
 	}
 }
 
-func BodyLimit(maxBytes int64) gin.HandlerFunc {
+// BodyLimit caps request bodies. A route listed in larger gets its own cap: a limit
+// applied here can't be raised later, so the handler can't do this itself.
+func BodyLimit(maxBytes int64, larger map[string]int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+		limit := maxBytes
+		if n, ok := larger[c.FullPath()]; ok {
+			limit = n
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	}
 }

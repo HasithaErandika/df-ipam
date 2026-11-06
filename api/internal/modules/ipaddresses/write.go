@@ -1,6 +1,7 @@
 package ipaddresses
 
 import (
+	"context"
 	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/db"
@@ -30,6 +31,20 @@ type writeRequest struct {
 }
 
 func (r *writeRequest) validate(c *gin.Context) error {
+	if err := r.checkValues(); err != nil {
+		return err
+	}
+	if r.AllocationState != nil {
+		p := auth.Current(c)
+		if !p.Has(auth.IPAllocate) && !p.Has(auth.IPReserve) {
+			return httpx.ErrForbidden
+		}
+	}
+	return nil
+}
+
+// checkValues checks what the request says, whoever is sending it.
+func (r *writeRequest) checkValues() error {
 	for name, field := range map[string]**string{"deviceId": &r.DeviceID, "applicationId": &r.ApplicationID, "businessServiceId": &r.BusinessServiceID, "ownerId": &r.OwnerID} {
 		if v := *field; v != nil && *v != "" && !httpx.IsUUID(*v) {
 			return httpx.Validation(name, "Choose a valid record.")
@@ -40,14 +55,8 @@ func (r *writeRequest) validate(c *gin.Context) error {
 			return httpx.Validation("mac", "Enter a valid MAC address.")
 		}
 	}
-	if r.AllocationState != nil {
-		if !states[*r.AllocationState] {
-			return httpx.Validation("allocationState", "Choose a valid allocation state.")
-		}
-		p := auth.Current(c)
-		if !p.Has(auth.IPAllocate) && !p.Has(auth.IPReserve) {
-			return httpx.ErrForbidden
-		}
+	if r.AllocationState != nil && !states[*r.AllocationState] {
+		return httpx.Validation("allocationState", "Choose a valid allocation state.")
 	}
 	return nil
 }
@@ -68,8 +77,7 @@ func text(v *string) string {
 
 // applyState keeps ip_allocations and ip_reservations in step with the record.
 // The caller holds the row, and the unique indexes are the final guarantee.
-func applyState(c *gin.Context, tx pgx.Tx, a Address, next, actor string) error {
-	ctx := c.Request.Context()
+func applyState(ctx context.Context, tx pgx.Tx, a Address, next, actor string) error {
 	switch a.AllocationState {
 	case "allocated":
 		if _, err := tx.Exec(ctx, `UPDATE ip_allocations SET status = 'released', released_by = $2::uuid, released_at = now()
@@ -142,7 +150,7 @@ func changeState(c *gin.Context, tx pgx.Tx, old Address, req writeRequest, actor
 	if held && strings.TrimSpace(req.Reason) == "" {
 		return httpx.Validation("reason", "Give a reason for releasing this address.")
 	}
-	return applyState(c, tx, old, *req.AllocationState, actor)
+	return applyState(c.Request.Context(), tx, old, *req.AllocationState, actor)
 }
 
 func updateAddress(c *gin.Context, tx pgx.Tx, id string, req writeRequest) (Address, error) {

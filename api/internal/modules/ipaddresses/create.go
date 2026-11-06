@@ -37,7 +37,11 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	var out Address
 	err = db.InTx(c.Request.Context(), h.conn, func(tx pgx.Tx) (err error) {
-		out, err = insertAddress(c, tx, addr, req)
+		id, err := insertAddress(c.Request.Context(), tx, auth.Current(c).UserID, addr, req)
+		if err != nil {
+			return err
+		}
+		out, err = one(c, tx, id)
 		return err
 	})
 	if err != nil {
@@ -66,11 +70,10 @@ func holdingSubnet(ctx context.Context, tx pgx.Tx, routingDomainID string, addr 
 	return subnetID, nil
 }
 
-func insertAddress(c *gin.Context, tx pgx.Tx, addr netip.Addr, req writeRequest) (Address, error) {
-	ctx, actor := c.Request.Context(), auth.Current(c).UserID
+func insertAddress(ctx context.Context, tx pgx.Tx, actor string, addr netip.Addr, req writeRequest) (string, error) {
 	subnetID, err := holdingSubnet(ctx, tx, req.RoutingDomainID, addr)
 	if err != nil {
-		return Address{}, err
+		return "", err
 	}
 	var id string
 	if err := tx.QueryRow(ctx, `INSERT INTO ip_addresses (routing_domain_id, subnet_id, address, hostname, fqdn, mac, notes, device_id,
@@ -78,19 +81,15 @@ func insertAddress(c *gin.Context, tx pgx.Tx, addr netip.Addr, req writeRequest)
 		VALUES ($1::uuid, $2::uuid, $3::text::inet, $4, $5, $6::text::macaddr, $7, $8::uuid, $9::uuid, $10::uuid, $11::uuid, $12::uuid, $12::uuid)
 		RETURNING id::text`, req.RoutingDomainID, subnetID, addr.String(), text(req.Hostname), text(req.FQDN), emptyToNil(req.MAC), text(req.Notes),
 		emptyToNil(req.DeviceID), emptyToNil(req.ApplicationID), emptyToNil(req.BusinessServiceID), emptyToNil(req.OwnerID), actor).Scan(&id); err != nil {
-		return Address{}, err
+		return "", err
 	}
 	if req.AllocationState != nil && *req.AllocationState != "available_candidate" {
 		if _, err := tx.Exec(ctx, `UPDATE ip_addresses SET allocation_state = $2 WHERE id = $1::uuid`, id, *req.AllocationState); err != nil {
-			return Address{}, err
+			return "", err
 		}
-		if err := applyState(c, tx, Address{ID: id}, *req.AllocationState, actor); err != nil {
-			return Address{}, err
+		if err := applyState(ctx, tx, Address{ID: id}, *req.AllocationState, actor); err != nil {
+			return "", err
 		}
 	}
-	out, err := one(c, tx, id)
-	if err != nil {
-		return out, err
-	}
-	return out, audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "ip_address.create", ObjectType: "ip_address", ObjectID: id, New: out})
+	return id, audit.Write(ctx, tx, audit.Entry{ActorID: actor, Action: "ip_address.create", ObjectType: "ip_address", ObjectID: id, New: req})
 }

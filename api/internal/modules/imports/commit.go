@@ -21,7 +21,11 @@ import (
 // other than the uploader must approve. Invalid, duplicate and overlapping
 // lines stay recorded and are not imported.
 func (h *Handler) approve(c *gin.Context) {
-	h.changeBatch(c, approveBatch)
+	p := auth.Current(c)
+	mayAllocate := p.Has(auth.IPAllocate) || p.Has(auth.IPReserve)
+	h.changeBatch(c, func(ctx context.Context, tx pgx.Tx, actor, id string) (Batch, error) {
+		return approveBatch(ctx, tx, actor, id, mayAllocate)
+	})
 }
 
 func (h *Handler) changeBatch(c *gin.Context, change func(context.Context, pgx.Tx, string, string) (Batch, error)) {
@@ -49,13 +53,13 @@ func checkApprovable(b Batch, actor string) error {
 	if b.UploadedBy == actor {
 		return httpx.NewError(http.StatusForbidden, "SELF_APPROVAL_DENIED", "Someone other than the uploader must approve an import.")
 	}
-	if b.RoutingDomainID == nil || b.Environment == nil {
+	if b.Format != templateFormat && (b.RoutingDomainID == nil || b.Environment == nil) {
 		return httpx.NewError(http.StatusConflict, "IMPORT_INCOMPLETE", "This batch has no routing domain or environment.")
 	}
 	return nil
 }
 
-func approveBatch(ctx context.Context, tx pgx.Tx, actor, id string) (Batch, error) {
+func approveBatch(ctx context.Context, tx pgx.Tx, actor, id string, mayAllocate bool) (Batch, error) {
 	b, err := loadBatch(ctx, tx, id, true)
 	if err != nil {
 		return b, err
@@ -70,7 +74,12 @@ func approveBatch(ctx context.Context, tx pgx.Tx, actor, id string) (Batch, erro
 	if len(todo) == 0 {
 		return b, httpx.NewError(http.StatusConflict, "IMPORT_EMPTY", "No valid lines to import.")
 	}
-	if err := commitRecords(ctx, tx, actor, b, todo); err != nil {
+	if b.Format == templateFormat {
+		err = commitSheets(ctx, tx, actor, todo, mayAllocate)
+	} else {
+		err = commitRecords(ctx, tx, actor, b, todo)
+	}
+	if err != nil {
 		return b, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE import_batches SET status = 'committed', approved_by = $2::uuid, committed_at = now() WHERE id = $1::uuid`, id, actor); err != nil {

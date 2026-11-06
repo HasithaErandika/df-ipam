@@ -61,3 +61,34 @@ func Write(ctx context.Context, tx pgx.Tx, e Entry) error {
 	}
 	return nil
 }
+
+// WriteMany writes every entry in one statement, for changes made in bulk.
+func WriteMany(ctx context.Context, tx pgx.Tx, entries []Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	actors, actions, types, ids := make([]*string, len(entries)), make([]string, len(entries)), make([]string, len(entries)), make([]*string, len(entries))
+	olds, news := make([]*string, len(entries)), make([]*string, len(entries))
+	for i, e := range entries {
+		oldJSON, err := marshal(e.Old)
+		if err != nil {
+			return fmt.Errorf("audit old values: %w", err)
+		}
+		newJSON, err := marshal(e.New)
+		if err != nil {
+			return fmt.Errorf("audit new values: %w", err)
+		}
+		actors[i], actions[i], types[i], ids[i] = nullable(e.ActorID), e.Action, e.ObjectType, nullable(e.ObjectID)
+		olds[i], news[i] = nullable(string(oldJSON)), nullable(string(newJSON))
+	}
+	m := httpx.MetaFrom(ctx)
+	_, err := tx.Exec(ctx, `
+		INSERT INTO audit_logs (actor_id, actor_type, action, object_type, object_id, old_values, new_values, source_ip, correlation_id)
+		SELECT a, 'user', act, typ, oid, o::jsonb, n::jsonb, $7::text::inet, $8
+		FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS t(a, act, typ, oid, o, n)`,
+		actors, actions, types, ids, olds, news, nullable(m.SourceIP), nullable(m.CorrelationID))
+	if err != nil {
+		return fmt.Errorf("write audit: %w", err)
+	}
+	return nil
+}

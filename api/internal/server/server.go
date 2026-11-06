@@ -54,6 +54,9 @@ type Deps struct {
 
 // changeTargets lists the records a change request can act on, and what each module
 // allows. Fields are derived from the owning module's list.
+// largeBodies lists the routes that accept more than the usual 1 MB.
+var largeBodies = map[string]int64{"/api/v1/imports": 8 << 20, "/api/v1/agent-api/jobs/:id/results": 8 << 20}
+
 func changeTargets() map[string]reconciliation.Target {
 	names := func(fields []db.Field) map[string]bool {
 		out := map[string]bool{}
@@ -82,7 +85,7 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 		inFlight = defaultMaxInFlight
 	}
 	r.Use(httpx.Correlation(), httpx.Logger(), httpx.Recovery(), httpx.CORS(d.Origins), httpx.SecurityHeaders(),
-		httpx.BodyLimit(1<<20), httpx.RateLimit(50, 100), httpx.MaxInFlight(inFlight))
+		httpx.BodyLimit(1<<20, largeBodies), httpx.RateLimit(50, 100), httpx.MaxInFlight(inFlight))
 	r.NoRoute(func(c *gin.Context) { httpx.Fail(c, httpx.ErrNotFound) })
 
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
