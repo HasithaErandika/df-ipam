@@ -27,6 +27,7 @@ type segmentDTO struct {
 	EnvironmentID   *string    `db:"default_environment_id" json:"defaultEnvironmentId"`
 	EnvironmentName *string    `db:"environment_name" json:"environmentName"`
 	Description     string     `db:"description" json:"description"`
+	AlertPrivateMAC bool       `db:"alert_private_macs" json:"alertPrivateMacs"`
 	Registered      int64      `db:"registered" json:"registered"`
 	Seen            int64      `db:"seen" json:"seen"`
 	Online          int64      `db:"online" json:"online"`
@@ -42,7 +43,7 @@ type segmentDTO struct {
 
 const segmentSelect = `SELECT s.id::text AS id, s.name, s.kind, s.floor, s.vlan, s.network::text AS network,
 	host(s.gateway) AS gateway, host(s.dhcp_start) AS dhcp_start, host(s.dhcp_end) AS dhcp_end,
-	s.default_environment_id::text AS default_environment_id, e.name AS environment_name, s.description,
+	s.default_environment_id::text AS default_environment_id, e.name AS environment_name, s.description, s.alert_private_macs,
 	(SELECT count(*) FROM ip_addresses i WHERE i.segment_id = s.id) AS registered,
 	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - interval '24 hours') AS seen,
 	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - ` + recentWindow + `) AS online,
@@ -98,11 +99,11 @@ func (h *Handler) saveSegment(c *gin.Context, id string) {
 		httpx.Fail(c, err)
 		return
 	}
-	args := []any{in.Name, in.Kind, in.Floor, in.VLAN, in.Network, in.Gateway, in.DHCPStart, in.DHCPEnd, in.EnvironmentID, in.Description, actor(c)}
+	args := []any{in.Name, in.Kind, in.Floor, in.VLAN, in.Network, in.Gateway, in.DHCPStart, in.DHCPEnd, in.EnvironmentID, in.Description, actor(c), in.AlertPrivateMACs}
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
 		if id == "" {
-			if err := tx.QueryRow(c, `INSERT INTO segments (name, kind, floor, vlan, network, gateway, dhcp_start, dhcp_end, default_environment_id, description, created_by, updated_by)
-				VALUES ($1, $2, $3, $4, $5::cidr, NULLIF($6, '')::inet, NULLIF($7, '')::inet, NULLIF($8, '')::inet, NULLIF($9, '')::uuid, $10, $11::uuid, $11::uuid)
+			if err := tx.QueryRow(c, `INSERT INTO segments (name, kind, floor, vlan, network, gateway, dhcp_start, dhcp_end, default_environment_id, description, created_by, updated_by, alert_private_macs)
+				VALUES ($1, $2, $3, $4, $5::cidr, NULLIF($6, '')::inet, NULLIF($7, '')::inet, NULLIF($8, '')::inet, NULLIF($9, '')::uuid, $10, $11::uuid, $11::uuid, $12)
 				RETURNING id::text`, args...).Scan(&id); err != nil {
 				return err
 			}
@@ -114,7 +115,7 @@ func (h *Handler) saveSegment(c *gin.Context, id string) {
 		}
 		if _, err := tx.Exec(c, `UPDATE segments SET name = $1, kind = $2, floor = $3, vlan = $4, network = $5::cidr, gateway = NULLIF($6, '')::inet,
 			dhcp_start = NULLIF($7, '')::inet, dhcp_end = NULLIF($8, '')::inet, default_environment_id = NULLIF($9, '')::uuid,
-			description = $10, updated_by = $11::uuid WHERE id = $12::uuid`, append(args, id)...); err != nil {
+			description = $10, updated_by = $11::uuid, alert_private_macs = $12 WHERE id = $13::uuid`, append(args, id)...); err != nil {
 			return err
 		}
 		return record(c, tx, "update", "segment", id, old, in)

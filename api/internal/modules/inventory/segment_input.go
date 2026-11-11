@@ -7,16 +7,17 @@ import (
 )
 
 type segmentInput struct {
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	Floor         *int   `json:"floor"`
-	VLAN          *int   `json:"vlan"`
-	Network       string `json:"network"`
-	Gateway       string `json:"gateway"`
-	DHCPStart     string `json:"dhcpStart"`
-	DHCPEnd       string `json:"dhcpEnd"`
-	EnvironmentID string `json:"defaultEnvironmentId"`
-	Description   string `json:"description"`
+	Name             string `json:"name"`
+	Kind             string `json:"kind"`
+	Floor            *int   `json:"floor"`
+	VLAN             *int   `json:"vlan"`
+	Network          string `json:"network"`
+	Gateway          string `json:"gateway"`
+	DHCPStart        string `json:"dhcpStart"`
+	DHCPEnd          string `json:"dhcpEnd"`
+	EnvironmentID    string `json:"defaultEnvironmentId"`
+	Description      string `json:"description"`
+	AlertPrivateMACs bool   `json:"alertPrivateMacs"`
 }
 
 func (in *segmentInput) validate() error {

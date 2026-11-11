@@ -19,6 +19,7 @@ export interface Segment {
   defaultEnvironmentId: string | null
   environmentName: string | null
   description: string
+  alertPrivateMacs: boolean
   registered: number
   seen: number
   online: number

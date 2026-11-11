@@ -421,6 +421,16 @@ ALTER TABLE sightings ADD COLUMN is_gateway boolean NOT NULL DEFAULT false;
 UPDATE sightings SET is_gateway = true WHERE hostname = '_gateway';
 UPDATE sightings SET hostname = '' WHERE hostname LIKE '\_%';
 
+-- 000008_lite_private_mac_alerts.up.sql
+-- Per segment: raise an alert when a device with a private (randomised) MAC is
+-- active at an address that isn't registered. Off by default, because phones
+-- change these MACs; one alert per address keeps it from flooding.
+ALTER TABLE segments ADD COLUMN alert_private_macs boolean NOT NULL DEFAULT false;
+
+ALTER TABLE alerts DROP CONSTRAINT alerts_alert_type_check;
+ALTER TABLE alerts ADD CONSTRAINT alerts_alert_type_check CHECK (alert_type IN ('unknown_device', 'unregistered_static',
+  'register_misuse', 'unknown_server_ip', 'ip_conflict', 'server_down', 'server_mac_changed', 'rejected_device', 'private_mac_device'));
+
 -- Seed data
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Production', '#dc2626', 10, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('DR', '#9333ea', 20, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
@@ -438,6 +448,6 @@ INSERT INTO settings (key, value) VALUES ('fortigate.enabled', 'false'::jsonb) O
 INSERT INTO settings (key, value) VALUES ('fortigate.verify_tls', 'true'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('fortigate.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (7, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (8, false);
 
 COMMIT;

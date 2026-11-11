@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { Button, Field, FormError, FormSection, Input, Modal, Select, Textarea, useConfirmSave } from '../../components/ui'
+import { Button, Field, FormError, FormSection, Input, Modal, Select, Switch, Textarea, useConfirmSave } from '../../components/ui'
 import { post, put } from '../../lib/api'
 import { applyServerErrors } from '../../lib/forms'
 import { inventoryKeys, useEnvironments, useInvalidate } from '../../lib/queries'
@@ -21,6 +21,7 @@ const schema = z.object({
   dhcpEnd: optionalIPv4,
   defaultEnvironmentId: z.string(),
   description: text('Description', 500),
+  alertPrivateMacs: z.boolean(),
 }).superRefine((v, ctx) => {
   const ok = !cidrIssue(v.network)
   for (const k of ['gateway', 'dhcpStart', 'dhcpEnd'] as const) {
@@ -35,6 +36,7 @@ const fields = Object.keys(schema.shape)
 const initial = (s?: Segment): Values => ({
   name: s?.name ?? '', kind: s?.kind ?? 'dhcp', floor: s?.floor?.toString() ?? '', vlan: s?.vlan?.toString() ?? '', network: s?.network ?? '',
   gateway: s?.gateway ?? '', dhcpStart: s?.dhcpStart ?? '', dhcpEnd: s?.dhcpEnd ?? '', defaultEnvironmentId: s?.defaultEnvironmentId ?? '', description: s?.description ?? '',
+  alertPrivateMacs: s?.alertPrivateMacs ?? false,
 })
 
 const kindHelp = {
@@ -48,7 +50,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
   const refresh = useInvalidate(...inventoryKeys)
   const confirmSave = useConfirmSave()
   const [error, setFormError] = useState<unknown>(null)
-  const { register, handleSubmit, reset, watch, setError, formState: { errors } } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial(segment) })
+  const { register, handleSubmit, reset, watch, setValue, setError, formState: { errors } } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial(segment) })
   useEffect(() => { if (open) { reset(initial(segment)); setFormError(null) } }, [open, segment, reset])
   const kind = watch('kind')
   const save = useMutation({
@@ -92,6 +94,11 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
             <Select id="sg-env" {...register('defaultEnvironmentId')}><option value="">None</option>{environments.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</Select>
           </Field>
         )}
+        <FormSection title="Alerts">
+          <Switch id="sg-private" checked={watch('alertPrivateMacs')} onChange={(v) => setValue('alertPrivateMacs', v)}
+            label="Alert on devices with a private MAC"
+            hint="Phones and laptops use random MACs on Wi-Fi, so these are not unknown-device alerts. Turn this on where every device matters: one alert per unregistered address, Medium on floors and High on server and cloud networks." />
+        </FormSection>
         <Field label="Description" htmlFor="sg-desc" error={errors.description?.message}><Textarea id="sg-desc" {...register('description')} /></Field>
         <FormError error={error} />
       </form>

@@ -104,6 +104,12 @@ func TestAPIAgainstDatabase(t *testing.T) {
 	e.call("POST", "/segments", map[string]any{"name": "AWS VPC", "kind": "cloud", "network": "10.50.0.0/24", "defaultEnvironmentId": prod}, 200)
 	e.call("POST", "/segments", map[string]any{"name": "Cloud pool", "kind": "cloud", "network": "10.51.0.0/24", "dhcpStart": "10.51.0.10", "dhcpEnd": "10.51.0.20"}, 422)
 
+	watched := id(e.call("POST", "/segments", map[string]any{"name": "Watched floor", "kind": "dhcp", "network": "192.168.9.0/24",
+		"dhcpStart": "192.168.9.100", "dhcpEnd": "192.168.9.200", "alertPrivateMacs": true}, 200))
+	if _, err := e.tx.Exec(e.ctx, `INSERT INTO sightings (segment_id, ip, mac, source, is_private_mac) VALUES
+		($1, '192.168.9.150', '02:aa:bb:cc:dd:01', 'arp', true), ($2, '192.168.1.150', '02:aa:bb:cc:dd:02', 'arp', true)`, watched, floor); err != nil {
+		t.Fatal(err)
+	}
 	// Evidence as discovery would record it: a static PC on the floor, an unknown server IP.
 	if _, err := e.tx.Exec(e.ctx, `INSERT INTO sightings (segment_id, ip, mac, hostname, source, is_static) VALUES
 		($1, '192.168.1.20', '00:11:22:33:44:55', 'pc-20', 'netbios', true),
@@ -115,6 +121,9 @@ func TestAPIAgainstDatabase(t *testing.T) {
 	}
 	if n := total(e.call("GET", "/alerts", nil, 200)); n < 3 {
 		t.Fatalf("want unknown device, static and server alerts, got %v", n)
+	}
+	if n := total(e.call("GET", "/alerts?type=private_mac_device", nil, 200)); n != 1 {
+		t.Fatalf("want one private-MAC alert, on the watched floor only; got %v", n)
 	}
 	for _, k := range []string{"", "unregistered", "registered", "static", "unknown", "rejected", "private", "alerting"} {
 		e.call("GET", "/discovery/findings?seen=all&kind="+k, nil, 200)
@@ -178,7 +187,7 @@ func TestAPIAgainstDatabase(t *testing.T) {
 	}
 	m := e.call("GET", "/segments/"+floor+"/map", nil, 200)["data"].(map[string]any)
 	counts := m["counts"].(map[string]any)
-	if counts["gateway"] != 1.0 || counts["dhcp_free"] != 101.0 || counts["assigned"] != 2.0 {
+	if counts["gateway"] != 1.0 || counts["dhcp_free"] != 100.0 || counts["dhcp_used"] != 1.0 || counts["assigned"] != 2.0 {
 		t.Fatalf("address map counts: %v", counts)
 	}
 	if net := m["network"].(map[string]any); net["mask"] != "255.255.255.0" || net["usableAddresses"] != "254" {

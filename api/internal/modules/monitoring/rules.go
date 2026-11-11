@@ -7,7 +7,7 @@ const candidatesSQL = `
 WITH win AS (
  SELECT make_interval(mins => GREATEST(10, 2 * COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 5))) AS w
 ), recent AS (
- SELECT si.*, sg.kind, sg.name AS segment_name, COALESCE(env.name, '') AS environment_name,
+ SELECT si.*, sg.kind, sg.name AS segment_name, sg.alert_private_macs, COALESCE(env.name, '') AS environment_name,
         COALESCE(env.default_severity, 'medium') AS environment_severity, dev.id AS device_id, dev.status AS device_status,
         ipr.id AS register_id, ipr.status AS register_status, ipr.expected_mac, ipr.critical, ipr.assigned_name
  FROM sightings si JOIN segments sg ON sg.id = si.segment_id
@@ -21,6 +21,10 @@ WITH win AS (
         r.segment_id, r.register_id AS ipid, r.device_id, host(r.ip) AS ip, r.mac::text AS mac,
         CASE WHEN r.device_status = 'rejected' THEN 'Rejected device ' ELSE 'Unapproved device ' END || r.mac || ' is active at ' || host(r.ip) || ' on ' || r.segment_name AS message
  FROM recent r WHERE r.mac IS NOT NULL AND NOT r.is_private_mac AND r.device_status IS DISTINCT FROM 'approved'
+ UNION ALL
+ SELECT 'private_mac_device', CASE WHEN r.kind = 'dhcp' THEN 'medium' ELSE 'high' END, r.segment_id, NULL::uuid, NULL::uuid, host(r.ip), NULL::text,
+        'Device with a private MAC (' || r.mac || ') is active at ' || host(r.ip) || ' on ' || r.segment_name
+ FROM recent r WHERE r.alert_private_macs AND r.is_private_mac AND NOT r.is_gateway AND r.register_id IS NULL
  UNION ALL
  SELECT 'unregistered_static', 'medium', r.segment_id, NULL::uuid, NULL::uuid, host(r.ip), r.mac::text,
         'Static IP ' || host(r.ip) || ' is in use on ' || r.segment_name || ' but is not in the register'

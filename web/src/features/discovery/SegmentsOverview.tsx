@@ -34,6 +34,7 @@ function SegmentCard({ s }: { s: Segment }) {
               Gateway <span className="font-mono text-ink-2">{s.gateway ?? s.detectedGateway}</span>{!s.gateway && ' (detected)'}
             </p>
           )}
+          {s.alertPrivateMacs && <p className="mt-0.5 text-[11.5px] text-ink-3">Alerts on private-MAC devices</p>}
         </div>
         {s.environmentName ? <EnvironmentBadge name={s.environmentName} /> : <Badge tone={floor ? 'accent' : 'neutral'}>{label(segmentKinds, s.kind)}</Badge>}
       </div>

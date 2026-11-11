@@ -29,7 +29,7 @@ export const severities: Record<string, string> = { critical: 'Critical', high: 
 export const alertTypes: Record<string, string> = {
   unknown_device: 'Unknown device', unregistered_static: 'Unregistered static IP', register_misuse: 'Registered IP misused',
   unknown_server_ip: 'Unknown server IP', ip_conflict: 'IP conflict', server_down: 'Server down',
-  server_mac_changed: 'Server MAC changed', rejected_device: 'Rejected device back',
+  server_mac_changed: 'Server MAC changed', rejected_device: 'Rejected device back', private_mac_device: 'Private-MAC device',
 }
 
 export const alertStatuses: Record<string, string> = { open: 'Open', acknowledged: 'Acknowledged', closed: 'Closed' }
