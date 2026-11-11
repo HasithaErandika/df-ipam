@@ -13,7 +13,7 @@ import { RegisterIPModal, type RegisterPrefill } from '../shared/RegisterIPModal
 import { ScanButton } from '../shared/ScanButton'
 import { GatewayHint } from './GatewayHint'
 import { SegmentAddresses } from './SegmentAddresses'
-import { AvailableList, type FreeRange, NetworkFacts, type NetworkInfo, UsageBreakdown } from './SegmentFacts'
+import { AvailableList, type FreeRange, NetworkFacts, type NetworkInfo } from './SegmentFacts'
 
 interface AddressMapData { usable: number; mapped: boolean; first?: string; counts: Record<string, number>; runs: Run[]; network: NetworkInfo; available: FreeRange[] }
 
@@ -64,9 +64,8 @@ export function SegmentPage() {
       </Card>
 
       {map.data && (
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <NetworkFacts segment={segment} info={map.data.network} />
-          {map.data.mapped && <UsageBreakdown counts={map.data.counts} usable={map.data.usable} />}
           <AvailableList segment={segment} ranges={map.data.available} onRegister={canEdit ? (ip) => setPrefill({ segmentId: id, ip }) : undefined} />
         </div>
       )}

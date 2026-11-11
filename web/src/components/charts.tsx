@@ -31,17 +31,32 @@ export function StackedBar({ parts, label, height = 12 }: { parts: Part[]; label
   )
 }
 
+/** Each part with its colour, count and share of the whole. */
 export function Legend({ parts, onHover }: { parts: Part[]; onHover?: (key: string | null) => void }) {
+  const total = parts.reduce((n, p) => n + p.value, 0)
   return (
-    <ul className="flex flex-wrap gap-x-4 gap-y-1">
+    <ul className="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3 lg:grid-cols-5">
       {parts.map((p) => (
-        <li key={p.key} className="flex items-center gap-1.5 text-[12px] text-ink-2" onMouseEnter={() => onHover?.(p.key)} onMouseLeave={() => onHover?.(null)}>
-          <span aria-hidden className="size-2.5 rounded-[2px]" style={{ backgroundColor: p.color }} />
-          {p.label}<span className="font-medium text-ink tabular-nums">{formatCount(p.value)}</span>
+        <li key={p.key} className="min-w-0" onMouseEnter={() => onHover?.(p.key)} onMouseLeave={() => onHover?.(null)}>
+          <div className="flex items-center gap-1.5 text-[12px] text-ink-2">
+            <span aria-hidden className="size-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: p.color }} />
+            <span className="truncate">{p.label}</span>
+          </div>
+          <div className="mt-0.5 pl-4 tabular-nums">
+            <span className="text-[14px] font-semibold text-ink">{formatCount(p.value)}</span>
+            <span className="ml-1.5 text-[12px] text-ink-3">{share(p.value, total)}</span>
+          </div>
         </li>
       ))}
     </ul>
   )
+}
+
+/** A share as a percentage, with one decimal below 10% so small parts don't read as 0%. */
+function share(n: number, total: number): string {
+  if (!total || !n) return '0%'
+  const pct = (n * 100) / total
+  return pct < 10 ? `${pct.toFixed(1)}%` : `${Math.round(pct)}%`
 }
 
 export const addressStates: Record<string, { label: string; color: string; hint: string }> = {
