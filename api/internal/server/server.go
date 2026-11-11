@@ -8,6 +8,7 @@ import (
 
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/modules/account"
+	"dfipam/api/internal/modules/inventory"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
@@ -61,5 +62,6 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	v1 := r.Group("/api/v1", auth.Authenticate(d.Verifier, d.Resolver), perUser)
 	guard := auth.NewGuard(v1)
 	account.NewHandler(d.Conn).Register(guard)
+	inventory.NewHandler(d.Conn).Register(guard)
 	return r, guard
 }

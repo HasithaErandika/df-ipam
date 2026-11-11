@@ -71,7 +71,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await getAccessToken()
   const headers = new Headers(init.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  if (init.body) headers.set('Content-Type', 'application/json')
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   let res: Response
   try {
     res = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/v1${path}`, { ...init, headers })
@@ -129,6 +129,13 @@ export async function download(path: string, fallbackName: string): Promise<void
   link.download = name
   link.click()
   URL.revokeObjectURL(url)
+}
+
+export async function upload<T>(path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await send(path, { method: 'POST', body: form })
+  return (await res.json()).data
 }
 
 /** PATCH for records without a version, such as reference data. */

@@ -125,3 +125,6 @@ networks:
 
 volumes:
   db-data:
+    # Lite has a new schema that cannot upgrade the previous enterprise DB.
+    # Keep the old project's volume intact and give Lite its own fresh database.
+    name: df-ipam-lite-db-data
