@@ -19,5 +19,4 @@ COPY nginx/dfipam.conf.template /etc/nginx/templates/dfipam.conf.template
 COPY nginx/app.inc.template /etc/nginx/templates/app.inc.template
 COPY nginx/site-http.conf /etc/nginx/site/site.conf
 COPY nginx/allow-all.conf /etc/nginx/rules/access.conf
-COPY nginx/allow-all.conf /etc/nginx/rules/agents.conf
 EXPOSE 8080 8443

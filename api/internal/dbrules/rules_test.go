@@ -1,163 +1,97 @@
-// Package dbrules tests the rules enforced by the schema itself. It needs a
-// migrated database: set TEST_DATABASE_URL, otherwise the tests are skipped.
-// Every test runs in a transaction that is rolled back, so nothing is kept.
 package dbrules
 
-import (
-	"context"
-	"os"
-	"testing"
+import "testing"
 
-	"dfipam/api/internal/platform/db"
-
-	"github.com/jackc/pgx/v5"
-)
-
-type env struct {
-	t   *testing.T
-	tx  pgx.Tx
-	rd  string
-	ctx context.Context
+func TestSegments(t *testing.T) {
+	e := setup(t)
+	e.segment("Floor 1", "dhcp", "192.168.1.0/24")
+	e.mustFail("overlapping network", `INSERT INTO segments (name, kind, network) VALUES ('Overlap', 'dhcp', '192.168.0.0/22')`)
+	e.mustFail("same name", `INSERT INTO segments (name, kind, network) VALUES ('floor 1', 'dhcp', '192.168.9.0/24')`)
+	e.mustFail("IPv6", `INSERT INTO segments (name, kind, network) VALUES ('V6', 'server', 'fd00::/64')`)
+	e.mustFail("pool outside network", `INSERT INTO segments (name, kind, network, dhcp_start, dhcp_end)
+		VALUES ('F2', 'dhcp', '192.168.2.0/24', '192.168.2.10', '192.168.3.10')`)
+	e.mustFail("pool backwards", `INSERT INTO segments (name, kind, network, dhcp_start, dhcp_end)
+		VALUES ('F2', 'dhcp', '192.168.2.0/24', '192.168.2.200', '192.168.2.10')`)
+	e.mustFail("pool on a server segment", `INSERT INTO segments (name, kind, network, dhcp_start, dhcp_end)
+		VALUES ('S1', 'server', '172.16.1.0/24', '172.16.1.10', '172.16.1.20')`)
+	e.mustPass("valid floor", `INSERT INTO segments (name, kind, floor, vlan, network, gateway, dhcp_start, dhcp_end)
+		VALUES ('F2', 'dhcp', 2, 20, '192.168.2.0/24', '192.168.2.1', '192.168.2.100', '192.168.2.250')`)
 }
 
-func setup(t *testing.T) env {
-	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { conn.Close(ctx) })
-	tx, err := conn.Begin(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { tx.Rollback(ctx) })
-	e := env{t: t, tx: tx, ctx: ctx}
-	var org string
-	e.row(&org, `INSERT INTO organisations (name, code) VALUES ('Rules Test', 'RULES-TEST') RETURNING id`)
-	e.row(&e.rd, `INSERT INTO routing_domains (organisation_id, name) VALUES ($1, 'A') RETURNING id`, org)
-	return e
+func TestRegister(t *testing.T) {
+	e := setup(t)
+	seg := e.segment("Prod servers", "server", "172.16.10.0/24")
+	e.mustPass("IP in segment", `INSERT INTO ip_addresses (segment_id, ip, status) VALUES ($1, '172.16.10.5', 'assigned')`, seg)
+	e.mustFail("same IP twice", `INSERT INTO ip_addresses (segment_id, ip, status) VALUES ($1, '172.16.10.5', 'reserved')`, seg)
+	e.mustFail("IP outside segment", `INSERT INTO ip_addresses (segment_id, ip, status) VALUES ($1, '172.16.11.5', 'assigned')`, seg)
+	e.mustFail("network not host", `INSERT INTO ip_addresses (segment_id, ip, status) VALUES ($1, '172.16.10.0/30', 'assigned')`, seg)
+	e.mustFail("unknown status", `INSERT INTO ip_addresses (segment_id, ip, status) VALUES ($1, '172.16.10.6', 'free')`, seg)
+	e.mustFail("segment shrinks away from its IPs", `UPDATE segments SET network = '172.16.11.0/24' WHERE id = $1`, seg)
+	e.mustFail("reservation outside segment", `INSERT INTO reservations (segment_id, start_ip, end_ip, reason)
+		VALUES ($1, '172.16.10.200', '172.16.11.10', 'x')`, seg)
+	e.mustFail("reservation without reason", `INSERT INTO reservations (segment_id, start_ip, end_ip, reason)
+		VALUES ($1, '172.16.10.200', '172.16.10.210', ' ')`, seg)
+	e.mustPass("reservation", `INSERT INTO reservations (segment_id, start_ip, end_ip, reason)
+		VALUES ($1, '172.16.10.200', '172.16.10.220', 'New printers')`, seg)
 }
 
-func (e env) row(dest any, sql string, args ...any) {
-	e.t.Helper()
-	if err := e.tx.QueryRow(e.ctx, sql, args...).Scan(dest); err != nil {
-		e.t.Fatalf("%s: %v", sql, err)
-	}
+func TestRequests(t *testing.T) {
+	e := setup(t)
+	seg := e.segment("UAT servers", "server", "172.16.20.0/24")
+	var user string
+	e.row(&user, `INSERT INTO users (email, auth_provider, auth_subject, role) VALUES ('a@x.lk', 't', 'a', 'admin') RETURNING id`)
+	var req string
+	e.row(&req, `INSERT INTO ip_requests (requester_id, segment_id, name) VALUES ($1, $2, 'App server') RETURNING id`, user, seg)
+	e.mustFail("rejected without reason", `UPDATE ip_requests SET status = 'rejected', decided_by = $2, decided_at = now() WHERE id = $1`, req, user)
+	e.mustFail("approved without a decider", `UPDATE ip_requests SET status = 'approved' WHERE id = $1`, req)
+	e.mustPass("rejected with reason", `UPDATE ip_requests SET status = 'rejected', decided_by = $2, decided_at = now(),
+		decision_reason = 'Use the shared host' WHERE id = $1`, req, user)
+	e.mustFail("unknown role", `INSERT INTO users (email, auth_provider, auth_subject, role) VALUES ('b@x.lk', 't', 'b', 'Super Administrator')`)
 }
 
-// try runs sql in a savepoint, so an expected failure leaves the test usable.
-func (e env) try(sql string, args ...any) string {
-	e.t.Helper()
-	sp, err := e.tx.Begin(e.ctx)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	defer sp.Rollback(e.ctx)
-	if _, err := sp.Exec(e.ctx, sql, args...); err != nil {
-		code := db.ErrorCode(err)
-		if code == "" {
-			e.t.Fatal(err)
+func TestAlertsAndSightings(t *testing.T) {
+	e := setup(t)
+	open := `INSERT INTO alerts (alert_type, severity, message, dedupe_key) VALUES ('unknown_device', 'medium', 'm', 'unknown:aa')`
+	e.mustPass("first alert", open)
+	e.mustFail("second open alert for the same cause", open)
+	e.mustPass("close it", `UPDATE alerts SET status = 'closed', closed_at = now() WHERE dedupe_key = 'unknown:aa'`)
+	e.mustPass("new alert after closing", open)
+	e.mustFail("acknowledged without time", `UPDATE alerts SET status = 'acknowledged' WHERE status = 'open'`)
+
+	seen := `INSERT INTO sightings (ip, mac, source) VALUES ('192.168.1.20', NULL, 'ping')`
+	e.mustPass("ping sighting with no MAC", seen)
+	e.mustFail("duplicate IP with no MAC", seen)
+	e.mustPass("same IP with a MAC", `INSERT INTO sightings (ip, mac, source) VALUES ('192.168.1.20', '00:11:22:33:44:55', 'arp')`)
+}
+
+func TestAuditIsAppendOnly(t *testing.T) {
+	e := setup(t)
+	e.mustPass("insert", `INSERT INTO audit_logs (action, object_type) VALUES ('create', 'segment')`)
+	e.mustFail("update", `UPDATE audit_logs SET action = 'x'`)
+	e.mustFail("delete", `DELETE FROM audit_logs`)
+}
+
+func TestAppRoleGrants(t *testing.T) {
+	e := setup(t)
+	for _, c := range []struct {
+		table, privilege string
+		want             bool
+	}{
+		{"audit_logs", "INSERT", true}, {"audit_logs", "UPDATE", false}, {"audit_logs", "DELETE", false},
+		{"users", "UPDATE", true}, {"users", "DELETE", false},
+		{"ip_requests", "DELETE", false}, {"reservations", "DELETE", false},
+		{"ip_addresses", "DELETE", true}, {"sightings", "UPDATE", true},
+	} {
+		var got bool
+		e.row(&got, `SELECT has_table_privilege('dfipam_app', $1, $2)`, c.table, c.privilege)
+		if got != c.want {
+			t.Errorf("dfipam_app %s on %s: got %t, want %t", c.privilege, c.table, got, c.want)
 		}
-		return code
 	}
-	if err := sp.Commit(e.ctx); err != nil {
-		e.t.Fatal(err)
-	}
-	return ""
-}
-
-func (e env) subnet(cidr string) string {
-	return e.try(`INSERT INTO subnets (routing_domain_id, cidr, name, environment) VALUES ($1, $2::text::cidr, 's', 'testing')`, e.rd, cidr)
-}
-
-func (e env) exception() string {
-	var user, id string
-	e.row(&user, `INSERT INTO users (email, auth_provider, auth_subject) VALUES ('r@example.com', 'test', gen_random_uuid()::text) RETURNING id`)
-	e.row(&id, `INSERT INTO overlap_exceptions (reason, approved_by) VALUES ('test', $1) RETURNING id`, user)
-	return id
-}
-
-func TestOverlapBlockedInSameDomain(t *testing.T) {
-	e := setup(t)
-	if code := e.subnet("10.0.0.0/24"); code != "" {
-		t.Fatal(code)
-	}
-	if code := e.subnet("10.0.0.128/25"); code != db.CodeExclusion {
-		t.Fatalf("got %q", code)
-	}
-}
-
-func TestExceptionSubnetStaysProtected(t *testing.T) {
-	e := setup(t)
-	ex := e.exception()
-	if code := e.try(`INSERT INTO subnets (routing_domain_id, cidr, name, environment, overlap_exception_id)
-		VALUES ($1, '10.9.0.0/24', 'x', 'testing', $2)`, e.rd, ex); code != "" {
-		t.Fatal(code)
-	}
-	if code := e.subnet("10.9.0.0/25"); code != db.CodeExclusion {
-		t.Fatalf("plain subnet overlapped an exception subnet: %q", code)
-	}
-}
-
-func TestApprovedOverlapDoesNotBlockRename(t *testing.T) {
-	e := setup(t)
-	ex := e.exception()
-	e.subnet("10.8.0.0/24")
-	if code := e.try(`INSERT INTO subnets (routing_domain_id, cidr, name, environment, overlap_exception_id)
-		VALUES ($1, '10.8.0.0/25', 'x', 'testing', $2)`, e.rd, ex); code != "" {
-		t.Fatal(code)
-	}
-	if code := e.try(`UPDATE subnets SET name = 'renamed' WHERE routing_domain_id = $1 AND cidr = '10.8.0.0/24'`, e.rd); code != "" {
-		t.Fatalf("rename blocked: %s", code)
-	}
-}
-
-func TestAddressMustBeInsideSubnet(t *testing.T) {
-	e := setup(t)
-	var id string
-	e.row(&id, `INSERT INTO subnets (routing_domain_id, cidr, name, environment) VALUES ($1, '10.7.0.0/24', 's', 'testing') RETURNING id`, e.rd)
-	if code := e.try(`INSERT INTO ip_addresses (routing_domain_id, subnet_id, address) VALUES ($1, $2, '10.6.0.1')`, e.rd, id); code != db.CodeCheck {
-		t.Fatalf("got %q", code)
-	}
-}
-
-func TestAuditLogsAreAppendOnly(t *testing.T) {
-	e := setup(t)
-	var id int64
-	e.row(&id, `INSERT INTO audit_logs (action, object_type) VALUES ('test', 'test') RETURNING id`)
-	if code := e.try(`UPDATE audit_logs SET action = 'changed' WHERE id = $1`, id); code != "42501" {
-		t.Fatalf("update: %q", code)
-	}
-	if code := e.try(`DELETE FROM audit_logs WHERE id = $1`, id); code != "42501" {
-		t.Fatalf("delete: %q", code)
-	}
-}
-
-func TestSelfApprovalBlocked(t *testing.T) {
-	e := setup(t)
-	var user, subnet, request string
-	e.row(&user, `INSERT INTO users (email, auth_provider, auth_subject) VALUES ('s@example.com', 'test', gen_random_uuid()::text) RETURNING id`)
-	e.row(&subnet, `INSERT INTO subnets (routing_domain_id, cidr, name, environment) VALUES ($1, '10.5.0.0/24', 's', 'testing') RETURNING id`, e.rd)
-	e.row(&request, `INSERT INTO ip_requests (subnet_id, requested_by) VALUES ($1, $2) RETURNING id`, subnet, user)
-	if code := e.try(`INSERT INTO ip_request_approvals (request_id, step_order, approver_id) VALUES ($1, 1, $2)`, request, user); code != db.CodeCheck {
-		t.Fatalf("got %q", code)
-	}
-}
-
-func TestDiscoverySnapshotIsFrozen(t *testing.T) {
-	e := setup(t)
-	var id string
-	e.row(&id, `INSERT INTO discovery_jobs (config_snapshot) VALUES ('{"a":1}') RETURNING id`)
-	if code := e.try(`UPDATE discovery_jobs SET config_snapshot = '{"a":2}' WHERE id = $1`, id); code != db.CodeCheck {
-		t.Fatalf("got %q", code)
-	}
-	if code := e.try(`UPDATE discovery_jobs SET status = 'running' WHERE id = $1`, id); code != "" {
-		t.Fatalf("status update blocked: %s", code)
+	var open bool
+	e.row(&open, `SELECT bool_and(relrowsecurity) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'
+		AND relname <> 'schema_migrations'`)
+	if !open {
+		t.Error("a table is missing row level security")
 	}
 }

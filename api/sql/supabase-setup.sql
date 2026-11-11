@@ -6,11 +6,12 @@ BEGIN;
 
 CREATE TABLE schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL);
 
--- 000001_foundation.up.sql
-CREATE EXTENSION IF NOT EXISTS btree_gist;
+-- 000001_lite.up.sql
+-- DF-IPAM Lite: one building, IPv4 only, one routing table. See docs/new.md.
+-- Discovery writes sightings and alerts only. People own everything else.
 
--- Runtime role. It is created without login here; an administrator gives it a
--- password and login separately, so no credential ever lives in a migration.
+-- Runtime role. Created without login here; docker/postgres/init gives it a password,
+-- so no credential ever lives in a migration.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dfipam_app') THEN
@@ -24,12 +25,14 @@ BEGIN
   RETURN NEW;
 END $$;
 
+-- role is NULL until an Admin gives one, so a new sign-in sees nothing.
 CREATE TABLE users (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   email         text NOT NULL,
   display_name  text NOT NULL DEFAULT '',
   auth_provider text NOT NULL,
   auth_subject  text NOT NULL,
+  role          text CHECK (role IN ('admin', 'requester', 'viewer')),
   is_active     boolean NOT NULL DEFAULT true,
   last_login_at timestamptz,
   created_at    timestamptz NOT NULL DEFAULT now(),
@@ -39,724 +42,276 @@ CREATE TABLE users (
 CREATE INDEX users_email_idx ON users (lower(email));
 CREATE TRIGGER users_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE TABLE roles (
+-- Production, UAT and so on. Severity and flags are defaults for new servers.
+CREATE TABLE environments (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             text NOT NULL CHECK (btrim(name) <> ''),
+  colour           text NOT NULL DEFAULT '#64748b' CHECK (colour ~ '^#[0-9a-fA-F]{6}$'),
+  sort_order       integer NOT NULL DEFAULT 0,
+  default_severity text NOT NULL DEFAULT 'medium' CHECK (default_severity IN ('critical', 'high', 'medium', 'low')),
+  default_monitor  boolean NOT NULL DEFAULT false,
+  default_critical boolean NOT NULL DEFAULT false,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX environments_name_key ON environments (lower(name));
+CREATE TRIGGER environments_updated BEFORE UPDATE ON environments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- A floor (DHCP) or server network. Networks never overlap.
+CREATE TABLE segments (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                   text NOT NULL CHECK (btrim(name) <> ''),
+  kind                   text NOT NULL CHECK (kind IN ('dhcp', 'server')),
+  floor                  integer,
+  vlan                   integer CHECK (vlan BETWEEN 1 AND 4094),
+  network                cidr NOT NULL CHECK (family(network) = 4),
+  gateway                inet CHECK (gateway << network),
+  dhcp_start             inet CHECK (dhcp_start << network),
+  dhcp_end               inet CHECK (dhcp_end << network),
+  default_environment_id uuid REFERENCES environments(id) ON DELETE SET NULL,
+  scan_interface         text,
+  description            text NOT NULL DEFAULT '',
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  updated_at             timestamptz NOT NULL DEFAULT now(),
+  created_by             uuid REFERENCES users(id),
+  updated_by             uuid REFERENCES users(id),
+  CHECK ((dhcp_start IS NULL) = (dhcp_end IS NULL)),
+  CHECK (dhcp_start IS NULL OR dhcp_start <= dhcp_end),
+  CHECK (kind = 'dhcp' OR dhcp_start IS NULL),
+  CHECK (kind = 'server' OR default_environment_id IS NULL),
+  EXCLUDE USING gist (network inet_ops WITH &&)
+);
+CREATE UNIQUE INDEX segments_name_key ON segments (lower(name));
+CREATE TRIGGER segments_updated BEFORE UPDATE ON segments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Known MAC addresses. New ones wait in pending until a person decides.
+CREATE TABLE devices (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        text NOT NULL UNIQUE,
-  description text NOT NULL DEFAULT '',
-  is_system   boolean NOT NULL DEFAULT false
+  mac         macaddr NOT NULL UNIQUE,
+  name        text NOT NULL DEFAULT '',
+  owner       text NOT NULL DEFAULT '',
+  department  text NOT NULL DEFAULT '',
+  device_type text NOT NULL DEFAULT 'other'
+    CHECK (device_type IN ('pc', 'laptop', 'printer', 'phone', 'access_point', 'network', 'server', 'cctv', 'other')),
+  status      text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  first_seen  timestamptz,
+  last_seen   timestamptz,
+  decided_by  uuid REFERENCES users(id),
+  decided_at  timestamptz,
+  notes       text NOT NULL DEFAULT '',
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  CHECK (status = 'pending' OR decided_at IS NOT NULL)
+);
+CREATE INDEX devices_status_idx ON devices (status);
+CREATE TRIGGER devices_updated BEFORE UPDATE ON devices FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- A hold on one IP or a small range, inside one segment.
+CREATE TABLE reservations (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  segment_id uuid NOT NULL REFERENCES segments(id),
+  start_ip   inet NOT NULL CHECK (family(start_ip) = 4 AND masklen(start_ip) = 32),
+  end_ip     inet NOT NULL CHECK (family(end_ip) = 4 AND masklen(end_ip) = 32),
+  reason     text NOT NULL CHECK (btrim(reason) <> ''),
+  owner_id   uuid REFERENCES users(id),
+  owner_name text NOT NULL DEFAULT '',
+  expires_at timestamptz,
+  status     text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'converted', 'released')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid REFERENCES users(id),
+  updated_by uuid REFERENCES users(id),
+  CHECK (start_ip <= end_ip)
+);
+CREATE INDEX reservations_segment_idx ON reservations (segment_id) WHERE status = 'active';
+CREATE INDEX reservations_expiry_idx ON reservations (expires_at) WHERE status = 'active';
+CREATE TRIGGER reservations_updated BEFORE UPDATE ON reservations FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- The IP register: what people say each address is for. Discovery never writes here,
+-- except the health columns set by server checks.
+CREATE TABLE ip_addresses (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  segment_id        uuid NOT NULL REFERENCES segments(id),
+  ip                inet NOT NULL UNIQUE CHECK (family(ip) = 4 AND masklen(ip) = 32),
+  status            text NOT NULL CHECK (status IN ('assigned', 'reserved', 'blocked')),
+  ip_type           text NOT NULL DEFAULT 'other'
+    CHECK (ip_type IN ('server', 'printer', 'network', 'cctv', 'access_point', 'user_pc', 'other')),
+  environment_id    uuid REFERENCES environments(id),
+  device_id         uuid REFERENCES devices(id) ON DELETE SET NULL,
+  reservation_id    uuid REFERENCES reservations(id) ON DELETE SET NULL,
+  assigned_name     text NOT NULL DEFAULT '',
+  expected_mac      macaddr,
+  owner             text NOT NULL DEFAULT '',
+  department        text NOT NULL DEFAULT '',
+  monitor           boolean NOT NULL DEFAULT false,
+  critical          boolean NOT NULL DEFAULT false,
+  check_port        integer CHECK (check_port BETWEEN 1 AND 65535),
+  health            text NOT NULL DEFAULT 'unknown' CHECK (health IN ('up', 'down', 'unknown')),
+  health_changed_at timestamptz,
+  notes             text NOT NULL DEFAULT '',
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  created_by        uuid REFERENCES users(id),
+  updated_by        uuid REFERENCES users(id)
+);
+CREATE INDEX ip_addresses_segment_idx ON ip_addresses (segment_id, ip);
+CREATE INDEX ip_addresses_monitor_idx ON ip_addresses (id) WHERE monitor;
+CREATE INDEX ip_addresses_environment_idx ON ip_addresses (environment_id);
+CREATE TRIGGER ip_addresses_updated BEFORE UPDATE ON ip_addresses FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Addresses must sit inside the segment they name.
+CREATE FUNCTION check_ip_in_segment() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM segments WHERE id = NEW.segment_id AND NEW.ip << network) THEN
+    RAISE EXCEPTION 'IP % is outside its segment', NEW.ip USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER ip_addresses_in_segment BEFORE INSERT OR UPDATE OF ip, segment_id ON ip_addresses
+  FOR EACH ROW EXECUTE FUNCTION check_ip_in_segment();
+
+CREATE FUNCTION check_range_in_segment() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM segments WHERE id = NEW.segment_id AND NEW.start_ip << network AND NEW.end_ip << network) THEN
+    RAISE EXCEPTION 'range %-% is outside its segment', NEW.start_ip, NEW.end_ip USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER reservations_in_segment BEFORE INSERT OR UPDATE OF start_ip, end_ip, segment_id ON reservations
+  FOR EACH ROW EXECUTE FUNCTION check_range_in_segment();
+
+-- A segment can't move away from the addresses inside it.
+CREATE FUNCTION check_segment_contents() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ip_addresses WHERE segment_id = NEW.id AND NOT (ip << NEW.network))
+     OR EXISTS (SELECT 1 FROM reservations WHERE segment_id = NEW.id AND status = 'active'
+                AND NOT (start_ip << NEW.network AND end_ip << NEW.network)) THEN
+    RAISE EXCEPTION 'segment % no longer holds its addresses', NEW.network USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER segments_keep_contents BEFORE UPDATE OF network ON segments
+  FOR EACH ROW EXECUTE FUNCTION check_segment_contents();
+
+CREATE TABLE ip_requests (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  requester_id    uuid NOT NULL REFERENCES users(id),
+  segment_id      uuid NOT NULL REFERENCES segments(id),
+  ip_type         text NOT NULL DEFAULT 'other'
+    CHECK (ip_type IN ('server', 'printer', 'network', 'cctv', 'access_point', 'user_pc', 'other')),
+  environment_id  uuid REFERENCES environments(id),
+  name            text NOT NULL CHECK (btrim(name) <> ''),
+  purpose         text NOT NULL DEFAULT '',
+  needed_by       date,
+  requested_ip    inet CHECK (requested_ip IS NULL OR (family(requested_ip) = 4 AND masklen(requested_ip) = 32)),
+  status          text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+  decided_by      uuid REFERENCES users(id),
+  decided_at      timestamptz,
+  decision_reason text NOT NULL DEFAULT '',
+  assigned_ip_id  uuid REFERENCES ip_addresses(id) ON DELETE SET NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  CHECK (status IN ('pending', 'cancelled') OR (decided_by IS NOT NULL AND decided_at IS NOT NULL)),
+  CHECK (status <> 'rejected' OR btrim(decision_reason) <> '')
+);
+CREATE INDEX ip_requests_status_idx ON ip_requests (status, created_at DESC);
+CREATE INDEX ip_requests_requester_idx ON ip_requests (requester_id, created_at DESC);
+CREATE TRIGGER ip_requests_updated BEFORE UPDATE ON ip_requests FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- What the scanner saw: one row per IP and MAC, updated in place.
+CREATE TABLE sightings (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  segment_id     uuid REFERENCES segments(id) ON DELETE SET NULL,
+  ip             inet NOT NULL CHECK (family(ip) = 4 AND masklen(ip) = 32),
+  mac            macaddr,
+  hostname       text NOT NULL DEFAULT '',
+  vendor         text NOT NULL DEFAULT '',
+  source         text NOT NULL CHECK (source IN ('arp', 'ping', 'netbios', 'snmp', 'dns')),
+  is_static      boolean NOT NULL DEFAULT false,
+  is_private_mac boolean NOT NULL DEFAULT false,
+  first_seen     timestamptz NOT NULL DEFAULT now(),
+  last_seen      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE NULLS NOT DISTINCT (ip, mac)
+);
+CREATE INDEX sightings_segment_idx ON sightings (segment_id, last_seen DESC);
+CREATE INDEX sightings_mac_idx ON sightings (mac) WHERE mac IS NOT NULL;
+
+-- One open alert per cause: dedupe_key stops repeats while it is still open.
+CREATE TABLE alerts (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_type      text NOT NULL CHECK (alert_type IN ('unknown_device', 'unregistered_static', 'register_misuse',
+                    'unknown_server_ip', 'ip_conflict', 'server_down', 'server_mac_changed', 'rejected_device')),
+  severity        text NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low')),
+  segment_id      uuid REFERENCES segments(id) ON DELETE SET NULL,
+  ip_address_id   uuid REFERENCES ip_addresses(id) ON DELETE SET NULL,
+  device_id       uuid REFERENCES devices(id) ON DELETE SET NULL,
+  ip              inet,
+  mac             macaddr,
+  message         text NOT NULL,
+  dedupe_key      text NOT NULL,
+  status          text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'acknowledged', 'closed')),
+  opened_at       timestamptz NOT NULL DEFAULT now(),
+  last_seen_at    timestamptz NOT NULL DEFAULT now(),
+  acknowledged_by uuid REFERENCES users(id),
+  acknowledged_at timestamptz,
+  closed_at       timestamptz,
+  CHECK (status <> 'acknowledged' OR acknowledged_at IS NOT NULL),
+  CHECK (status <> 'closed' OR closed_at IS NOT NULL)
+);
+CREATE UNIQUE INDEX alerts_open_key ON alerts (dedupe_key) WHERE status <> 'closed';
+CREATE INDEX alerts_status_idx ON alerts (status, severity, opened_at DESC);
+
+-- In-app notifications, also the email outbox.
+CREATE TABLE notifications (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        uuid NOT NULL REFERENCES users(id),
+  kind           text NOT NULL,
+  message        text NOT NULL,
+  link           text NOT NULL DEFAULT '',
+  is_read        boolean NOT NULL DEFAULT false,
+  email_status   text NOT NULL DEFAULT 'none' CHECK (email_status IN ('none', 'pending', 'sent', 'failed')),
+  email_attempts integer NOT NULL DEFAULT 0,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  read_at        timestamptz
+);
+CREATE INDEX notifications_user_idx ON notifications (user_id, created_at DESC);
+CREATE INDEX notifications_unread_idx ON notifications (user_id) WHERE NOT is_read;
+CREATE INDEX notifications_outbox_idx ON notifications (created_at) WHERE email_status = 'pending';
+
+CREATE TABLE notification_preferences (
+  user_id uuid NOT NULL REFERENCES users(id),
+  kind    text NOT NULL,
+  email   boolean NOT NULL DEFAULT true,
+  PRIMARY KEY (user_id, kind)
 );
 
-CREATE TABLE permissions (
-  id       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  resource text NOT NULL,
-  action   text NOT NULL,
-  UNIQUE (resource, action)
-);
-
-CREATE TABLE role_permissions (
-  role_id       uuid NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-  permission_id uuid NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-  PRIMARY KEY (role_id, permission_id)
-);
-
-CREATE TABLE system_settings (
+CREATE TABLE settings (
   key        text PRIMARY KEY,
   value      jsonb NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid REFERENCES users(id)
 );
 
--- 000002_infrastructure.up.sql
-CREATE TABLE organisations (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  code text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id)
-);
-
-CREATE TABLE business_units (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id uuid NOT NULL REFERENCES organisations(id),
-  name text NOT NULL, code text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE (organisation_id, code)
-);
-
-CREATE TABLE sites (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id uuid NOT NULL REFERENCES organisations(id),
-  name text NOT NULL, code text NOT NULL,
-  site_type text NOT NULL DEFAULT 'site' CHECK (site_type IN ('site','data_centre','cloud_region','branch')),
-  address text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE (organisation_id, code)
-);
-
-CREATE TABLE network_zones (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  site_id uuid REFERENCES sites(id),
-  name text NOT NULL, security_zone text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id)
-);
-
-CREATE TABLE routing_domains (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id uuid NOT NULL REFERENCES organisations(id),
-  name text NOT NULL,
-  kind text NOT NULL DEFAULT 'default' CHECK (kind IN ('default','vrf','vpc','vnet','isolated')),
-  route_distinguisher text,
-  is_isolated boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE (organisation_id, name)
-);
-
-CREATE TABLE business_services (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  criticality text NOT NULL DEFAULT 'standard' CHECK (criticality IN ('low','standard','high','critical')),
-  is_sensitive boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id)
-);
-
-CREATE TABLE applications (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  business_service_id uuid REFERENCES business_services(id),
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id)
-);
-
-CREATE TABLE teams (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE, email text NOT NULL DEFAULT '', description text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE team_members (
-  team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  PRIMARY KEY (team_id, user_id)
-);
-
--- Scope columns need the tables above, so user_roles lives here.
-CREATE TABLE user_roles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role_id uuid NOT NULL REFERENCES roles(id),
-  organisation_id uuid REFERENCES organisations(id),
-  business_unit_id uuid REFERENCES business_units(id),
-  site_id uuid REFERENCES sites(id),
-  business_service_id uuid REFERENCES business_services(id),
-  UNIQUE NULLS NOT DISTINCT (user_id, role_id, organisation_id, business_unit_id, site_id, business_service_id)
-);
-
-CREATE TABLE observation_sources (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  kind text NOT NULL,
-  reliability smallint NOT NULL DEFAULT 50 CHECK (reliability BETWEEN 0 AND 100),
-  priority smallint NOT NULL DEFAULT 50
-);
-
-CREATE TABLE overlap_exceptions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  reason text NOT NULL CHECK (length(trim(reason)) > 0),
-  approved_by uuid NOT NULL REFERENCES users(id),
-  approved_at timestamptz NOT NULL DEFAULT now(),
-  expires_at timestamptz
-);
-
-CREATE TABLE devices (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL, hostname text NOT NULL DEFAULT '',
-  management_ip inet,
-  vendor text NOT NULL DEFAULT '', model text NOT NULL DEFAULT '', serial_number text,
-  device_type text NOT NULL DEFAULT 'other' CHECK (device_type IN
-    ('firewall','router','switch','physical_server','virtual_machine','load_balancer','network_appliance','cloud_interface','other')),
-  os_version text NOT NULL DEFAULT '',
-  site_id uuid REFERENCES sites(id),
-  environment text CHECK (environment IN ('production','disaster_recovery','uat','development','testing')),
-  owner_id uuid REFERENCES users(id),
-  business_service_id uuid REFERENCES business_services(id),
-  source_system text NOT NULL DEFAULT 'manual', external_id text,
-  first_discovered timestamptz, last_discovered timestamptz, last_verified timestamptz,
-  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive','retired','unknown')),
-  sensitivity text NOT NULL DEFAULT 'standard' CHECK (sensitivity IN ('standard','sensitive','restricted')),
-  notes text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE NULLS DISTINCT (source_system, external_id)
-);
-
-CREATE TABLE vdoms (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  device_id uuid NOT NULL REFERENCES devices(id),
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  name text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE (device_id, name)
-);
-
-CREATE TABLE vlans (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  vlan_id integer NOT NULL CHECK (vlan_id BETWEEN 1 AND 4094),
-  name text NOT NULL DEFAULT '',
-  site_id uuid REFERENCES sites(id),
-  vdom_id uuid REFERENCES vdoms(id),
-  network_zone_id uuid REFERENCES network_zones(id),
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE NULLS NOT DISTINCT (vlan_id, site_id, vdom_id)
-);
-
-CREATE TABLE network_blocks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  routing_domain_id uuid NOT NULL REFERENCES routing_domains(id),
-  parent_id uuid REFERENCES network_blocks(id),
-  cidr cidr NOT NULL,
-  name text NOT NULL, purpose text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE (routing_domain_id, cidr)
-);
-CREATE INDEX network_blocks_cidr_gist ON network_blocks USING gist (cidr inet_ops);
-
-CREATE TABLE subnets (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  routing_domain_id uuid NOT NULL REFERENCES routing_domains(id),
-  network_block_id uuid REFERENCES network_blocks(id),
-  cidr cidr NOT NULL,
-  name text NOT NULL CHECK (length(trim(name)) > 0),
-  gateway inet,
-  site_id uuid REFERENCES sites(id),
-  network_zone_id uuid REFERENCES network_zones(id),
-  vdom_id uuid REFERENCES vdoms(id),
-  vlan_id uuid REFERENCES vlans(id),
-  environment text NOT NULL CHECK (environment IN ('production','disaster_recovery','uat','development','testing')),
-  security_zone text NOT NULL DEFAULT '',
-  business_service_id uuid REFERENCES business_services(id),
-  technical_owner_id uuid REFERENCES users(id),
-  business_owner_id uuid REFERENCES users(id),
-  description text NOT NULL DEFAULT '',
-  discovery_enabled boolean NOT NULL DEFAULT false,
-  discovery_policy_id uuid,
-  discovery_schedule_id uuid,
-  warn_threshold smallint NOT NULL DEFAULT 80,
-  critical_threshold smallint NOT NULL DEFAULT 95,
-  sensitivity text NOT NULL DEFAULT 'standard' CHECK (sensitivity IN ('standard','sensitive','restricted')),
-  overlap_exception_id uuid REFERENCES overlap_exceptions(id),
-  version integer NOT NULL DEFAULT 1,
-  archived_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  UNIQUE (id, routing_domain_id),
-  CHECK (gateway IS NULL OR gateway <<= cidr),
-  CHECK (warn_threshold BETWEEN 1 AND 100 AND critical_threshold BETWEEN 1 AND 100 AND warn_threshold < critical_threshold),
-  CONSTRAINT subnets_no_overlap EXCLUDE USING gist (routing_domain_id WITH =, cidr inet_ops WITH &&)
-    WHERE (archived_at IS NULL AND overlap_exception_id IS NULL)
-);
-CREATE INDEX subnets_active_cidr_gist ON subnets USING gist (routing_domain_id, cidr inet_ops) WHERE archived_at IS NULL;
-
-CREATE TABLE device_interfaces (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  name text NOT NULL, mac macaddr,
-  interface_type text NOT NULL DEFAULT '',
-  admin_status text NOT NULL DEFAULT 'unknown', oper_status text NOT NULL DEFAULT 'unknown',
-  vlan_id uuid REFERENCES vlans(id),
-  vdom_id uuid REFERENCES vdoms(id),
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  description text NOT NULL DEFAULT '', source text NOT NULL DEFAULT 'manual',
-  last_observed timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE NULLS NOT DISTINCT (device_id, vdom_id, name)
-);
-
-CREATE TABLE ip_addresses (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  routing_domain_id uuid NOT NULL,
-  subnet_id uuid NOT NULL,
-  address inet NOT NULL,
-  hostname text NOT NULL DEFAULT '', fqdn text NOT NULL DEFAULT '',
-  mac macaddr,
-  device_id uuid REFERENCES devices(id),
-  interface_id uuid REFERENCES device_interfaces(id),
-  application_id uuid REFERENCES applications(id),
-  business_service_id uuid REFERENCES business_services(id),
-  owner_id uuid REFERENCES users(id),
-  allocation_state text NOT NULL DEFAULT 'available_candidate' CHECK (allocation_state IN
-    ('allocated','reserved','available_candidate','quarantined','retired')),
-  observation_state text NOT NULL DEFAULT 'unknown' CHECK (observation_state IN
-    ('unknown','observed_active','observed_inactive','conflict_suspected')),
-  confidence_score smallint CHECK (confidence_score BETWEEN 0 AND 100),
-  confidence_explanation text NOT NULL DEFAULT '',
-  discovery_source_id uuid REFERENCES observation_sources(id),
-  first_seen timestamptz, last_seen timestamptz, last_verified timestamptz,
-  notes text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id),
-  FOREIGN KEY (subnet_id, routing_domain_id) REFERENCES subnets (id, routing_domain_id),
-  UNIQUE (routing_domain_id, address),
-  UNIQUE (id, subnet_id, routing_domain_id, address),
-  CHECK (masklen(address) = CASE family(address) WHEN 4 THEN 32 ELSE 128 END)
-);
-CREATE INDEX ip_addresses_subnet_state_idx ON ip_addresses (subnet_id, allocation_state);
-CREATE INDEX ip_addresses_mac_idx ON ip_addresses (mac);
-CREATE INDEX ip_addresses_hostname_idx ON ip_addresses (lower(hostname));
-CREATE INDEX ip_addresses_fqdn_idx ON ip_addresses (lower(fqdn));
-
-CREATE TABLE ownership_assignments (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  object_type text NOT NULL, object_id uuid NOT NULL,
-  owner_type text NOT NULL CHECK (owner_type IN ('technical','business')),
-  user_id uuid REFERENCES users(id), team_id uuid REFERENCES teams(id),
-  valid_from timestamptz NOT NULL DEFAULT now(), valid_to timestamptz,
-  CHECK (num_nonnulls(user_id, team_id) = 1)
-);
-CREATE INDEX ownership_object_idx ON ownership_assignments (object_type, object_id);
-
-CREATE TABLE dns_records (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  ip_address_id uuid REFERENCES ip_addresses(id),
-  name text NOT NULL,
-  record_type text NOT NULL CHECK (record_type IN ('A','AAAA','PTR','CNAME')),
-  value text NOT NULL, ttl integer,
-  source_id uuid REFERENCES observation_sources(id),
-  last_seen timestamptz
-);
-CREATE INDEX dns_records_name_idx ON dns_records (lower(name));
-
-CREATE TABLE dhcp_scopes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  subnet_id uuid NOT NULL REFERENCES subnets(id),
-  name text NOT NULL DEFAULT '',
-  range_start inet NOT NULL, range_end inet NOT NULL,
-  server_device_id uuid REFERENCES devices(id),
-  source_id uuid REFERENCES observation_sources(id),
-  last_seen timestamptz,
-  CHECK (range_start <= range_end)
-);
-
-CREATE TABLE dhcp_reservations (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  scope_id uuid NOT NULL REFERENCES dhcp_scopes(id) ON DELETE CASCADE,
-  address inet NOT NULL, mac macaddr, hostname text NOT NULL DEFAULT '',
-  source_id uuid REFERENCES observation_sources(id),
-  last_seen timestamptz,
-  UNIQUE (scope_id, address)
-);
-
-CREATE TABLE subnet_utilisation_snapshots (
-  subnet_id uuid NOT NULL REFERENCES subnets(id),
-  captured_at timestamptz NOT NULL,
-  allocated numeric(39,0) NOT NULL, reserved numeric(39,0) NOT NULL, observed_active numeric(39,0) NOT NULL,
-  utilisation_pct numeric(6,3) NOT NULL,
-  PRIMARY KEY (subnet_id, captured_at)
-);
-
--- 000003_discovery.up.sql
-CREATE TABLE discovery_agents (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  site_id uuid REFERENCES sites(id),
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','offline','revoked')),
-  credential_hash text, credential_rotated_at timestamptz, revoked_at timestamptz,
-  version text NOT NULL DEFAULT '', last_heartbeat_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE discovery_policies (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  methods text[] NOT NULL DEFAULT '{}',
-  target_allowlist cidr[] NOT NULL DEFAULT '{}',
-  max_concurrency integer NOT NULL DEFAULT 16 CHECK (max_concurrency BETWEEN 1 AND 256),
-  max_pps integer NOT NULL DEFAULT 50 CHECK (max_pps BETWEEN 1 AND 1000),
-  timeout_ms integer NOT NULL DEFAULT 1000 CHECK (timeout_ms BETWEEN 100 AND 30000),
-  retries smallint NOT NULL DEFAULT 1 CHECK (retries BETWEEN 0 AND 5),
-  windows jsonb NOT NULL DEFAULT '[]',
-  is_sensitive boolean NOT NULL DEFAULT false,
-  approved_by uuid REFERENCES users(id), approved_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id)
-);
-
-CREATE TABLE discovery_schedules (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  policy_id uuid NOT NULL REFERENCES discovery_policies(id),
-  cron text NOT NULL, timezone text NOT NULL DEFAULT 'Asia/Colombo',
-  subnet_id uuid REFERENCES subnets(id),
-  agent_id uuid REFERENCES discovery_agents(id),
-  priority smallint NOT NULL DEFAULT 5,
-  is_enabled boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-ALTER TABLE subnets
-  ADD FOREIGN KEY (discovery_policy_id) REFERENCES discovery_policies(id),
-  ADD FOREIGN KEY (discovery_schedule_id) REFERENCES discovery_schedules(id);
-
-CREATE TABLE discovery_jobs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  policy_id uuid REFERENCES discovery_policies(id),
-  agent_id uuid REFERENCES discovery_agents(id),
-  status text NOT NULL DEFAULT 'queued' CHECK (status IN
-    ('queued','running','paused','completed','failed','cancelled','stopped')),
-  priority smallint NOT NULL DEFAULT 5,
-  config_snapshot jsonb NOT NULL,
-  progress smallint NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
-  error text,
-  started_at timestamptz, finished_at timestamptz,
-  initiated_by uuid REFERENCES users(id),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX discovery_jobs_status_idx ON discovery_jobs (status, priority);
-
-CREATE TABLE discovery_job_targets (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  job_id uuid NOT NULL REFERENCES discovery_jobs(id),
-  routing_domain_id uuid NOT NULL REFERENCES routing_domains(id),
-  target cidr NOT NULL,
-  checkpoint text,
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','skipped'))
-);
-
-CREATE TABLE discovery_job_logs (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  job_id uuid NOT NULL REFERENCES discovery_jobs(id),
-  level text NOT NULL, message text NOT NULL,
-  logged_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE discovery_exclusions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  target cidr NOT NULL,
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  reason text NOT NULL, expires_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id)
-);
-CREATE INDEX discovery_exclusions_target_gist ON discovery_exclusions USING gist (target inet_ops);
-
-CREATE TABLE agent_heartbeats (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  agent_id uuid NOT NULL REFERENCES discovery_agents(id),
-  received_at timestamptz NOT NULL DEFAULT now(),
-  version text NOT NULL DEFAULT '', metrics jsonb NOT NULL DEFAULT '{}'
-);
-CREATE INDEX agent_heartbeats_idx ON agent_heartbeats (agent_id, received_at DESC);
-
-CREATE TABLE integration_connections (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kind text NOT NULL CHECK (kind IN ('fortigate','vcenter','aws','azure','dns','dhcp')),
-  name text NOT NULL UNIQUE,
-  base_url text, config jsonb NOT NULL DEFAULT '{}',
-  credential_ciphertext bytea, key_version integer,
-  health text NOT NULL DEFAULT 'unknown' CHECK (health IN ('unknown','healthy','degraded','failed')),
-  last_success_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  created_by uuid REFERENCES users(id), updated_by uuid REFERENCES users(id)
-);
-
-CREATE TABLE integration_sync_jobs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  connection_id uuid NOT NULL REFERENCES integration_connections(id),
-  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','completed','failed','cancelled')),
-  counts jsonb NOT NULL DEFAULT '{}',
-  started_at timestamptz, finished_at timestamptz
-);
-
-CREATE TABLE external_resource_mappings (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  connection_id uuid NOT NULL REFERENCES integration_connections(id),
-  resource_type text NOT NULL, external_id text NOT NULL,
-  object_type text NOT NULL, object_id uuid NOT NULL,
-  last_seen timestamptz,
-  UNIQUE (connection_id, resource_type, external_id)
-);
-
-CREATE TABLE integration_errors (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  sync_job_id uuid NOT NULL REFERENCES integration_sync_jobs(id),
-  code text NOT NULL, message text NOT NULL,
-  context jsonb NOT NULL DEFAULT '{}',
-  occurred_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Raw evidence: separate from inventory and append-only for the app role.
-CREATE TABLE discovery_observations (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  job_id uuid REFERENCES discovery_jobs(id),
-  sync_job_id uuid REFERENCES integration_sync_jobs(id),
-  source_id uuid NOT NULL REFERENCES observation_sources(id),
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  address inet, mac macaddr, hostname text,
-  payload jsonb NOT NULL DEFAULT '{}',
-  observed_at timestamptz NOT NULL
-);
-CREATE INDEX discovery_observations_addr_idx ON discovery_observations (address, observed_at DESC);
-
-CREATE TABLE reconciliation_results (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  classification text NOT NULL CHECK (classification IN
-    ('new_device','unknown_ip','ip_conflict_suspected','duplicate_mac','dns_mismatch','allocated_not_observed',
-     'observed_not_allocated','subnet_overlap','ownership_missing','infrastructure_mismatch','stale_evidence')),
-  object_type text NOT NULL, object_id uuid,
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  address inet,
-  sources text[] NOT NULL DEFAULT '{}',
-  evidence_from timestamptz, evidence_to timestamptz,
-  source_reliability smallint, confidence smallint CHECK (confidence BETWEEN 0 AND 100),
-  explanation text NOT NULL, suggested_action text NOT NULL DEFAULT '',
-  review_status text NOT NULL DEFAULT 'open' CHECK (review_status IN ('open','investigating','accepted','dismissed','resolved')),
-  reviewed_by uuid REFERENCES users(id), reviewed_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX reconciliation_review_idx ON reconciliation_results (review_status, classification);
-
-CREATE TABLE reconciliation_evidence (
-  result_id uuid NOT NULL REFERENCES reconciliation_results(id) ON DELETE CASCADE,
-  observation_id bigint NOT NULL REFERENCES discovery_observations(id),
-  PRIMARY KEY (result_id, observation_id)
-);
-
--- 000004_governance.up.sql
-CREATE TABLE approval_workflows (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE, match_rules jsonb NOT NULL DEFAULT '{}', is_active boolean NOT NULL DEFAULT true
-);
-
-CREATE TABLE approval_workflow_steps (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  workflow_id uuid NOT NULL REFERENCES approval_workflows(id) ON DELETE CASCADE,
-  step_order smallint NOT NULL,
-  approver_role_id uuid NOT NULL REFERENCES roles(id),
-  UNIQUE (workflow_id, step_order)
-);
-
-CREATE TABLE ip_requests (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  request_type text NOT NULL DEFAULT 'allocation' CHECK (request_type IN ('allocation','reservation','release')),
-  subnet_id uuid NOT NULL REFERENCES subnets(id),
-  requested_address inet,
-  selection_mode text NOT NULL DEFAULT 'automatic' CHECK (selection_mode IN ('automatic','specific')),
-  application_id uuid REFERENCES applications(id),
-  business_service_id uuid REFERENCES business_services(id),
-  justification text NOT NULL DEFAULT '', department text NOT NULL DEFAULT '',
-  technical_owner_id uuid REFERENCES users(id), business_owner_id uuid REFERENCES users(id),
-  environment text CHECK (environment IN ('production','disaster_recovery','uat','development','testing')),
-  required_date date, expiry_date date, comments text NOT NULL DEFAULT '',
-  status text NOT NULL DEFAULT 'draft' CHECK (status IN
-    ('draft','submitted','pending_approval','approved','rejected','allocated','cancelled','expired')),
-  requested_by uuid NOT NULL REFERENCES users(id),
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (selection_mode = 'automatic' OR requested_address IS NOT NULL)
-);
-
-CREATE TABLE ip_request_approvals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  request_id uuid NOT NULL REFERENCES ip_requests(id),
-  step_order smallint NOT NULL,
-  approver_id uuid REFERENCES users(id),
-  decision text NOT NULL DEFAULT 'pending' CHECK (decision IN ('pending','approved','rejected')),
-  comment text NOT NULL DEFAULT '', decided_at timestamptz,
-  UNIQUE (request_id, step_order)
-);
-
-CREATE TABLE ip_allocations (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  ip_address_id uuid NOT NULL, subnet_id uuid NOT NULL, routing_domain_id uuid NOT NULL, address inet NOT NULL,
-  request_id uuid REFERENCES ip_requests(id),
-  release_request_id uuid REFERENCES ip_requests(id),
-  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','released')),
-  allocated_by uuid NOT NULL REFERENCES users(id), allocated_at timestamptz NOT NULL DEFAULT now(),
-  released_by uuid REFERENCES users(id), released_at timestamptz,
-  FOREIGN KEY (ip_address_id, subnet_id, routing_domain_id, address)
-    REFERENCES ip_addresses (id, subnet_id, routing_domain_id, address)
-);
-CREATE UNIQUE INDEX ip_alloc_one_active ON ip_allocations (routing_domain_id, address) WHERE status = 'active';
-
-CREATE TABLE ip_reservations (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  ip_address_id uuid NOT NULL, subnet_id uuid NOT NULL, routing_domain_id uuid NOT NULL, address inet NOT NULL,
-  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','released','expired','converted')),
-  reason text NOT NULL DEFAULT '', expires_at timestamptz,
-  reserved_by uuid NOT NULL REFERENCES users(id), reserved_at timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (ip_address_id, subnet_id, routing_domain_id, address)
-    REFERENCES ip_addresses (id, subnet_id, routing_domain_id, address)
-);
-CREATE UNIQUE INDEX ip_reservation_one_active ON ip_reservations (routing_domain_id, address) WHERE status = 'active';
-
-CREATE TABLE change_requests (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  object_type text NOT NULL, object_id uuid,
-  proposed jsonb NOT NULL,
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','applied')),
-  requested_by uuid REFERENCES users(id), decided_by uuid REFERENCES users(id),
-  created_at timestamptz NOT NULL DEFAULT now(), decided_at timestamptz
-);
-
+-- Append-only. Written in the same transaction as the change it describes.
 CREATE TABLE audit_logs (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  actor_id uuid REFERENCES users(id),
-  actor_type text NOT NULL DEFAULT 'user' CHECK (actor_type IN ('user','system','agent')),
-  action text NOT NULL,
-  object_type text NOT NULL, object_id text,
-  old_values jsonb, new_values jsonb,
-  occurred_at timestamptz NOT NULL DEFAULT now(),
-  source_ip inet, correlation_id text, approval_ref text,
-  result text NOT NULL DEFAULT 'success' CHECK (result IN ('success','failure','denied'))
+  id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  actor_id       uuid REFERENCES users(id),
+  actor_type     text NOT NULL DEFAULT 'user' CHECK (actor_type IN ('user', 'system')),
+  action         text NOT NULL,
+  object_type    text NOT NULL,
+  object_id      text,
+  old_values     jsonb,
+  new_values     jsonb,
+  occurred_at    timestamptz NOT NULL DEFAULT now(),
+  source_ip      inet,
+  correlation_id text,
+  approval_ref   text
 );
 CREATE INDEX audit_logs_object_idx ON audit_logs (object_type, object_id, occurred_at DESC);
 CREATE INDEX audit_logs_time_idx ON audit_logs (occurred_at DESC);
 
-CREATE TABLE notification_rules (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_type text NOT NULL UNIQUE,
-  severity text NOT NULL DEFAULT 'info' CHECK (severity IN ('info','warning','critical')),
-  recipient_group text NOT NULL DEFAULT '', is_enabled boolean NOT NULL DEFAULT true
-);
-
-CREATE TABLE notifications (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_type text NOT NULL,
-  severity text NOT NULL DEFAULT 'info' CHECK (severity IN ('info','warning','critical')),
-  recipient_id uuid REFERENCES users(id),
-  channel text NOT NULL DEFAULT 'in_app', dedupe_key text,
-  payload jsonb NOT NULL DEFAULT '{}',
-  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sent','failed','suppressed')),
-  attempts smallint NOT NULL DEFAULT 0,
-  sent_at timestamptz, read_at timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX notifications_recipient_idx ON notifications (recipient_id, created_at DESC);
-
-CREATE TABLE report_jobs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  report_type text NOT NULL,
-  format text NOT NULL CHECK (format IN ('xlsx','csv','pdf')),
-  filters jsonb NOT NULL DEFAULT '{}',
-  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','completed','failed')),
-  file_path text, data_as_of timestamptz,
-  requested_by uuid NOT NULL REFERENCES users(id),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE import_batches (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  file_name text NOT NULL, file_hash text NOT NULL UNIQUE, format text NOT NULL,
-  status text NOT NULL DEFAULT 'uploaded' CHECK (status IN
-    ('uploaded','validated','approved','committed','reversed','failed')),
-  summary jsonb NOT NULL DEFAULT '{}',
-  approved_by uuid REFERENCES users(id), reversed_at timestamptz,
-  uploaded_by uuid NOT NULL REFERENCES users(id),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE import_records (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  batch_id uuid NOT NULL REFERENCES import_batches(id),
-  line_number integer NOT NULL, raw_text text NOT NULL,
-  parsed jsonb, status text NOT NULL DEFAULT 'pending' CHECK (status IN
-    ('pending','valid','duplicate','overlap','invalid','needs_enrichment','committed')),
-  errors jsonb NOT NULL DEFAULT '[]',
-  created_object_type text, created_object_id uuid,
-  UNIQUE (batch_id, line_number)
-);
-
-CREATE TABLE saved_filters (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  page text NOT NULL, name text NOT NULL, filters jsonb NOT NULL,
-  UNIQUE (user_id, page, name)
-);
-
--- 000005_rules.up.sql
--- Keep updated_at current on every table that has the column.
-DO $$
-DECLARE t text;
-BEGIN
-  FOR t IN SELECT table_name FROM information_schema.columns
-           WHERE table_schema = 'public' AND column_name = 'updated_at' AND table_name <> 'users'
-             AND table_name IN (SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE')
-  LOOP
-    EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_updated_at()', t || '_updated', t);
-  END LOOP;
-END $$;
-
--- A subnet with an exception sits outside subnets_no_overlap in both directions.
--- This closes that gap: a normal subnet may not overlap an exception subnet unless
--- it has its own exception. It only runs when overlap-relevant columns change, so
--- editing a subnet's name is not blocked by an overlap that was already approved.
-CREATE FUNCTION subnets_check_exception_overlap() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.archived_at IS NOT NULL OR NEW.overlap_exception_id IS NOT NULL THEN
-    RETURN NEW;
-  END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.routing_domain_id::text, 0));
-  IF EXISTS (
-    SELECT 1 FROM subnets s
-    WHERE s.routing_domain_id = NEW.routing_domain_id AND s.id <> NEW.id
-      AND s.archived_at IS NULL AND s.overlap_exception_id IS NOT NULL
-      AND s.cidr && NEW.cidr
-  ) THEN
-    RAISE EXCEPTION 'subnet % overlaps an exception subnet in this routing domain', NEW.cidr
-      USING ERRCODE = 'exclusion_violation', CONSTRAINT = 'subnets_no_overlap';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER subnets_exception_overlap
-  BEFORE INSERT OR UPDATE OF cidr, routing_domain_id, overlap_exception_id, archived_at ON subnets
-  FOR EACH ROW EXECUTE FUNCTION subnets_check_exception_overlap();
-
--- An IP record must sit inside its parent subnet.
-CREATE FUNCTION ip_addresses_check_in_subnet() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM subnets s WHERE s.id = NEW.subnet_id AND NEW.address <<= s.cidr) THEN
-    RAISE EXCEPTION 'address % is outside its subnet', NEW.address USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER ip_addresses_in_subnet BEFORE INSERT OR UPDATE OF address, subnet_id ON ip_addresses
-  FOR EACH ROW EXECUTE FUNCTION ip_addresses_check_in_subnet();
-
--- Nobody approves their own request.
-CREATE FUNCTION approvals_block_self() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.approver_id IS NOT NULL AND NEW.approver_id = (SELECT requested_by FROM ip_requests WHERE id = NEW.request_id) THEN
-    RAISE EXCEPTION 'a user cannot approve their own request' USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER approvals_no_self BEFORE INSERT OR UPDATE ON ip_request_approvals
-  FOR EACH ROW EXECUTE FUNCTION approvals_block_self();
-
--- A job's approved scope and configuration can't change after creation.
-CREATE FUNCTION discovery_jobs_freeze_snapshot() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.config_snapshot IS DISTINCT FROM OLD.config_snapshot THEN
-    RAISE EXCEPTION 'discovery job configuration is immutable' USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER discovery_jobs_frozen BEFORE UPDATE ON discovery_jobs
-  FOR EACH ROW EXECUTE FUNCTION discovery_jobs_freeze_snapshot();
-
--- Audit rows are immutable. Retention pruning sets dfipam.audit_prune using a
--- privileged role; the app role has no UPDATE or DELETE grant in any case.
 CREATE FUNCTION audit_logs_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'DELETE' AND current_setting('dfipam.audit_prune', true) = 'on' AND current_user <> 'dfipam_app' THEN
-    RETURN OLD;
-  END IF;
   RAISE EXCEPTION 'audit_logs is append-only' USING ERRCODE = 'insufficient_privilege';
 END $$;
 CREATE TRIGGER audit_logs_protect BEFORE UPDATE OR DELETE ON audit_logs
@@ -764,37 +319,24 @@ CREATE TRIGGER audit_logs_protect BEFORE UPDATE OR DELETE ON audit_logs
 CREATE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
   FOR EACH STATEMENT EXECUTE FUNCTION audit_logs_immutable();
 
--- Runtime role: least privilege.
-GRANT USAGE ON SCHEMA public TO dfipam_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dfipam_app;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO dfipam_app;
-REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs, discovery_observations, discovery_job_logs FROM dfipam_app;
-REVOKE DELETE ON discovery_jobs, discovery_job_targets FROM dfipam_app;
-REVOKE UPDATE ON discovery_job_targets FROM dfipam_app;
-GRANT UPDATE (checkpoint, status) ON discovery_job_targets TO dfipam_app;
-
--- 000006_data_api_lockdown.up.sql
--- Supabase exposes the public schema through its Data API, and the anon key is
--- public by design. Without this migration anyone holding that key could reach
--- these tables directly, bypassing the Go API's permission checks and audit log.
--- Access is therefore denied at the database: all data goes through the Go API.
+-- Closed to the Supabase Data API: row level security on every table, with one
+-- policy for the app role, and nothing for anon or authenticated.
 DO $$
 DECLARE
   t text;
   r text;
 BEGIN
-  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_migrations' LOOP
+  FOREACH t IN ARRAY ARRAY['users', 'environments', 'segments', 'devices', 'reservations', 'ip_addresses',
+    'ip_requests', 'sightings', 'alerts', 'notifications', 'notification_preferences', 'settings', 'audit_logs'] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('CREATE POLICY dfipam_app_all ON public.%I TO dfipam_app USING (true) WITH CHECK (true)', t);
   END LOOP;
   ALTER TABLE IF EXISTS public.schema_migrations ENABLE ROW LEVEL SECURITY;
-
   FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', r);
       EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', r);
       EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM %I', r);
-      -- Also covers tables that later migrations create.
       EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM %I', r);
       EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM %I', r);
       EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM %I', r);
@@ -802,544 +344,27 @@ BEGIN
   END LOOP;
 END $$;
 
--- 000007_full_coverage.up.sql
--- Tables needed by requirements the earlier migrations did not store.
-CREATE TABLE sessions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  token_hash text NOT NULL UNIQUE,
-  source_ip inet, user_agent text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  expires_at timestamptz NOT NULL,
-  revoked_at timestamptz
-);
-COMMENT ON TABLE sessions IS 'Unused while Supabase manages sessions. Reserved for company auth.';
-
-ALTER TABLE subnets ADD COLUMN business_unit_id uuid REFERENCES business_units(id);
-
-CREATE TABLE subnet_reserved_ranges (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  subnet_id uuid NOT NULL REFERENCES subnets(id) ON DELETE CASCADE,
-  range_start inet NOT NULL, range_end inet NOT NULL,
-  reason text NOT NULL DEFAULT '',
-  provider text NOT NULL DEFAULT 'manual' CHECK (provider IN ('manual','aws','azure')),
-  CHECK (range_start <= range_end)
-);
-
-CREATE TABLE routing_domain_peerings (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  domain_a_id uuid NOT NULL REFERENCES routing_domains(id),
-  domain_b_id uuid NOT NULL REFERENCES routing_domains(id),
-  kind text NOT NULL DEFAULT 'peering',
-  source_id uuid REFERENCES observation_sources(id),
-  last_seen timestamptz,
-  CHECK (domain_a_id < domain_b_id),
-  UNIQUE (domain_a_id, domain_b_id, kind)
-);
-
-CREATE TABLE cloud_accounts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  connection_id uuid NOT NULL REFERENCES integration_connections(id),
-  provider text NOT NULL CHECK (provider IN ('aws','azure')),
-  external_account_id text NOT NULL,
-  tenant_id text, name text NOT NULL DEFAULT '',
-  last_seen timestamptz,
-  UNIQUE (connection_id, external_account_id)
-);
-
-CREATE TABLE cloud_networks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  cloud_account_id uuid NOT NULL REFERENCES cloud_accounts(id),
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  region text NOT NULL DEFAULT '', resource_group text,
-  external_id text NOT NULL, name text NOT NULL DEFAULT '',
-  address_spaces cidr[] NOT NULL DEFAULT '{}',
-  last_seen timestamptz,
-  UNIQUE (cloud_account_id, external_id)
-);
-
-CREATE TABLE network_routes (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  routing_domain_id uuid REFERENCES routing_domains(id),
-  device_id uuid REFERENCES devices(id),
-  vdom_id uuid REFERENCES vdoms(id),
-  destination cidr NOT NULL, next_hop inet,
-  interface_id uuid REFERENCES device_interfaces(id),
-  route_type text NOT NULL DEFAULT 'static',
-  source_id uuid REFERENCES observation_sources(id),
-  last_seen timestamptz
-);
-CREATE INDEX network_routes_destination_gist ON network_routes USING gist (destination inet_ops);
-
-CREATE TABLE firewall_address_objects (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  device_id uuid NOT NULL REFERENCES devices(id),
-  vdom_id uuid REFERENCES vdoms(id),
-  name text NOT NULL, object_type text NOT NULL DEFAULT '',
-  value text NOT NULL DEFAULT '', network cidr, comment text NOT NULL DEFAULT '',
-  last_seen timestamptz,
-  UNIQUE NULLS NOT DISTINCT (device_id, vdom_id, name)
-);
-
-CREATE TABLE firewall_address_groups (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  device_id uuid NOT NULL REFERENCES devices(id),
-  vdom_id uuid REFERENCES vdoms(id),
-  name text NOT NULL, comment text NOT NULL DEFAULT '',
-  last_seen timestamptz,
-  UNIQUE NULLS NOT DISTINCT (device_id, vdom_id, name)
-);
-
-CREATE TABLE firewall_address_group_members (
-  group_id uuid NOT NULL REFERENCES firewall_address_groups(id) ON DELETE CASCADE,
-  object_id uuid NOT NULL REFERENCES firewall_address_objects(id) ON DELETE CASCADE,
-  PRIMARY KEY (group_id, object_id)
-);
-
-CREATE TABLE agent_registration_tokens (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  agent_id uuid REFERENCES discovery_agents(id),
-  token_hash text NOT NULL UNIQUE,
-  created_by uuid REFERENCES users(id),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  expires_at timestamptz NOT NULL,
-  used_at timestamptz
-);
-
-CREATE TABLE discovery_blackouts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  target cidr,
-  starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL,
-  reason text NOT NULL DEFAULT '',
-  created_by uuid REFERENCES users(id),
-  CHECK (starts_at < ends_at)
-);
-
-CREATE TABLE reconciliation_rules (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  classification text NOT NULL UNIQUE,
-  source_priority jsonb NOT NULL DEFAULT '[]',
-  confidence_weights jsonb NOT NULL DEFAULT '{}',
-  is_enabled boolean NOT NULL DEFAULT true
-);
-
-CREATE TABLE notification_preferences (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  event_type text NOT NULL,
-  channel text NOT NULL DEFAULT 'email',
-  is_enabled boolean NOT NULL DEFAULT true,
-  PRIMARY KEY (user_id, event_type, channel)
-);
-
-CREATE TABLE retention_policies (
-  data_class text PRIMARY KEY,
-  retain_days integer NOT NULL CHECK (retain_days > 0),
-  archive_first boolean NOT NULL DEFAULT false,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by uuid REFERENCES users(id)
-);
-
--- Foreign keys that list pages filter on.
-CREATE INDEX subnets_site_idx ON subnets (site_id);
-CREATE INDEX subnets_vlan_idx ON subnets (vlan_id);
-CREATE INDEX subnets_vdom_idx ON subnets (vdom_id);
-CREATE INDEX subnets_environment_idx ON subnets (environment);
-CREATE INDEX subnets_business_service_idx ON subnets (business_service_id);
-CREATE INDEX ip_addresses_device_idx ON ip_addresses (device_id);
-CREATE INDEX ip_addresses_owner_idx ON ip_addresses (owner_id);
-CREATE INDEX device_interfaces_mac_idx ON device_interfaces (mac);
-CREATE INDEX devices_site_idx ON devices (site_id);
-CREATE INDEX ip_requests_status_idx ON ip_requests (status);
-CREATE INDEX ip_requests_requester_idx ON ip_requests (requested_by);
-CREATE INDEX ip_reservations_expiry_idx ON ip_reservations (expires_at) WHERE status = 'active';
-
--- New tables get the same protection as the others: closed to the Data API,
--- least privilege for the app role.
-DO $$
-DECLARE
-  t text;
-  r text;
-  new_tables text[] := ARRAY['sessions','subnet_reserved_ranges','routing_domain_peerings','cloud_accounts',
-    'cloud_networks','network_routes','firewall_address_objects','firewall_address_groups',
-    'firewall_address_group_members','agent_registration_tokens','discovery_blackouts','reconciliation_rules',
-    'notification_preferences','retention_policies'];
-BEGIN
-  FOREACH t IN ARRAY new_tables LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-    EXECUTE format('CREATE POLICY dfipam_app_all ON public.%I TO dfipam_app USING (true) WITH CHECK (true)', t);
-    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO dfipam_app', t);
-    FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
-        EXECUTE format('REVOKE ALL ON public.%I FROM %I', t, r);
-      END IF;
-    END LOOP;
-  END LOOP;
-END $$;
-
-CREATE TRIGGER retention_policies_updated BEFORE UPDATE ON retention_policies
-  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- 000008_findings.up.sql
--- Lets repeat runs update one finding instead of creating duplicates.
-ALTER TABLE reconciliation_results
-  ADD COLUMN fingerprint text,
-  ADD COLUMN last_detected_at timestamptz NOT NULL DEFAULT now(),
-  ADD COLUMN review_note text NOT NULL DEFAULT '';
-CREATE UNIQUE INDEX reconciliation_fingerprint_idx ON reconciliation_results (fingerprint);
-CREATE INDEX ip_addresses_state_idx ON ip_addresses (allocation_state, observation_state);
-
--- 000009_allocation_workflow.up.sql
--- Phase 2: the allocation workflow. Requests are approved step by step, then
--- fulfilled as allocations, reservations or releases. No new tables, so the
--- row level security and grants from earlier migrations still cover everything.
-
--- Requests: an edit version, the record a release or conversion acts on, and
--- the workflow and timestamps the approval frozen at submission.
-ALTER TABLE ip_requests
-  ADD COLUMN version integer NOT NULL DEFAULT 1,
-  ADD COLUMN allocation_id uuid REFERENCES ip_allocations(id),
-  ADD COLUMN reservation_id uuid REFERENCES ip_reservations(id),
-  ADD COLUMN workflow_id uuid REFERENCES approval_workflows(id),
-  ADD COLUMN submitted_at timestamptz,
-  ADD COLUMN decided_at timestamptz,
-  ADD COLUMN fulfilled_at timestamptz,
-  ADD COLUMN fulfilled_by uuid REFERENCES users(id),
-  ADD CONSTRAINT ip_requests_release_target CHECK (request_type <> 'release' OR allocation_id IS NOT NULL),
-  ADD CONSTRAINT ip_requests_conversion_target CHECK (reservation_id IS NULL OR request_type = 'allocation');
-
--- 'reserved' and 'released' are the fulfilled states of reservation and release
--- requests, as 'allocated' is for allocation requests.
-ALTER TABLE ip_requests DROP CONSTRAINT ip_requests_status_check;
-ALTER TABLE ip_requests ADD CONSTRAINT ip_requests_status_check CHECK (status IN
-  ('draft','submitted','pending_approval','approved','rejected','allocated','reserved','released','cancelled','expired'));
-CREATE INDEX ip_requests_subnet_idx ON ip_requests (subnet_id);
-CREATE INDEX ip_requests_allocation_idx ON ip_requests (allocation_id) WHERE allocation_id IS NOT NULL;
-
--- Approval steps keep the role the workflow required when the request was
--- submitted, so later workflow edits don't change requests in flight. A null
--- role means anyone with the approve permission.
-ALTER TABLE ip_request_approvals ADD COLUMN approver_role_id uuid REFERENCES roles(id);
--- One person decides at most one step of a request: multi-level approval needs
--- different people.
-CREATE UNIQUE INDEX ip_request_approvals_one_per_person ON ip_request_approvals (request_id, approver_id)
-  WHERE approver_id IS NOT NULL;
-CREATE INDEX ip_request_approvals_pending_idx ON ip_request_approvals (request_id, step_order) WHERE decision = 'pending';
-
--- A request is fulfilled at most once, which also makes fulfilment idempotent.
-CREATE UNIQUE INDEX ip_alloc_one_per_request ON ip_allocations (request_id) WHERE request_id IS NOT NULL;
-CREATE INDEX ip_allocations_subnet_idx ON ip_allocations (subnet_id, status);
-
-ALTER TABLE ip_reservations
-  ADD COLUMN request_id uuid REFERENCES ip_requests(id),
-  ADD COLUMN released_by uuid REFERENCES users(id),
-  ADD COLUMN released_at timestamptz,
-  ADD COLUMN reminded_at timestamptz;
-CREATE UNIQUE INDEX ip_reservation_one_per_request ON ip_reservations (request_id) WHERE request_id IS NOT NULL;
-CREATE INDEX ip_reservations_subnet_idx ON ip_reservations (subnet_id, status);
-
--- Allocations and reservations are separate tables, so their own unique indexes
--- can't stop one address being active in both. The service settles this through
--- a conditional update on the single ip_addresses row; these triggers back it up.
-CREATE FUNCTION ip_allocations_block_reserved() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.status = 'active' AND EXISTS (
-    SELECT 1 FROM ip_reservations r
-    WHERE r.routing_domain_id = NEW.routing_domain_id AND r.address = NEW.address AND r.status = 'active'
-  ) THEN
-    RAISE EXCEPTION 'address % has an active reservation', NEW.address
-      USING ERRCODE = 'unique_violation', CONSTRAINT = 'ip_alloc_one_active';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER ip_allocations_not_reserved BEFORE INSERT OR UPDATE OF status ON ip_allocations
-  FOR EACH ROW EXECUTE FUNCTION ip_allocations_block_reserved();
-
-CREATE FUNCTION ip_reservations_block_allocated() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.status = 'active' AND EXISTS (
-    SELECT 1 FROM ip_allocations a
-    WHERE a.routing_domain_id = NEW.routing_domain_id AND a.address = NEW.address AND a.status = 'active'
-  ) THEN
-    RAISE EXCEPTION 'address % has an active allocation', NEW.address
-      USING ERRCODE = 'unique_violation', CONSTRAINT = 'ip_reservation_one_active';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER ip_reservations_not_allocated BEFORE INSERT OR UPDATE OF status ON ip_reservations
-  FOR EACH ROW EXECUTE FUNCTION ip_reservations_block_allocated();
-
--- Notifications: one row per recipient, channel and event key, so a repeated
--- event never floods anyone. Email rows carry their delivery attempts.
-ALTER TABLE notifications
-  ADD COLUMN object_type text,
-  ADD COLUMN object_id text,
-  ADD COLUMN last_error text,
-  ADD COLUMN next_attempt_at timestamptz;
-CREATE UNIQUE INDEX notifications_dedupe ON notifications (recipient_id, channel, dedupe_key)
-  WHERE dedupe_key IS NOT NULL;
-CREATE INDEX notifications_outbox_idx ON notifications (next_attempt_at, created_at)
-  WHERE status = 'pending' AND channel = 'email';
-CREATE INDEX notifications_unread_idx ON notifications (recipient_id) WHERE channel = 'in_app' AND read_at IS NULL;
-
--- 000010_device_classes.up.sql
--- More device types, so endpoints and wireless gear can be told apart, and an
--- operating system family recorded separately from the free-text version.
--- os_family is set from a record or a reliable source, never guessed.
-ALTER TABLE devices DROP CONSTRAINT devices_device_type_check;
-ALTER TABLE devices ADD CONSTRAINT devices_device_type_check CHECK (device_type IN
-  ('firewall','router','switch','physical_server','virtual_machine','load_balancer','network_appliance','cloud_interface',
-   'access_point','wireless_controller','laptop','desktop','mobile_phone','tablet','printer','ip_phone','camera','storage','iot','other'));
-ALTER TABLE devices ADD COLUMN os_family text NOT NULL DEFAULT 'unknown' CHECK (os_family IN
-  ('unknown','windows','windows_server','linux','macos','ios','android','network_os','hypervisor','other'));
-CREATE INDEX devices_type_idx ON devices (device_type);
-
--- 000011_imports_discovery.up.sql
--- Phase 3 and 4: imports know their target, and discovery jobs remember the
--- schedule or person that started them. No new tables.
-ALTER TABLE import_batches
-  ADD COLUMN routing_domain_id uuid REFERENCES routing_domains(id),
-  ADD COLUMN environment text,
-  ADD COLUMN committed_at timestamptz,
-  ADD COLUMN reversed_by uuid REFERENCES users(id);
-CREATE INDEX import_records_status_idx ON import_records (batch_id, status);
-
-ALTER TABLE discovery_jobs
-  ADD COLUMN schedule_id uuid REFERENCES discovery_schedules(id),
-  ADD COLUMN subnet_id uuid REFERENCES subnets(id),
-  ADD COLUMN claimed_at timestamptz;
-ALTER TABLE discovery_schedules ADD COLUMN last_run_at timestamptz;
-ALTER TABLE discovery_policies ADD COLUMN description text NOT NULL DEFAULT '';
-CREATE INDEX discovery_job_logs_job_idx ON discovery_job_logs (job_id, logged_at);
-CREATE INDEX discovery_observations_job_idx ON discovery_observations (job_id);
-
--- 000012_integrations_reports.up.sql
--- Phases 5 to 7: connector scheduling, change requests from findings, configurable
--- confidence, generated reports and worker health. No new tables, so the row level
--- security and grants from earlier migrations still cover everything.
-
--- Connections are scheduled by the worker. Credentials stay write-only in
--- credential_ciphertext, which no API response ever selects.
-ALTER TABLE integration_connections
-  ADD COLUMN is_enabled boolean NOT NULL DEFAULT true,
-  ADD COLUMN sync_interval_minutes integer NOT NULL DEFAULT 60 CHECK (sync_interval_minutes BETWEEN 5 AND 10080),
-  ADD COLUMN last_sync_at timestamptz,
-  ADD COLUMN last_error text NOT NULL DEFAULT '';
-
--- contexts lists the VDOMs and networks a sync saw, so a person can map each one
--- to a routing domain. Connectors never guess that mapping.
-ALTER TABLE integration_sync_jobs
-  ADD COLUMN created_at timestamptz NOT NULL DEFAULT now(),
-  ADD COLUMN requested_by uuid REFERENCES users(id),
-  ADD COLUMN contexts text[] NOT NULL DEFAULT '{}',
-  ADD COLUMN error text NOT NULL DEFAULT '';
--- One sync at a time per connection, whichever worker or person starts it.
-CREATE UNIQUE INDEX integration_sync_one_active ON integration_sync_jobs (connection_id) WHERE status IN ('queued', 'running');
-CREATE INDEX integration_sync_queue_idx ON integration_sync_jobs (created_at) WHERE status = 'queued';
-CREATE INDEX integration_sync_history_idx ON integration_sync_jobs (connection_id, created_at DESC);
-CREATE INDEX integration_errors_job_idx ON integration_errors (sync_job_id);
-CREATE INDEX discovery_observations_sync_idx ON discovery_observations (sync_job_id) WHERE sync_job_id IS NOT NULL;
-
--- Change requests carry a finding's proposal through a second person. The check
--- backs up the service: nobody decides their own request.
-ALTER TABLE change_requests
-  ADD COLUMN finding_id uuid REFERENCES reconciliation_results(id),
-  ADD COLUMN reason text NOT NULL DEFAULT '',
-  ADD COLUMN decision_note text NOT NULL DEFAULT '',
-  ADD COLUMN applied_at timestamptz,
-  ADD CONSTRAINT change_requests_no_self_decision CHECK (decided_by IS NULL OR decided_by <> requested_by);
-CREATE INDEX change_requests_status_idx ON change_requests (status, created_at DESC);
-CREATE UNIQUE INDEX change_requests_one_open_per_finding ON change_requests (finding_id)
-  WHERE finding_id IS NOT NULL AND status IN ('pending', 'approved');
-
--- Each contribution to a finding's confidence, so the screen can explain the score.
-ALTER TABLE reconciliation_results ADD COLUMN confidence_breakdown jsonb NOT NULL DEFAULT '{}';
-
--- Report files live with their job: the API and worker run as separate users and
--- share no directory. Retention removes old rows.
-ALTER TABLE report_jobs
-  ADD COLUMN content bytea,
-  ADD COLUMN content_type text NOT NULL DEFAULT '',
-  ADD COLUMN size_bytes bigint NOT NULL DEFAULT 0,
-  ADD COLUMN row_count bigint NOT NULL DEFAULT 0,
-  ADD COLUMN truncated boolean NOT NULL DEFAULT false,
-  ADD COLUMN error text NOT NULL DEFAULT '',
-  ADD COLUMN started_at timestamptz,
-  ADD COLUMN finished_at timestamptz;
-CREATE INDEX report_jobs_queue_idx ON report_jobs (created_at) WHERE status = 'queued';
-CREATE INDEX report_jobs_owner_idx ON report_jobs (requested_by, created_at DESC);
-
-CREATE INDEX subnet_utilisation_snapshots_time_idx ON subnet_utilisation_snapshots (captured_at);
-CREATE INDEX audit_logs_filter_idx ON audit_logs (action, occurred_at DESC);
-
--- Once a person edits a role, make seed stops restoring its default permissions, so a
--- permission taken away doesn't quietly come back on the next deployment.
-ALTER TABLE roles ADD COLUMN is_customised boolean NOT NULL DEFAULT false;
-
--- 000013_query_indexes.up.sql
--- Indexes for the queries that run most often: every agent call reads its job's
--- targets, each sync replaces a device's routes, and subnet pages and the daily
--- snapshot read reserved ranges and DHCP scopes. No new tables, so the row level
--- security and grants from earlier migrations still cover everything.
-
-CREATE INDEX discovery_job_targets_job_idx ON discovery_job_targets (job_id);
-CREATE INDEX discovery_job_targets_domain_idx ON discovery_job_targets (routing_domain_id);
-CREATE INDEX discovery_jobs_agent_idx ON discovery_jobs (agent_id, status);
-CREATE INDEX discovery_jobs_schedule_idx ON discovery_jobs (schedule_id) WHERE schedule_id IS NOT NULL;
-
-CREATE INDEX network_routes_device_idx ON network_routes (device_id, source_id);
-CREATE INDEX dhcp_scopes_subnet_idx ON dhcp_scopes (subnet_id);
-CREATE INDEX subnet_reserved_ranges_subnet_idx ON subnet_reserved_ranges (subnet_id);
-CREATE INDEX dns_records_ip_address_idx ON dns_records (ip_address_id);
-
--- Permission and approver lookups start from the role.
-CREATE INDEX user_roles_role_idx ON user_roles (role_id);
-CREATE INDEX role_permissions_permission_idx ON role_permissions (permission_id);
-CREATE INDEX ip_requests_workflow_idx ON ip_requests (workflow_id);
-
--- 000014_least_privilege.up.sql
--- Least privilege for the application role. A SQL injection or stolen app password
--- must not be able to rewrite migration history or erase people. Accounts are
--- deactivated, never deleted, and the sessions table is unused: sign-in is token based.
--- No new tables, so row level security from earlier migrations still covers everything.
-REVOKE ALL ON schema_migrations FROM dfipam_app;
-REVOKE ALL ON sessions FROM dfipam_app;
-REVOKE DELETE, TRUNCATE ON users FROM dfipam_app;
-
--- A safer ceiling on all discovery traffic. A value someone chose is left alone.
-UPDATE system_settings SET value = '100' WHERE key = 'discovery.max_total_pps' AND value = '500';
-
--- 000015_import_discard.up.sql
--- A batch waiting for approval can be discarded. A file may come back after it was
--- discarded or reversed, so only live batches hold its hash.
-ALTER TABLE import_batches DROP CONSTRAINT import_batches_status_check;
-ALTER TABLE import_batches ADD CONSTRAINT import_batches_status_check CHECK (status IN
-  ('uploaded','validated','approved','committed','reversed','failed','discarded'));
-ALTER TABLE import_batches DROP CONSTRAINT import_batches_file_hash_key;
-CREATE UNIQUE INDEX import_batches_live_file_idx ON import_batches (file_hash) WHERE status NOT IN ('reversed','discarded');
+-- Least privilege for the app role. Accounts are deactivated, never deleted.
+-- Requests and reservations end in a status, so they are never deleted either.
+GRANT USAGE ON SCHEMA public TO dfipam_app;
+GRANT SELECT, INSERT, UPDATE ON users, reservations, ip_requests TO dfipam_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON environments, segments, devices, ip_addresses, sightings, alerts,
+  notifications, notification_preferences, settings TO dfipam_app;
+GRANT SELECT, INSERT ON audit_logs TO dfipam_app;
 
 -- Seed data
-INSERT INTO permissions (resource, action) VALUES ('inventory', 'view') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('inventory', 'view_scoped') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('inventory', 'create') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('inventory', 'edit') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('inventory', 'edit_assigned') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('inventory', 'delete') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('ip', 'request') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('ip', 'allocate') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('ip', 'reserve') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('requests', 'approve') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('imports', 'run') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('discovery', 'run') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('discovery', 'manage') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('integrations', 'manage') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('users', 'manage') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('audit', 'view') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('reports', 'export') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('reports', 'export_scoped') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO permissions (resource, action) VALUES ('system', 'manage') ON CONFLICT (resource, action) DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Super Administrator', 'Full platform configuration and user administration.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'view_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'create' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'edit' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'edit_assigned' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'inventory' AND p.action = 'delete' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'allocate' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'ip' AND p.action = 'reserve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'requests' AND p.action = 'approve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'imports' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'discovery' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'discovery' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'integrations' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'users' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'audit' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'reports' AND p.action = 'export_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Super Administrator' AND p.resource = 'system' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('IPAM Administrator', 'Manages subnets, IP records, discovery policies and integrations.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'create' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'edit' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'inventory' AND p.action = 'delete' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'allocate' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'ip' AND p.action = 'reserve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'requests' AND p.action = 'approve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'imports' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'discovery' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'discovery' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'integrations' AND p.action = 'manage' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'audit' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'IPAM Administrator' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Network Engineer', 'Manages network records and performs authorised discovery.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'create' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'inventory' AND p.action = 'edit' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'allocate' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'ip' AND p.action = 'reserve' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'imports' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'discovery' AND p.action = 'run' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Network Engineer' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Infrastructure Engineer', 'Views inventory, manages assigned records and requests allocations.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'inventory' AND p.action = 'edit_assigned' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'ip' AND p.action = 'request' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Infrastructure Engineer' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Security Auditor', 'Read-only access to inventory, audit evidence and reports.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'inventory' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'audit' AND p.action = 'view' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Security Auditor' AND p.resource = 'reports' AND p.action = 'export' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO roles (name, description, is_system) VALUES ('Business Viewer', 'Read-only access to specifically permitted business-service information.', true) ON CONFLICT (name) DO UPDATE SET description = EXCLUDED.description WHERE NOT roles.is_customised;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Business Viewer' AND p.resource = 'inventory' AND p.action = 'view_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.name = 'Business Viewer' AND p.resource = 'reports' AND p.action = 'export_scoped' AND NOT r.is_customised ON CONFLICT DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('Authoritative allocation', 'authoritative', 100) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('Manual inventory', 'manual', 90) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('FortiGate', 'integration', 85) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('VMware', 'integration', 70) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('AWS', 'integration', 90) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('Azure', 'integration', 90) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('DHCP', 'integration', 70) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('DNS', 'passive', 50) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('SNMP', 'active', 75) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('ARP', 'active', 75) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('ICMP', 'active', 40) ON CONFLICT (name) DO NOTHING;
-INSERT INTO observation_sources (name, kind, reliability) VALUES ('Nmap', 'active', 40) ON CONFLICT (name) DO NOTHING;
-INSERT INTO system_settings (key, value) VALUES ('discovery.emergency_stop', 'false') ON CONFLICT (key) DO NOTHING;
-INSERT INTO system_settings (key, value) VALUES ('discovery.max_total_pps', '100') ON CONFLICT (key) DO NOTHING;
-INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_observations', 180) ON CONFLICT (data_class) DO NOTHING;
-INSERT INTO retention_policies (data_class, retain_days) VALUES ('discovery_job_logs', 90) ON CONFLICT (data_class) DO NOTHING;
-INSERT INTO retention_policies (data_class, retain_days) VALUES ('agent_heartbeats', 30) ON CONFLICT (data_class) DO NOTHING;
-INSERT INTO retention_policies (data_class, retain_days) VALUES ('notifications', 365) ON CONFLICT (data_class) DO NOTHING;
-INSERT INTO retention_policies (data_class, retain_days) VALUES ('report_jobs', 30) ON CONFLICT (data_class) DO NOTHING;
-INSERT INTO retention_policies (data_class, retain_days) VALUES ('audit_logs', 2555) ON CONFLICT (data_class) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('new_device', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":70,"freshnessDays":30}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('unknown_ip', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":90,"freshnessDays":7}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('ip_conflict_suspected', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.4,"freshness":0.3,"agreement":0.3,"cap":50,"freshnessDays":1}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('duplicate_mac', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('dns_mismatch', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('allocated_not_observed', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('observed_not_allocated', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{"reliability":0.6,"freshness":0.3,"agreement":0.1,"cap":95,"freshnessDays":7}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('subnet_overlap', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('ownership_missing', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('infrastructure_mismatch', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO reconciliation_rules (classification, source_priority, confidence_weights) VALUES ('stale_evidence', '["Authoritative allocation","Manual inventory","AWS","Azure","FortiGate","SNMP","ARP","VMware","DHCP","DNS","ICMP","Nmap"]', '{}') ON CONFLICT (classification) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('approval_requested', 'info', 'Eligible approvers') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_approved', 'info', 'Requester') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_rejected', 'warning', 'Requester') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_ready', 'info', 'People who can allocate or reserve') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_fulfilled', 'info', 'Requester') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('request_expired', 'info', 'Requester') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_expiring', 'warning', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_expired', 'warning', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('reservation_released', 'info', 'Reservation holder') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('integration_failed', 'warning', 'People who manage integrations') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('report_ready', 'info', 'Person who requested it') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_requested', 'info', 'People who can approve requests') ON CONFLICT (event_type) DO NOTHING;
-INSERT INTO notification_rules (event_type, severity, recipient_group) VALUES ('change_decided', 'info', 'Person who proposed it') ON CONFLICT (event_type) DO NOTHING;
+INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Production', '#dc2626', 10, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
+INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('DR', '#9333ea', 20, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
+INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('UAT', '#d97706', 30, 'high', true, false) ON CONFLICT ((lower(name))) DO NOTHING;
+INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Development', '#2563eb', 40, 'medium', false, false) ON CONFLICT ((lower(name))) DO NOTHING;
+INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Test', '#64748b', 50, 'medium', false, false) ON CONFLICT ((lower(name))) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('scan.interval_minutes', '5'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('scan.method', '"ping"'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('server_check.interval_seconds', '60'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('server_check.down_after_failures', '3'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('reservations.reminder_days', '7'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('alerts.email_recipients', '[]'::jsonb) ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (15, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (1, false);
 
 COMMIT;

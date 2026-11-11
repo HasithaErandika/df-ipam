@@ -6,7 +6,7 @@ import type { NavItem } from '../../app/nav'
 export function Planned({ item }: { item: NavItem }) {
   return (
     <>
-      <PageHeader title={item.label} description={item.summary} actions={<Badge tone="accent">Planned: Phase {item.phase}</Badge>} />
+      <PageHeader title={item.label} description={item.summary} actions={<Badge tone="accent">Not built yet: build step {item.step}</Badge>} />
       <Card title="What this page will do" className="max-w-2xl">
         <ul className="space-y-2 p-4">
           {item.features?.map((f) => (

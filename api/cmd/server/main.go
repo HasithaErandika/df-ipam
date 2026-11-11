@@ -1,10 +1,9 @@
-// Command server is the DF-IPAM backend: the HTTP API and, unless WORKER_ENABLED is
-// false, the background worker, in one process.
+// Command server is the DF-IPAM Lite backend: the HTTP API. The scanner and server
+// checks will run in this process too (docs/new.md, build step 3).
 package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,10 +14,7 @@ import (
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/config"
 	"dfipam/api/internal/platform/db"
-	"dfipam/api/internal/platform/safehttp"
-	"dfipam/api/internal/platform/secrets"
 	"dfipam/api/internal/server"
-	"dfipam/api/internal/worker"
 
 	"github.com/gin-gonic/gin"
 )
@@ -59,36 +55,13 @@ func run() error {
 	resolver := &auth.Resolver{Pool: pool, Provider: verifier.Provider()}
 	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
 		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight}
-	if cfg.SupabaseServiceKey != "" {
-		deps.Inviter = admin
-	}
-	switch keys, err := secrets.FromEnv(); {
-	case err == nil:
-		deps.Keys = keys
-	case errors.Is(err, secrets.ErrNotConfigured):
-		slog.Warn("SECRET_ENCRYPTION_KEY is not set, so integration credentials can't be stored")
-	default:
-		return err
-	}
-	if deps.Outbound, err = safehttp.FromEnv(); err != nil {
-		return err
-	}
 	router, _ := server.New(deps)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
-	jobs := make(chan struct{})
-	if cfg.WorkerEnabled {
-		go func() {
-			defer close(jobs)
-			worker.Run(ctx, pool)
-		}()
-	} else {
-		close(jobs)
-	}
 	errs := make(chan error, 1)
 	go func() {
-		slog.Info("server listening", "addr", cfg.ListenAddr, "worker", cfg.WorkerEnabled)
+		slog.Info("server listening", "addr", cfg.ListenAddr)
 		errs <- srv.ListenAndServe()
 	}()
 	select {
@@ -99,11 +72,5 @@ func run() error {
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
-	err = srv.Shutdown(shutdown)
-	select {
-	case <-jobs:
-	case <-shutdown.Done():
-		slog.Warn("background jobs were still running at shutdown")
-	}
-	return err
+	return srv.Shutdown(shutdown)
 }

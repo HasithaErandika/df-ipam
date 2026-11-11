@@ -26,7 +26,7 @@ function Authenticated() {
       </Centred>
     )
   }
-  if (me.roles.length === 0) {
+  if (me.role === null) {
     return (
       <Centred>
         <div className="flex flex-col items-center p-8 text-center">

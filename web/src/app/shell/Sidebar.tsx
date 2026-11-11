@@ -47,7 +47,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           <div key={group} className="mb-2.5">
             {collapsed ? <div className="mx-4 my-2 h-px bg-side-border" />
               : group && <div className="px-4 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] text-side-ink-3 uppercase">{group}</div>}
-            {items.map(({ to, label, icon: Icon, phase }) => (
+            {items.map(({ to, label, icon: Icon, step }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -58,13 +58,13 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                   `relative flex h-[30px] items-center gap-2.5 text-[13px] transition-colors ${collapsed ? 'justify-center' : 'pr-3 pl-4'} ${
                     isActive
                       ? 'bg-side-active font-medium text-side-active-ink before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-accent'
-                      : `hover:bg-side-hover hover:text-side-ink ${phase ? 'text-side-ink-3' : 'text-side-ink-2'}`
+                      : `hover:bg-side-hover hover:text-side-ink ${step ? 'text-side-ink-3' : 'text-side-ink-2'}`
                   }`
                 }
               >
                 <Icon size={15} strokeWidth={1.75} className="shrink-0" aria-hidden />
                 {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
-                {!collapsed && phase && <span className="text-[10px] text-side-ink-3">Planned</span>}
+                {!collapsed && step && <span className="text-[10px] text-side-ink-3">Not built</span>}
               </NavLink>
             ))}
           </div>

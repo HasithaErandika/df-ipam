@@ -2,6 +2,8 @@
 
 Everything DF-IPAM has to deliver, and where it stands. Update this file when a feature changes status.
 
+**On branch `lite`:** this trace describes the earlier enterprise build. Lite progress is tracked in the Progress section of [new.md](new.md).
+
 **Last updated:** 5 November 2026
 
 | Status | Meaning |

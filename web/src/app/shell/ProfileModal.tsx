@@ -6,6 +6,7 @@ import { get } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
 import { useMe } from '../../lib/session'
 import type { Profile } from '../../lib/types'
+import { roleLabels } from '../../lib/types/core'
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -56,18 +57,8 @@ function Details({ profile, permissions }: { profile: Profile; permissions: stri
           <Row label="User ID"><span className="font-mono text-[12px]">{profile.id}</span></Row>
         </dl>
       </Section>
-      <Section title="Roles">
-        {profile.assignments.length === 0 ? <p className="text-[13px] text-ink-2">No role assigned yet.</p> : (
-          <ul className="space-y-2">
-            {profile.assignments.map((a) => (
-              <li key={`${a.role}/${a.scope}`} className="text-[13px]">
-                <span className="font-medium text-ink">{a.role}</span>
-                <span className="text-ink-3"> · {a.scope || 'All scopes'}</span>
-                {a.description && <p className="text-[12px] text-ink-2">{a.description}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
+      <Section title="Role">
+        <p className="text-[13px] text-ink">{profile.role ? roleLabels[profile.role] : 'No role assigned yet.'}</p>
       </Section>
       <Section title={`Permissions (${permissions.length})`}>
         {permissions.length === 0 ? <p className="text-[13px] text-ink-2">No permissions yet.</p> : (

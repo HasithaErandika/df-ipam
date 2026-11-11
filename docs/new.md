@@ -1,6 +1,6 @@
 # DF-IPAM Lite: the simpler plan
 
-**Status:** plan approved, building on branch `lite`. Nothing in the code has changed yet. It replaces the enterprise design in the other docs once Lite is live. Answer the questions at the end before step 3 (the scanner).
+**Status:** building on branch `lite`. **Step 1 is done** (see Progress below). On this branch this file overrides the enterprise design in the other docs. Answer the questions at the end before step 3 (the scanner).
 
 **Branch:** `lite`, created on 2026-11-11 from `refactor/optimise-secure-document` at commit `70c583a`. All Lite work happens here. `main` and the old branch stay untouched until Lite is proven and merged.
 
@@ -208,7 +208,7 @@ Kept from today's reports module, including the PDF renderer, with the report li
 | `notifications` | Per user: type, message, link, read flag, email sent flag (also the email outbox) |
 | `notification_preferences` | Per user and type: email on or off |
 | `settings` | Scan intervals, alert email list, SNMP credentials if option B (encrypted) |
-| `audit_log` | Append-only change history |
+| `audit_logs` | Append-only change history |
 
 `sightings` is updated in place (upsert), so it stays small: about as many rows as devices in the building.
 
@@ -246,17 +246,49 @@ Start a fresh, small codebase on a new branch rather than stripping the old one 
 
 | Step | Work | Reuse |
 | --- | --- | --- |
-| 1 | Branch `lite` (created). New migration set (13 tables, RLS and grants as today). Two containers: `db` and `app` (Go serves the API and the built web app) | Auth (`internal/auth`), `platform`, `netcalc`, Docker setup |
+| 1 | **Done.** Branch `lite`. New migration set (13 tables, RLS and grants as today). Old modules, agent and worker removed. Containers: `db`, `backend`, `web` | Auth (`internal/auth`), `platform`, `netcalc`, Docker setup |
 | 2 | Segments, IP register (mark, assign, reserve range, release, Available candidate), devices: CRUD, CSV import / export, audit | Route guard, error format, audit writer, `netcalc` |
-| 3 | Scanner, option C first: ping sweep, reverse DNS, NetBIOS name and MAC, server checks | `agent/ping.go` |
-| 4 | Alert rules, alert screen, notifications (bell, email, preferences) | `notifications` module and outbox |
-| 5 | Requests and reservations | `allocation` module (requests, reservations, Available candidate), trimmed to one approval step |
-| 6 | Reports (CSV and PDF) and the audit screen | `reports` module and PDF renderer, `auditlog` module, `web/src/features/{requests,reservations,reports,audit}` |
+| 3 | Scanner, option C first: ping sweep, reverse DNS, NetBIOS name and MAC, server checks | `internal/agent/ping.go` (from `70c583a`) |
+| 4 | Alert rules, alert screen, notifications (bell, email, preferences) | `internal/modules/notifications` and its outbox, `internal/platform/mail` |
+| 5 | Requests and reservations | `internal/modules/allocation` (requests, reservations, Available candidate), trimmed to one approval step |
+| 6 | Reports (CSV and PDF) and the audit screen | `internal/modules/reports` and its PDF renderer, `internal/modules/auditlog`, `web/src/features/{requests,reservations,reports,audit}` |
 | 7 | Dashboard and floor pages | UI components, theme, `Modal` |
 | 8 | Scanner option A (ARP scan per VLAN) once the trunk port is ready, or option B | |
 | 9 | Load real data, run a week alongside the network team, tune noise, then retire the old code | |
 
-The old code stays in git history. Once Lite is live, delete the unused modules and update `CLAUDE.md`, `docs/README.md` and `docs/development_phase.md`. The rules about routing domains, IPv6 and the FortiGate go; the rules about audit, secrets, read-only network access and "discovery never changes ownership" stay.
+Code marked "from `70c583a`" was removed in step 1 and is still in git history. Bring a file back with `git show 70c583a:api/<path>` and trim it to the new schema. Once Lite is live, rewrite `CLAUDE.md`, `docs/README.md` and `docs/development_phase.md`. The rules about routing domains, IPv6 and the FortiGate go; the rules about audit, secrets, read-only network access and "discovery never changes ownership" stay.
+
+## Progress
+
+### Step 1: foundation (done, 2026-11-11)
+
+**Database.** The 15 old migrations are replaced by one, `api/migrations/000001_lite.up.sql`, with the 13 tables above. Every table has row level security, the `dfipam_app_all` policy and explicit grants. The schema itself enforces:
+
+- IPv4 only, and segment networks never overlap.
+- A DHCP pool sits inside its network, and only floor segments have one.
+- Register IPs and reservations sit inside their segment, and a segment can't be moved away from them.
+- One IP appears once in the register.
+- A rejected request needs a reason, and a decided request needs who decided and when.
+- Only one open alert per cause.
+- The audit log is append-only. Users, requests and reservations can't be deleted by the app.
+
+`make test-db` checks all of these against a throwaway `dfipam_test` database.
+
+**Backend.** Only sign-in, `/auth/me` and `/auth/me/profile` remain. Roles are fixed in code (`api/internal/auth/permissions.go`) and stored in `users.role`. The seed loads the 5 environments and default settings. The AWS, Azure, vCenter and spreadsheet libraries are gone.
+
+**Web.** The menu has the 9 Lite screens. Each says "Not built yet" and lists what it will do, with no sample data.
+
+**Docker.** `db`, `migrate` (runs once), `backend` and `web`. The plan said two containers, but `web` stays: it is Nginx, the only public entry, with TLS and rate limits. The agent container, worker and retention timers are gone.
+
+**Switching an existing database.** A database made by the old migrations can't be upgraded in place. Locally, `make db-reset CONFIRM=yes` then `make docker-up`. **This deletes all local data.**
+
+**First Admin.** Sign in once, then in `make db-shell`:
+
+```sql
+UPDATE users SET role = 'admin' WHERE lower(email) = lower('<your email>');
+```
+
+Other roles are `requester` and `viewer`. Admins will manage roles in Settings from step 2.
 
 ## Questions to answer first
 

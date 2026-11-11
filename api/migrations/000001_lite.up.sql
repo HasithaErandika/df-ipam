@@ -1,0 +1,344 @@
+-- DF-IPAM Lite: one building, IPv4 only, one routing table. See docs/new.md.
+-- Discovery writes sightings and alerts only. People own everything else.
+
+-- Runtime role. Created without login here; docker/postgres/init gives it a password,
+-- so no credential ever lives in a migration.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dfipam_app') THEN
+    CREATE ROLE dfipam_app NOLOGIN;
+  END IF;
+END $$;
+
+CREATE FUNCTION set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END $$;
+
+-- role is NULL until an Admin gives one, so a new sign-in sees nothing.
+CREATE TABLE users (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         text NOT NULL,
+  display_name  text NOT NULL DEFAULT '',
+  auth_provider text NOT NULL,
+  auth_subject  text NOT NULL,
+  role          text CHECK (role IN ('admin', 'requester', 'viewer')),
+  is_active     boolean NOT NULL DEFAULT true,
+  last_login_at timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (auth_provider, auth_subject)
+);
+CREATE INDEX users_email_idx ON users (lower(email));
+CREATE TRIGGER users_updated BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Production, UAT and so on. Severity and flags are defaults for new servers.
+CREATE TABLE environments (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name             text NOT NULL CHECK (btrim(name) <> ''),
+  colour           text NOT NULL DEFAULT '#64748b' CHECK (colour ~ '^#[0-9a-fA-F]{6}$'),
+  sort_order       integer NOT NULL DEFAULT 0,
+  default_severity text NOT NULL DEFAULT 'medium' CHECK (default_severity IN ('critical', 'high', 'medium', 'low')),
+  default_monitor  boolean NOT NULL DEFAULT false,
+  default_critical boolean NOT NULL DEFAULT false,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX environments_name_key ON environments (lower(name));
+CREATE TRIGGER environments_updated BEFORE UPDATE ON environments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- A floor (DHCP) or server network. Networks never overlap.
+CREATE TABLE segments (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                   text NOT NULL CHECK (btrim(name) <> ''),
+  kind                   text NOT NULL CHECK (kind IN ('dhcp', 'server')),
+  floor                  integer,
+  vlan                   integer CHECK (vlan BETWEEN 1 AND 4094),
+  network                cidr NOT NULL CHECK (family(network) = 4),
+  gateway                inet CHECK (gateway << network),
+  dhcp_start             inet CHECK (dhcp_start << network),
+  dhcp_end               inet CHECK (dhcp_end << network),
+  default_environment_id uuid REFERENCES environments(id) ON DELETE SET NULL,
+  scan_interface         text,
+  description            text NOT NULL DEFAULT '',
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  updated_at             timestamptz NOT NULL DEFAULT now(),
+  created_by             uuid REFERENCES users(id),
+  updated_by             uuid REFERENCES users(id),
+  CHECK ((dhcp_start IS NULL) = (dhcp_end IS NULL)),
+  CHECK (dhcp_start IS NULL OR dhcp_start <= dhcp_end),
+  CHECK (kind = 'dhcp' OR dhcp_start IS NULL),
+  CHECK (kind = 'server' OR default_environment_id IS NULL),
+  EXCLUDE USING gist (network inet_ops WITH &&)
+);
+CREATE UNIQUE INDEX segments_name_key ON segments (lower(name));
+CREATE TRIGGER segments_updated BEFORE UPDATE ON segments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Known MAC addresses. New ones wait in pending until a person decides.
+CREATE TABLE devices (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  mac         macaddr NOT NULL UNIQUE,
+  name        text NOT NULL DEFAULT '',
+  owner       text NOT NULL DEFAULT '',
+  department  text NOT NULL DEFAULT '',
+  device_type text NOT NULL DEFAULT 'other'
+    CHECK (device_type IN ('pc', 'laptop', 'printer', 'phone', 'access_point', 'network', 'server', 'cctv', 'other')),
+  status      text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  first_seen  timestamptz,
+  last_seen   timestamptz,
+  decided_by  uuid REFERENCES users(id),
+  decided_at  timestamptz,
+  notes       text NOT NULL DEFAULT '',
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  CHECK (status = 'pending' OR decided_at IS NOT NULL)
+);
+CREATE INDEX devices_status_idx ON devices (status);
+CREATE TRIGGER devices_updated BEFORE UPDATE ON devices FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- A hold on one IP or a small range, inside one segment.
+CREATE TABLE reservations (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  segment_id uuid NOT NULL REFERENCES segments(id),
+  start_ip   inet NOT NULL CHECK (family(start_ip) = 4 AND masklen(start_ip) = 32),
+  end_ip     inet NOT NULL CHECK (family(end_ip) = 4 AND masklen(end_ip) = 32),
+  reason     text NOT NULL CHECK (btrim(reason) <> ''),
+  owner_id   uuid REFERENCES users(id),
+  owner_name text NOT NULL DEFAULT '',
+  expires_at timestamptz,
+  status     text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'converted', 'released')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  created_by uuid REFERENCES users(id),
+  updated_by uuid REFERENCES users(id),
+  CHECK (start_ip <= end_ip)
+);
+CREATE INDEX reservations_segment_idx ON reservations (segment_id) WHERE status = 'active';
+CREATE INDEX reservations_expiry_idx ON reservations (expires_at) WHERE status = 'active';
+CREATE TRIGGER reservations_updated BEFORE UPDATE ON reservations FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- The IP register: what people say each address is for. Discovery never writes here,
+-- except the health columns set by server checks.
+CREATE TABLE ip_addresses (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  segment_id        uuid NOT NULL REFERENCES segments(id),
+  ip                inet NOT NULL UNIQUE CHECK (family(ip) = 4 AND masklen(ip) = 32),
+  status            text NOT NULL CHECK (status IN ('assigned', 'reserved', 'blocked')),
+  ip_type           text NOT NULL DEFAULT 'other'
+    CHECK (ip_type IN ('server', 'printer', 'network', 'cctv', 'access_point', 'user_pc', 'other')),
+  environment_id    uuid REFERENCES environments(id),
+  device_id         uuid REFERENCES devices(id) ON DELETE SET NULL,
+  reservation_id    uuid REFERENCES reservations(id) ON DELETE SET NULL,
+  assigned_name     text NOT NULL DEFAULT '',
+  expected_mac      macaddr,
+  owner             text NOT NULL DEFAULT '',
+  department        text NOT NULL DEFAULT '',
+  monitor           boolean NOT NULL DEFAULT false,
+  critical          boolean NOT NULL DEFAULT false,
+  check_port        integer CHECK (check_port BETWEEN 1 AND 65535),
+  health            text NOT NULL DEFAULT 'unknown' CHECK (health IN ('up', 'down', 'unknown')),
+  health_changed_at timestamptz,
+  notes             text NOT NULL DEFAULT '',
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  created_by        uuid REFERENCES users(id),
+  updated_by        uuid REFERENCES users(id)
+);
+CREATE INDEX ip_addresses_segment_idx ON ip_addresses (segment_id, ip);
+CREATE INDEX ip_addresses_monitor_idx ON ip_addresses (id) WHERE monitor;
+CREATE INDEX ip_addresses_environment_idx ON ip_addresses (environment_id);
+CREATE TRIGGER ip_addresses_updated BEFORE UPDATE ON ip_addresses FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Addresses must sit inside the segment they name.
+CREATE FUNCTION check_ip_in_segment() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM segments WHERE id = NEW.segment_id AND NEW.ip << network) THEN
+    RAISE EXCEPTION 'IP % is outside its segment', NEW.ip USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER ip_addresses_in_segment BEFORE INSERT OR UPDATE OF ip, segment_id ON ip_addresses
+  FOR EACH ROW EXECUTE FUNCTION check_ip_in_segment();
+
+CREATE FUNCTION check_range_in_segment() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM segments WHERE id = NEW.segment_id AND NEW.start_ip << network AND NEW.end_ip << network) THEN
+    RAISE EXCEPTION 'range %-% is outside its segment', NEW.start_ip, NEW.end_ip USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER reservations_in_segment BEFORE INSERT OR UPDATE OF start_ip, end_ip, segment_id ON reservations
+  FOR EACH ROW EXECUTE FUNCTION check_range_in_segment();
+
+-- A segment can't move away from the addresses inside it.
+CREATE FUNCTION check_segment_contents() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ip_addresses WHERE segment_id = NEW.id AND NOT (ip << NEW.network))
+     OR EXISTS (SELECT 1 FROM reservations WHERE segment_id = NEW.id AND status = 'active'
+                AND NOT (start_ip << NEW.network AND end_ip << NEW.network)) THEN
+    RAISE EXCEPTION 'segment % no longer holds its addresses', NEW.network USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER segments_keep_contents BEFORE UPDATE OF network ON segments
+  FOR EACH ROW EXECUTE FUNCTION check_segment_contents();
+
+CREATE TABLE ip_requests (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  requester_id    uuid NOT NULL REFERENCES users(id),
+  segment_id      uuid NOT NULL REFERENCES segments(id),
+  ip_type         text NOT NULL DEFAULT 'other'
+    CHECK (ip_type IN ('server', 'printer', 'network', 'cctv', 'access_point', 'user_pc', 'other')),
+  environment_id  uuid REFERENCES environments(id),
+  name            text NOT NULL CHECK (btrim(name) <> ''),
+  purpose         text NOT NULL DEFAULT '',
+  needed_by       date,
+  requested_ip    inet CHECK (requested_ip IS NULL OR (family(requested_ip) = 4 AND masklen(requested_ip) = 32)),
+  status          text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+  decided_by      uuid REFERENCES users(id),
+  decided_at      timestamptz,
+  decision_reason text NOT NULL DEFAULT '',
+  assigned_ip_id  uuid REFERENCES ip_addresses(id) ON DELETE SET NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  CHECK (status IN ('pending', 'cancelled') OR (decided_by IS NOT NULL AND decided_at IS NOT NULL)),
+  CHECK (status <> 'rejected' OR btrim(decision_reason) <> '')
+);
+CREATE INDEX ip_requests_status_idx ON ip_requests (status, created_at DESC);
+CREATE INDEX ip_requests_requester_idx ON ip_requests (requester_id, created_at DESC);
+CREATE TRIGGER ip_requests_updated BEFORE UPDATE ON ip_requests FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- What the scanner saw: one row per IP and MAC, updated in place.
+CREATE TABLE sightings (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  segment_id     uuid REFERENCES segments(id) ON DELETE SET NULL,
+  ip             inet NOT NULL CHECK (family(ip) = 4 AND masklen(ip) = 32),
+  mac            macaddr,
+  hostname       text NOT NULL DEFAULT '',
+  vendor         text NOT NULL DEFAULT '',
+  source         text NOT NULL CHECK (source IN ('arp', 'ping', 'netbios', 'snmp', 'dns')),
+  is_static      boolean NOT NULL DEFAULT false,
+  is_private_mac boolean NOT NULL DEFAULT false,
+  first_seen     timestamptz NOT NULL DEFAULT now(),
+  last_seen      timestamptz NOT NULL DEFAULT now(),
+  UNIQUE NULLS NOT DISTINCT (ip, mac)
+);
+CREATE INDEX sightings_segment_idx ON sightings (segment_id, last_seen DESC);
+CREATE INDEX sightings_mac_idx ON sightings (mac) WHERE mac IS NOT NULL;
+
+-- One open alert per cause: dedupe_key stops repeats while it is still open.
+CREATE TABLE alerts (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_type      text NOT NULL CHECK (alert_type IN ('unknown_device', 'unregistered_static', 'register_misuse',
+                    'unknown_server_ip', 'ip_conflict', 'server_down', 'server_mac_changed', 'rejected_device')),
+  severity        text NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low')),
+  segment_id      uuid REFERENCES segments(id) ON DELETE SET NULL,
+  ip_address_id   uuid REFERENCES ip_addresses(id) ON DELETE SET NULL,
+  device_id       uuid REFERENCES devices(id) ON DELETE SET NULL,
+  ip              inet,
+  mac             macaddr,
+  message         text NOT NULL,
+  dedupe_key      text NOT NULL,
+  status          text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'acknowledged', 'closed')),
+  opened_at       timestamptz NOT NULL DEFAULT now(),
+  last_seen_at    timestamptz NOT NULL DEFAULT now(),
+  acknowledged_by uuid REFERENCES users(id),
+  acknowledged_at timestamptz,
+  closed_at       timestamptz,
+  CHECK (status <> 'acknowledged' OR acknowledged_at IS NOT NULL),
+  CHECK (status <> 'closed' OR closed_at IS NOT NULL)
+);
+CREATE UNIQUE INDEX alerts_open_key ON alerts (dedupe_key) WHERE status <> 'closed';
+CREATE INDEX alerts_status_idx ON alerts (status, severity, opened_at DESC);
+
+-- In-app notifications, also the email outbox.
+CREATE TABLE notifications (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        uuid NOT NULL REFERENCES users(id),
+  kind           text NOT NULL,
+  message        text NOT NULL,
+  link           text NOT NULL DEFAULT '',
+  is_read        boolean NOT NULL DEFAULT false,
+  email_status   text NOT NULL DEFAULT 'none' CHECK (email_status IN ('none', 'pending', 'sent', 'failed')),
+  email_attempts integer NOT NULL DEFAULT 0,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  read_at        timestamptz
+);
+CREATE INDEX notifications_user_idx ON notifications (user_id, created_at DESC);
+CREATE INDEX notifications_unread_idx ON notifications (user_id) WHERE NOT is_read;
+CREATE INDEX notifications_outbox_idx ON notifications (created_at) WHERE email_status = 'pending';
+
+CREATE TABLE notification_preferences (
+  user_id uuid NOT NULL REFERENCES users(id),
+  kind    text NOT NULL,
+  email   boolean NOT NULL DEFAULT true,
+  PRIMARY KEY (user_id, kind)
+);
+
+CREATE TABLE settings (
+  key        text PRIMARY KEY,
+  value      jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid REFERENCES users(id)
+);
+
+-- Append-only. Written in the same transaction as the change it describes.
+CREATE TABLE audit_logs (
+  id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  actor_id       uuid REFERENCES users(id),
+  actor_type     text NOT NULL DEFAULT 'user' CHECK (actor_type IN ('user', 'system')),
+  action         text NOT NULL,
+  object_type    text NOT NULL,
+  object_id      text,
+  old_values     jsonb,
+  new_values     jsonb,
+  occurred_at    timestamptz NOT NULL DEFAULT now(),
+  source_ip      inet,
+  correlation_id text,
+  approval_ref   text
+);
+CREATE INDEX audit_logs_object_idx ON audit_logs (object_type, object_id, occurred_at DESC);
+CREATE INDEX audit_logs_time_idx ON audit_logs (occurred_at DESC);
+
+CREATE FUNCTION audit_logs_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'audit_logs is append-only' USING ERRCODE = 'insufficient_privilege';
+END $$;
+CREATE TRIGGER audit_logs_protect BEFORE UPDATE OR DELETE ON audit_logs
+  FOR EACH ROW EXECUTE FUNCTION audit_logs_immutable();
+CREATE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON audit_logs
+  FOR EACH STATEMENT EXECUTE FUNCTION audit_logs_immutable();
+
+-- Closed to the Supabase Data API: row level security on every table, with one
+-- policy for the app role, and nothing for anon or authenticated.
+DO $$
+DECLARE
+  t text;
+  r text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['users', 'environments', 'segments', 'devices', 'reservations', 'ip_addresses',
+    'ip_requests', 'sightings', 'alerts', 'notifications', 'notification_preferences', 'settings', 'audit_logs'] LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('CREATE POLICY dfipam_app_all ON public.%I TO dfipam_app USING (true) WITH CHECK (true)', t);
+  END LOOP;
+  ALTER TABLE IF EXISTS public.schema_migrations ENABLE ROW LEVEL SECURITY;
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', r);
+      EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', r);
+      EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM %I', r);
+      EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM %I', r);
+    END IF;
+  END LOOP;
+END $$;
+
+-- Least privilege for the app role. Accounts are deactivated, never deleted.
+-- Requests and reservations end in a status, so they are never deleted either.
+GRANT USAGE ON SCHEMA public TO dfipam_app;
+GRANT SELECT, INSERT, UPDATE ON users, reservations, ip_requests TO dfipam_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON environments, segments, devices, ip_addresses, sightings, alerts,
+  notifications, notification_preferences, settings TO dfipam_app;
+GRANT SELECT, INSERT ON audit_logs TO dfipam_app;

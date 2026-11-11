@@ -93,8 +93,9 @@ func TestRequestsWithoutTokenAreRejected(t *testing.T) {
 }
 
 func TestMissingPermissionIsForbidden(t *testing.T) {
-	r, _ := engine(map[string]bool{})
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/subnets", nil)
+	r, guard := engine(map[string]bool{})
+	guard.Handle(http.MethodGet, "/probe", func(c *gin.Context) { c.Status(http.StatusOK) }, auth.InventoryView)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/probe", nil)
 	req.Header.Set("Authorization", "Bearer token")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -106,11 +107,21 @@ func TestMissingPermissionIsForbidden(t *testing.T) {
 	}
 }
 
+func TestGuardRefusesRoutesWithoutPermission(t *testing.T) {
+	_, guard := engine(nil)
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a route with no permission was accepted")
+		}
+	}()
+	guard.Handle(http.MethodGet, "/open", func(*gin.Context) {})
+}
+
 func TestCORS(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r, _ := New(Deps{Verifier: stubVerifier{}, Resolver: stubResolver{}, Origins: []string{"http://localhost:5173"}})
 	preflight := func(origin string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodOptions, "/api/v1/subnets", nil)
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/auth/me", nil)
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Access-Control-Request-Method", "POST")
 		w := httptest.NewRecorder()

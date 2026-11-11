@@ -19,7 +19,6 @@ type Config struct {
 	SupabaseServiceKey string
 	AuthAudience       string
 	TrustedProxies     []string
-	WorkerEnabled      bool
 	MaxInFlight        int
 }
 
@@ -53,7 +52,6 @@ func Load() (Config, error) {
 		SupabaseServiceKey: get("SUPABASE_SERVICE_ROLE_KEY", ""),
 		AuthAudience:       get("AUTH_AUDIENCE", "authenticated"),
 		TrustedProxies:     splitList(get("TRUSTED_PROXIES", "127.0.0.1,::1")),
-		WorkerEnabled:      get("WORKER_ENABLED", "true") != "false",
 	}
 	if v := get("API_MAX_IN_FLIGHT", ""); v != "" {
 		n, err := strconv.Atoi(v)
