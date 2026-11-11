@@ -16,7 +16,7 @@ What Dialog Finance actually needs is much smaller:
 | --- | --- |
 | One building, 7 floors | Each floor has one user segment in `192.168.x.x`, served by DHCP |
 | Users on DHCP | Some users still set a static IP by hand |
-| A server segment | `172.x.x.x`, static IPs only. Critical, must be tracked and watched |
+| Server segments | `172.x.x.x`, static IPs only, split by environment: Production, UAT and others. Must be tracked and watched |
 | Auto-discovery | Must spot unknown or unauthorised devices |
 | No agents on PCs | No PC runs 24 hours, so nothing is installed on user machines |
 | No firewall access | The FortiGate is not connected to DF-IPAM for now |
@@ -70,6 +70,7 @@ Every segment has an IP register: the list of addresses people have marked by ha
 | Assigned to | A device from the Devices list, or a free-text name ("HR printer, 3rd floor") |
 | Owner / department | Who is responsible |
 | Monitor | Check it every minute (on for servers, optional for others) |
+| Environment | Production, UAT, Development, DR, Test (servers; see below) |
 | Critical | Down or MAC change raises a Critical alert |
 | Notes | Anything else |
 
@@ -84,7 +85,19 @@ Nothing in the register is ever changed by discovery. A scan only adds evidence 
 
 ### 3. Servers (monitored register entries)
 
-- The Servers page is the IP register filtered to the server segment, plus anything marked Monitor.
+- The Servers page is the IP register filtered to server segments, plus anything marked Monitor.
+- **Environments.** Every server has an environment: **Production**, **UAT**, **Development**, **DR** or **Test**. Admins can add more (for example "Staging") in Settings. Each environment has a colour badge and a default severity:
+
+  | Environment | Default when down or MAC changes | New server default |
+  | --- | --- | --- |
+  | Production | **Critical** | Monitor on, critical on |
+  | DR | **Critical** | Monitor on, critical on |
+  | UAT | High | Monitor on |
+  | Development, Test | Medium | Monitor off |
+
+  A single server can still be marked critical or not by hand.
+- A server segment can carry a default environment (for example `172.16.10.0/24` = Production, `172.16.20.0/24` = UAT), so new entries in it start with the right one. Mixed segments are fine: the environment is set per IP.
+- The Servers page filters by environment, and the dashboard shows servers down per environment.
 - Monitored IPs are checked every minute by ping, or a TCP port when ping is blocked (for example 443 or 3389).
 - Status shown as **Up / Down / Unknown**, with last change time.
 - Alerts if a critical server goes down, or if its IP answers with a **different MAC** than the one registered (conflict or spoofing).
@@ -101,13 +114,13 @@ Without the DHCP server's lease list, the system tells DHCP from static by the p
 
 | Alert | Rule | Severity |
 | --- | --- | --- |
-| Unknown device | A MAC is seen that is not in Devices | Medium on floors, **High** in the server segment |
+| Unknown device | A MAC is seen that is not in Devices | Medium on floors, **High** in server segments |
 | Unregistered static IP | An address outside the DHCP pool is in use and not in the IP register | Medium |
 | Registered IP misused | An IP marked Reserved or Blocked is seen in use, or an Assigned IP is used by a different MAC | High |
-| Unknown server IP | An IP in the server segment answers but is not in the IP register | High |
+| Unknown server IP | An IP in a server segment answers but is not in the IP register | High (Critical in a Production segment) |
 | IP conflict | One IP seen with two MACs within a short time | High |
-| Server down | A critical server fails 3 checks in a row | **Critical** |
-| Server MAC changed | A server IP answers with a MAC that is not its registered one | **Critical** |
+| Server down | A monitored server fails 3 checks in a row | From its environment: Production and DR **Critical**, UAT High, others Medium |
+| Server MAC changed | A server IP answers with a MAC that is not its registered one | From its environment, as above |
 | Rejected device back | A rejected MAC appears again | High |
 
 Rules that need a MAC only run when option A or B is in place, or when NetBIOS returned one.
@@ -154,10 +167,11 @@ Downloaded as CSV or PDF, on demand:
 | Report | Shows |
 | --- | --- |
 | Segment usage | Per floor and server segment: assigned, reserved, seen in use, pool usage |
+| Servers by environment | Count, list and status of servers per environment (Production, UAT, ...) |
 | IP register | Every registered IP with type, owner and status |
 | Unknown and pending devices | Devices seen but not approved, with first and last seen |
 | Static IPs on floors | Hand-set IPs in the DHCP segments, registered or not |
-| Server availability | Up time and outages per monitored IP over a date range |
+| Server availability | Up time and outages per monitored IP over a date range, filterable by environment |
 | Alert history | Alerts raised, acknowledged and closed over a date range |
 | Requests and reservations | Open, approved, rejected and expiring |
 | Audit log | Changes over a date range |
@@ -178,14 +192,15 @@ Kept from today's reports module, including the PDF renderer, with the report li
 | Imports pipeline, retention jobs, background report jobs | One CSV import for devices and the IP register. Reports run on demand |
 | Separate `worker` container | The scanner runs inside the backend |
 
-## Data model (12 tables instead of 72)
+## Data model (13 tables instead of 72)
 
 | Table | Holds |
 | --- | --- |
 | `users` | Email, name, role (`admin` / `requester` / `viewer`) |
-| `segments` | Name, floor, type (`dhcp` / `server`), VLAN, CIDR, gateway, DHCP pool start and end, scan interface |
+| `segments` | Name, floor, type (`dhcp` / `server`), VLAN, CIDR, gateway, DHCP pool start and end, default environment (server segments), scan interface |
+| `environments` | Name (Production, UAT, Development, DR, Test, ...), colour, sort order, default severity, default monitor and critical flags |
 | `devices` | MAC, name, owner, department, type, status (`pending` / `approved` / `rejected`) |
-| `ip_addresses` | The IP register: IP (unique), segment, status (`assigned` / `reserved` / `blocked`), type, device or free-text name, expected MAC, owner, department, monitor and critical flags, check port, current up/down status, notes |
+| `ip_addresses` | The IP register: IP (unique), segment, status (`assigned` / `reserved` / `blocked`), type, environment, device or free-text name, expected MAC, owner, department, monitor and critical flags, check port, current up/down status, notes |
 | `reservations` | IP or range, segment, reason, owner, expiry, status (`active` / `converted` / `released`) |
 | `ip_requests` | Requester, segment, type, name, purpose, needed by, requested IP, status, decided by, decision reason, assigned IP |
 | `sightings` | One row per IP + MAC: segment, source (ARP / ping / NetBIOS / SNMP), hostname, DHCP or static, first seen, last seen |
@@ -199,15 +214,15 @@ Kept from today's reports module, including the PDF renderer, with the report li
 
 ## Screens (9 instead of 20)
 
-1. **Dashboard:** floor cards with usage, open alerts by severity, servers down.
+1. **Dashboard:** floor cards with usage, open alerts by severity, servers down per environment.
 2. **Floors:** pick a floor, see every address with its register badge and its seen badge. Mark, assign, reserve or release from here.
-3. **Servers:** the server segment's register with live status. Add a server with a suggested Available candidate IP.
+3. **Servers:** server register with live status, filtered by environment tabs (All, Production, UAT, ...). Add a server with a suggested Available candidate IP.
 4. **Devices:** approved, pending and rejected, with approve / reject buttons.
 5. **Alerts:** open and recent, acknowledge.
 6. **Requests:** raise a request, and for Admins the approval queue.
 7. **Reservations:** active and expiring holds, extend, convert or release.
 8. **Reports:** pick a report and date range, download CSV or PDF.
-9. **Settings:** segments, users, email, audit log.
+9. **Settings:** segments, environments, users, email, audit log.
 
 The notification bell sits in the top bar on every screen.
 
@@ -231,7 +246,7 @@ Start a fresh, small codebase on a new branch rather than stripping the old one 
 
 | Step | Work | Reuse |
 | --- | --- | --- |
-| 1 | Branch `lite` (created). New migration set (12 tables, RLS and grants as today). Two containers: `db` and `app` (Go serves the API and the built web app) | Auth (`internal/auth`), `platform`, `netcalc`, Docker setup |
+| 1 | Branch `lite` (created). New migration set (13 tables, RLS and grants as today). Two containers: `db` and `app` (Go serves the API and the built web app) | Auth (`internal/auth`), `platform`, `netcalc`, Docker setup |
 | 2 | Segments, IP register (mark, assign, reserve range, release, Available candidate), devices: CRUD, CSV import / export, audit | Route guard, error format, audit writer, `netcalc` |
 | 3 | Scanner, option C first: ping sweep, reverse DNS, NetBIOS name and MAC, server checks | `agent/ping.go` |
 | 4 | Alert rules, alert screen, notifications (bell, email, preferences) | `notifications` module and outbox |
@@ -247,7 +262,7 @@ The old code stays in git history. Once Lite is live, delete the unused modules 
 
 | # | Question | Why |
 | --- | --- | --- |
-| 1 | The exact list of segments: floor, VLAN, CIDR, DHCP pool range | Initial setup, and static detection depends on the pool range |
+| 1 | The exact list of segments: floor, VLAN, CIDR, DHCP pool range, and for server segments which environment each is (Production, UAT, ...) | Initial setup, and static detection depends on the pool range |
 | 2 | Is the server range really `172.168.x.x`, or `172.16`–`172.31`? | See the warning at the top |
 | 3 | Can the network team give the DF-IPAM server a trunk port with all floor VLANs (option A)? If not, SNMP read-only on the core switch (option B)? | Decides whether MAC-based detection is possible |
 | 4 | Which device serves DHCP to the floors (core switch, Windows server, other)? | A read-only lease list would make static detection exact, not only by pool range |
