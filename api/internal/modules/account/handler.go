@@ -21,12 +21,14 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Authenticated(http.MethodGet, "/auth/me/profile", h.profile)
 }
 
-// Me is the signed-in user. Role is null until an Admin gives one.
+// Me is the signed-in user. Role is null until an Admin gives one. The session
+// timeout is how long the web app waits without activity before signing out.
 type Me struct {
-	ID          string   `json:"id"`
-	Email       string   `json:"email"`
-	Role        *string  `json:"role"`
-	Permissions []string `json:"permissions"`
+	ID                    string   `json:"id"`
+	Email                 string   `json:"email"`
+	Role                  *string  `json:"role"`
+	Permissions           []string `json:"permissions"`
+	SessionTimeoutMinutes int      `json:"sessionTimeoutMinutes"`
 }
 
 func (h *Handler) me(c *gin.Context) {
@@ -39,6 +41,7 @@ func (h *Handler) me(c *gin.Context) {
 		out.Permissions = append(out.Permissions, name)
 	}
 	sort.Strings(out.Permissions)
+	out.SessionTimeoutMinutes = h.repo.sessionTimeout(c.Request.Context())
 	c.JSON(http.StatusOK, out)
 }
 

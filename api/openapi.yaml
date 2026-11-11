@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DF-IPAM Lite API
-  version: 0.2.0
+  version: 0.3.0
   description: Every implemented route. A test fails if a route is missing. See docs/new.md for the plan.
 servers:
   - url: /api/v1
@@ -38,6 +38,7 @@ components:
         email: { type: string }
         role: { type: [string, 'null'], enum: [admin, requester, viewer, null] }
         permissions: { type: array, items: { type: string } }
+        sessionTimeoutMinutes: { type: integer, description: Minutes without activity before the web app signs out }
   responses:
     Error:
       description: Error in the shared format
@@ -53,3 +54,319 @@ paths:
         '401': { $ref: '#/components/responses/Error' }
   /auth/me/profile:
     get: { summary: The signed-in user's own account details, responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Error' } } }
+  /dashboard:
+    get:
+      summary: "Floor DHCP use, open alerts by severity, server health by environment and totals"
+      description: "Permission: inventory:view."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /segments:
+    get:
+      summary: "All segments with registered and seen counts. Not paged: forms need every segment"
+      description: "Permission: inventory:view."
+      parameters: [{ name: kind, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Create a floor (dhcp) or server segment"
+      description: "Permission: inventory:edit."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /segments/{id}:
+    put:
+      summary: "Update a segment"
+      description: "Permission: inventory:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: "Delete a segment that holds no register entries, reservations or requests"
+      description: "Permission: inventory:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /segments/{id}/map:
+    get:
+      summary: "Every usable address of a segment by state (assigned, reserved, held, DHCP, seen, available), as counts and runs. Mapped for /20 and smaller"
+      description: "Permission: inventory:view."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /segments/{id}/addresses:
+    get:
+      summary: "Registered and seen addresses in one segment, register and evidence side by side"
+      description: "Permission: inventory:view."
+      parameters: [{ $ref: '#/components/parameters/id' }, { name: state, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /discovery/status:
+    get:
+      summary: "Scanner state since the backend started: last run per segment and next scheduled scan"
+      description: "Permission: inventory:view."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /discovery/scan:
+    post:
+      summary: "Start a scan now, of one segment or all. Refused while a scan runs and within a minute of the last manual scan"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /discovery/findings:
+    get:
+      summary: "Everything the scanner has seen, with register and device state, filtered and paged"
+      description: "Permission: inventory:view."
+      parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: kind, in: query, schema: { type: string } }, { name: source, in: query, schema: { type: string } }, { name: seen, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /devices:
+    get:
+      summary: "Known devices, pending first"
+      description: "Permission: inventory:view."
+      parameters: [{ name: status, in: query, schema: { type: string } }, { name: deviceType, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Add an approved device"
+      description: "Permission: inventory:edit."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /devices/{id}:
+    put:
+      summary: "Update a device's name, owner, department, type and notes"
+      description: "Permission: inventory:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /devices/{id}/decision:
+    post:
+      summary: "Approve or reject a device; approval can register its IP in the same step"
+      description: "Permission: inventory:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /devices/export:
+    get:
+      summary: "Download every device as CSV or Excel (format=csv|xlsx)"
+      description: "Permission: inventory:view."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /devices/import:
+    post:
+      summary: "Import approved devices from a CSV or Excel file (mac column required); reports skipped rows"
+      description: "Permission: inventory:edit."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-addresses:
+    get:
+      summary: "The IP register; view=servers gives server segments plus monitored entries"
+      description: "Permission: inventory:view."
+      parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: environmentId, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: health, in: query, schema: { type: string } }, { name: ipType, in: query, schema: { type: string } }, { name: view, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Register an address"
+      description: "Permission: inventory:edit."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-addresses/{id}:
+    put:
+      summary: "Update a register entry. The address and segment stay fixed"
+      description: "Permission: inventory:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: "Release an address: remove its register entry"
+      description: "Permission: inventory:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-addresses/available-candidate:
+    get:
+      summary: "The next Available candidate in a segment"
+      description: "Permission: inventory:edit or requests:approve."
+      parameters: [{ name: segmentId, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-addresses/check:
+    get:
+      summary: "What already holds or uses one address"
+      description: "Permission: inventory:edit, requests:approve or ip:reserve."
+      parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: ip, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-addresses/export:
+    get:
+      summary: "Download the register as CSV or Excel, with the list filters"
+      description: "Permission: inventory:view."
+      parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: environmentId, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: health, in: query, schema: { type: string } }, { name: ipType, in: query, schema: { type: string } }, { name: view, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-addresses/import:
+    post:
+      summary: "Import register entries from a CSV or Excel file (ip column required); each IP goes to the segment holding it"
+      description: "Permission: inventory:edit."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /alerts:
+    get:
+      summary: "Alerts, most urgent first"
+      description: "Permission: inventory:view."
+      parameters: [{ name: status, in: query, schema: { type: string } }, { name: severity, in: query, schema: { type: string } }, { name: type, in: query, schema: { type: string } }, { name: segmentId, in: query, schema: { type: string } }, { name: from, in: query, schema: { type: string } }, { name: to, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /alerts/summary:
+    get:
+      summary: "Unresolved alerts by severity"
+      description: "Permission: inventory:view."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /alerts/{id}/acknowledge:
+    post:
+      summary: "Acknowledge an open alert"
+      description: "Permission: alerts:manage."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /notifications:
+    get:
+      summary: "The signed-in person's notifications"
+      description: "Permission: any role."
+      parameters: [{ name: unread, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /notifications/unread-count:
+    get:
+      summary: "Number of unread notifications"
+      description: "Permission: any role."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /notifications/{id}/read:
+    post:
+      summary: "Mark one notification read"
+      description: "Permission: any role."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /notifications/read-all:
+    post:
+      summary: "Mark every notification read"
+      description: "Permission: any role."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /notification-preferences:
+    get:
+      summary: "Email on or off per notification type, and whether email is enabled system-wide"
+      description: "Permission: any role."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    put:
+      summary: "Set email on or off for one notification type"
+      description: "Permission: any role."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-requests:
+    get:
+      summary: "IP requests; Admins see all, others their own"
+      description: "Permission: ip:request or requests:approve."
+      parameters: [{ name: status, in: query, schema: { type: string } }, { name: mine, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Raise an IP request. At most 20 pending per person"
+      description: "Permission: ip:request."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-requests/{id}/decision:
+    post:
+      summary: "Approve with an address (creating its register entry) or reject with a reason"
+      description: "Permission: requests:approve."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /ip-requests/{id}/cancel:
+    post:
+      summary: "Cancel your own pending request"
+      description: "Permission: ip:request."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /reservations:
+    get:
+      summary: "Reservations"
+      description: "Permission: inventory:view."
+      parameters: [{ name: view, in: query, schema: { type: string } }, { name: segmentId, in: query, schema: { type: string } }, { name: mine, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Reserve an address or a range of up to 256"
+      description: "Permission: ip:reserve."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /reservations/{id}:
+    put:
+      summary: "Change the reason, owner name or expiry of your reservation (Admins: any)"
+      description: "Permission: ip:reserve."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /reservations/{id}/release:
+    post:
+      summary: "Release a reservation"
+      description: "Permission: ip:reserve."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /reservations/{id}/convert:
+    post:
+      summary: "Turn one reserved address into a register entry; the rest stays held"
+      description: "Permission: ip:reserve."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /users:
+    get:
+      summary: "People who have signed in, with their role"
+      description: "Permission: users:manage."
+      parameters: [{ name: role, in: query, schema: { type: string } }, { name: active, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /users/{id}:
+    put:
+      summary: "Set a person's role, name and access. Not your own; never the last Admin"
+      description: "Permission: users:manage."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /users/options:
+    get:
+      summary: "Active people with a role, for pickers"
+      description: "Permission: users:manage or system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /environments:
+    get:
+      summary: "Server environments in display order"
+      description: "Permission: inventory:view or ip:request."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Add an environment"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /environments/{id}:
+    put:
+      summary: "Update an environment"
+      description: "Permission: system:manage."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: "Delete an environment no register entry or request uses"
+      description: "Permission: system:manage."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /settings:
+    get:
+      summary: "Scan and check intervals, reminder days, session timeout, and the email switch"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    put:
+      summary: "Change settings within their limits"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /audit-logs:
+    get:
+      summary: "The change history, newest first"
+      description: "Permission: audit:view."
+      parameters: [{ name: user, in: query, schema: { type: string } }, { name: action, in: query, schema: { type: string } }, { name: objectType, in: query, schema: { type: string } }, { name: from, in: query, schema: { type: string } }, { name: to, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /audit-logs/export:
+    get:
+      summary: "Download the filtered change history as CSV or Excel (up to 50,000 rows)"
+      description: "Permission: audit:view."
+      parameters: [{ name: user, in: query, schema: { type: string } }, { name: action, in: query, schema: { type: string } }, { name: objectType, in: query, schema: { type: string } }, { name: from, in: query, schema: { type: string } }, { name: to, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /reports:
+    get:
+      summary: "The report catalogue"
+      description: "Permission: reports:export."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /reports/{key}:
+    get:
+      summary: "Download a report as CSV, Excel or PDF"
+      description: "Permission: reports:export."
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }, { name: format, in: query, schema: { type: string } }, { name: from, in: query, schema: { type: string } }, { name: to, in: query, schema: { type: string } }, { name: environmentId, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /integrations/fortigate:
+    get:
+      summary: "The optional FortiGate connection: settings without the token, and how the last read went"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    put:
+      summary: "Save the FortiGate connection. The API token is stored encrypted and never returned"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /integrations/fortigate/test:
+    post:
+      summary: "Check the saved connection with a read-only status call"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /integrations/fortigate/sync:
+    post:
+      summary: "Read ARP, DHCP leases and VPN sessions now. Spaced a minute apart"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }

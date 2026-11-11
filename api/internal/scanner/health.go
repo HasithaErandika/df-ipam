@@ -19,7 +19,7 @@ type monitoredIP struct {
 }
 
 func (s *Scanner) checkAll(ctx context.Context) error {
-	rows, err := s.conn.Query(ctx, `SELECT id::text,ip::text,check_port FROM ip_addresses WHERE monitor ORDER BY ip`)
+	rows, err := s.conn.Query(ctx, `SELECT id::text,host(ip),check_port FROM ip_addresses WHERE monitor ORDER BY ip`)
 	if err != nil {
 		return err
 	}
@@ -59,10 +59,9 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 				if up {
 					health = "up"
 				}
-				if _, err := s.conn.Exec(ctx, `UPDATE ip_addresses SET
-					health_changed_at=CASE WHEN health IS DISTINCT FROM $2 THEN now() ELSE health_changed_at END,
-					health=$2,server_check_failures=CASE WHEN $2='down' THEN server_check_failures+1 ELSE 0 END
-					WHERE id=$1::uuid`, item.id, health); err != nil && ctx.Err() == nil {
+				// A failed check only counts towards Down; the server is Down once it has
+				// failed the configured number of checks in a row (docs/new.md).
+				if _, err := s.conn.Exec(ctx, healthSQL, item.id, health); err != nil && ctx.Err() == nil {
 					errs <- err
 				}
 			}
@@ -85,6 +84,17 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 	}
 	return monitoring.New(s.conn).Evaluate(ctx)
 }
+
+const healthSQL = `WITH limits AS (
+	SELECT COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'server_check.down_after_failures'), 3) AS n
+), next AS (
+	SELECT i.id, CASE WHEN $2 = 'up' THEN 0 ELSE i.server_check_failures + 1 END AS failures,
+		CASE WHEN $2 = 'up' THEN 'up' WHEN i.server_check_failures + 1 >= (SELECT n FROM limits) THEN 'down' ELSE i.health END AS health
+	FROM ip_addresses i WHERE i.id = $1::uuid
+)
+UPDATE ip_addresses i SET server_check_failures = next.failures, health = next.health,
+	health_changed_at = CASE WHEN i.health IS DISTINCT FROM next.health THEN now() ELSE i.health_changed_at END
+FROM next WHERE i.id = next.id`
 
 func isUp(ctx context.Context, item monitoredIP) bool {
 	ip, err := netip.ParseAddr(item.ip)

@@ -1,14 +1,17 @@
 import { type ReactNode } from 'react'
-import { type Severity } from '../../lib/format'
+import { type Level } from '../../lib/format'
 import { cx } from './cx'
 
-export function Card({ title, action, children, className }:
-  { title?: string; action?: ReactNode; children: ReactNode; className?: string }) {
+export function Card({ title, subtitle, action, children, className }:
+  { title?: string; subtitle?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={cx('rounded-md border border-line bg-surface', className)}>
       {title && (
-        <header className="flex h-10 items-center justify-between border-b border-line px-4">
-          <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
+        <header className="flex min-h-11 items-center justify-between gap-3 border-b border-line px-4 py-2">
+          <div className="min-w-0">
+            <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
+            {subtitle && <p className="text-[12px] text-ink-3">{subtitle}</p>}
+          </div>
           {action}
         </header>
       )}
@@ -45,13 +48,13 @@ export function Mono({ children }: { children: ReactNode }) {
   return <span className="font-mono text-[13px]">{children}</span>
 }
 
-const meterFill: Record<Severity, string> = { normal: 'bg-accent', warning: 'bg-[var(--meter-warning)]', critical: 'bg-danger' }
+const meterFill: Record<Level, string> = { normal: 'bg-accent', warning: 'bg-[var(--meter-warning)]', critical: 'bg-danger' }
 
-export function Meter({ pct, level, label }: { pct: number; level: Severity; label: string }) {
+export function Meter({ pct, level, label, wide }: { pct: number; level: Level; label: string; wide?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <div role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}
-        className="h-1.5 w-20 overflow-hidden rounded-full bg-track">
+        className={cx('h-1.5 overflow-hidden rounded-full bg-track', wide ? 'flex-1' : 'w-20')}>
         <div className={cx('h-full rounded-full', meterFill[level])} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
       <span className="w-12 text-right text-[13px] text-ink-2 tabular-nums">{pct.toFixed(1)}%</span>

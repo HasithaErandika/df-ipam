@@ -7,11 +7,17 @@ import (
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/integrations/fortigate"
 	"dfipam/api/internal/modules/account"
+	"dfipam/api/internal/modules/admin"
 	"dfipam/api/internal/modules/alerts"
 	"dfipam/api/internal/modules/allocationlite"
+	"dfipam/api/internal/modules/auditlog"
+	"dfipam/api/internal/modules/discovery"
+	"dfipam/api/internal/modules/integrations"
 	"dfipam/api/internal/modules/inventory"
 	"dfipam/api/internal/modules/notifications"
+	"dfipam/api/internal/modules/reports"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
@@ -31,6 +37,12 @@ type Deps struct {
 	TrustedProxies []string
 	// MaxInFlight caps requests running at once. Zero means the default.
 	MaxInFlight int
+	// Scanner runs discovery in this process. Nil in tests: its routes then answer 503.
+	Scanner discovery.Scanner
+	// FortiGate reads the firewall when an Admin connects one. Nil in tests.
+	FortiGate *fortigate.Syncer
+	// SMTPConfigured says whether api/.env has a mail server, shown in Settings.
+	SMTPConfigured bool
 }
 
 // New returns the router and the guard holding every protected route.
@@ -69,5 +81,10 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	alerts.New(d.Conn).Register(guard)
 	notifications.New(d.Conn).Register(guard)
 	allocationlite.New(d.Conn).Register(guard)
+	discovery.New(d.Conn, d.Scanner).Register(guard)
+	admin.New(d.Conn, d.SMTPConfigured).Register(guard)
+	auditlog.New(d.Conn).Register(guard)
+	reports.New(d.Conn).Register(guard)
+	integrations.New(d.Conn, d.FortiGate).Register(guard)
 	return r, guard
 }

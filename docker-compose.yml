@@ -29,6 +29,9 @@ x-backend-env: &backend-env
   SMTP_USERNAME:
   SMTP_PASSWORD:
   MAIL_FROM:
+  SECRET_ENCRYPTION_KEY:
+  SECRET_ENCRYPTION_KEY_VERSION:
+  SECRET_ENCRYPTION_KEY_PREVIOUS:
   DATABASE_URL: postgres://dfipam_app:${DFIPAM_APP_PASSWORD:?use make, or set it in api/.env}@db:5432/${POSTGRES_DB:-dfipam}?sslmode=disable
 
 services:
@@ -59,7 +62,8 @@ services:
       db:
         condition: service_healthy
 
-  # The API. The scanner and server checks will run in this process too.
+  # The API, with the scanner, server checks, alert rules, email outbox and the
+  # optional FortiGate reader in the same process.
   backend:
     <<: *backend
     command: [/app/server]

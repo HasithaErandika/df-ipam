@@ -33,3 +33,16 @@ func TestSQLIsRepeatable(t *testing.T) {
 		}
 	}
 }
+
+// Email starts off: the plan is to test with it disabled (docs/new.md, section 9).
+func TestEmailStartsDisabled(t *testing.T) {
+	for _, s := range Settings {
+		if s.Key == "email.enabled" {
+			if s.Value != "false" {
+				t.Fatalf("email.enabled seeds as %s", s.Value)
+			}
+			return
+		}
+	}
+	t.Fatal("email.enabled is not seeded")
+}

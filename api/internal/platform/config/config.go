@@ -20,6 +20,7 @@ type Config struct {
 	AuthAudience       string
 	TrustedProxies     []string
 	MaxInFlight        int
+	AppBaseURL         string
 }
 
 func get(key, fallback string) string {
@@ -52,6 +53,7 @@ func Load() (Config, error) {
 		SupabaseServiceKey: get("SUPABASE_SERVICE_ROLE_KEY", ""),
 		AuthAudience:       get("AUTH_AUDIENCE", "authenticated"),
 		TrustedProxies:     splitList(get("TRUSTED_PROXIES", "127.0.0.1,::1")),
+		AppBaseURL:         strings.TrimRight(get("APP_BASE_URL", "http://localhost:5173"), "/"),
 	}
 	if v := get("API_MAX_IN_FLIGHT", ""); v != "" {
 		n, err := strconv.Atoi(v)

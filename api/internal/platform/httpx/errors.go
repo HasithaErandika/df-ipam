@@ -131,3 +131,26 @@ func List[T any](c *gin.Context, items []T, p Page, total int64) {
 }
 
 func OK(c *gin.Context, status int, v any) { c.JSON(status, gin.H{"data": v}) }
+
+// Bind reads a JSON body into v, failing the request when it can't be read.
+func Bind(c *gin.Context, v any) bool {
+	if err := c.ShouldBindJSON(v); err != nil {
+		Fail(c, ErrBadRequest)
+		return false
+	}
+	return true
+}
+
+// Sort reads the sort parameter against an allowlist of column expressions.
+// A leading "-" sorts descending. Unknown names use the fallback.
+func Sort(c *gin.Context, allowed map[string]string, fallback string) string {
+	key := c.Query("sort")
+	dir := " ASC"
+	if len(key) > 1 && key[0] == '-' {
+		key, dir = key[1:], " DESC"
+	}
+	if col, ok := allowed[key]; ok {
+		return col + dir
+	}
+	return fallback
+}

@@ -1,19 +1,78 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { CalendarClock, CheckSquare, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Button, Card, EmptyState, ErrorState, Field, Input, PageHeader, Select, SkeletonRows, Td, Th } from '../../components/ui'
-import { get, post, put } from '../../lib/api'
+import { Link } from 'react-router'
+import { Badge, Button, Card, DataTable, FilterBar, FilterSelect, none, PageHeader, PathTabs, RowMenu, SearchInput, Stack, useConfirm, type Column } from '../../components/ui'
+import { post } from '../../lib/api'
+import { daysUntil, formatEndOfDay } from '../../lib/format'
+import { useFilters, usePagedList } from '../../lib/listing'
+import { inventoryKeys, useInvalidate, useSegments } from '../../lib/queries'
 import { useCan, useMe } from '../../lib/session'
+import { useRouteTab } from '../../lib/tabs'
+import type { Reservation } from '../../lib/types'
+import { ConvertReservation, EditReservation, NewReservation } from './ReservationForms'
 
-type Segment={id:string;name:string;network:string}
-type Reservation={id:string;segmentId:string;segmentName:string;startIp:string;endIp:string;reason:string;ownerId?:string;ownerName:string;expiresAt?:string;status:string}
-export function ReservationsPage(){
- const client=useQueryClient();const me=useMe();const admin=useCan('system:manage');const [segmentId,setSegmentId]=useState('');const [startIp,setStart]=useState('');const [endIp,setEnd]=useState('');const [reason,setReason]=useState('');const [expiresAt,setExpires]=useState('');const [error,setError]=useState('')
- const segments=useQuery({queryKey:['/segments'],queryFn:()=>get<Segment[]>('/segments')});const query=useQuery({queryKey:['/reservations'],queryFn:()=>get<Reservation[]>('/reservations')})
- const create=useMutation({mutationFn:()=>post('/reservations',{segmentId,startIp,endIp:endIp||startIp,reason,ownerId:me.id,ownerName:me.email,expiresAt}),onSuccess:()=>{setError('');setStart('');setEnd('');setReason('');setExpires('');void client.invalidateQueries({queryKey:['/reservations']})},onError:e=>setError(e instanceof Error?e.message:'Could not create the reservation.')})
- const release=useMutation({mutationFn:(id:string)=>post(`/reservations/${id}/release`),onSuccess:()=>void client.invalidateQueries({queryKey:['/reservations']})})
- const convert=useMutation({mutationFn:({id,ip}:{id:string;ip:string})=>post(`/reservations/${id}/convert`,{ip,ipType:'other'}),onSuccess:()=>void client.invalidateQueries({queryKey:['/reservations']})})
- const extend=useMutation({mutationFn:({id,expiresAt,ownerId,ownerName}:{id:string;expiresAt:string;ownerId?:string;ownerName:string})=>put(`/reservations/${id}`,{expiresAt,ownerId,ownerName}),onSuccess:()=>void client.invalidateQueries({queryKey:['/reservations']})})
- return <><PageHeader title="Reservations" description="Hold addresses for a purpose. Expired holds are never released automatically."/>
- <Card title="Reserve an address or range" className="mb-4"><div className="grid gap-3 p-4 md:grid-cols-3"><Field label="Segment" htmlFor="res-segment"><Select id="res-segment" value={segmentId} onChange={e=>setSegmentId(e.target.value)}><option value="">Choose a segment</option>{segments.data?.map(s=><option key={s.id} value={s.id}>{s.name} · {s.network}</option>)}</Select></Field><Field label="First IP" htmlFor="res-start"><Input id="res-start" value={startIp} onChange={e=>setStart(e.target.value)}/></Field><Field label="Last IP (optional)" htmlFor="res-end"><Input id="res-end" value={endIp} onChange={e=>setEnd(e.target.value)}/></Field><Field label="Reason" htmlFor="res-reason"><Input id="res-reason" value={reason} onChange={e=>setReason(e.target.value)}/></Field><Field label="Expiry (optional)" htmlFor="res-expiry"><Input id="res-expiry" type="date" value={expiresAt} onChange={e=>setExpires(e.target.value)}/></Field>{error&&<p role="alert" className="text-danger">{error}</p>}<Button variant="primary" busy={create.isPending} onClick={()=>create.mutate()}>Reserve</Button></div></Card>
- <Card title="Current reservations">{query.isLoading?<SkeletonRows/>:query.isError?<ErrorState error={query.error} onRetry={()=>void query.refetch()}/>:!query.data?.length?<EmptyState title="No active reservations" body="Create a hold using the form above."/>:<div className="overflow-x-auto"><table className="w-full"><thead><tr>{['Segment','Address range','Reason','Owner','Expiry','Actions'].map(x=><Th key={x}>{x}</Th>)}</tr></thead><tbody>{query.data.map(r=>{const owns=r.ownerId===me.id||admin;return <tr key={r.id}><Td>{r.segmentName}</Td><Td><code>{r.startIp}{r.endIp!==r.startIp?` – ${r.endIp}`:''}</code></Td><Td>{r.reason}</Td><Td>{r.ownerName||'—'}</Td><Td>{r.expiresAt?new Date(r.expiresAt).toLocaleDateString():'No expiry'}</Td><Td>{owns&&r.status==='active'?<div className="flex gap-1"><Button onClick={()=>{const date=window.prompt('Extend expiry to (YYYY-MM-DD)');if(date)extend.mutate({id:r.id,expiresAt:date,ownerId:r.ownerId,ownerName:r.ownerName})}}>Extend</Button><Button onClick={()=>{const ip=r.startIp===r.endIp?r.startIp:window.prompt('IP to assign from this range');if(ip)convert.mutate({id:r.id,ip})}}>Convert</Button><Button variant="danger" busy={release.isPending} onClick={()=>release.mutate(r.id)}>Release</Button></div>:'—'}</Td></tr>})}</tbody></table></div>}</Card></>
+const views: Record<string, string> = { reservations: 'active', expiring: 'expiring', expired: 'expired', closed: 'closed', all: 'all' }
+
+function Expiry({ r }: { r: Reservation }) {
+  if (!r.expiresAt) return <span className="text-ink-3">No expiry</span>
+  const days = daysUntil(r.expiresAt)
+  const tone = r.status !== 'active' ? 'neutral' : days <= 0 ? 'danger' : days <= 7 ? 'warn' : 'neutral'
+  const text = r.status !== 'active' ? '' : days <= 0 ? 'Expired' : days === 1 ? 'Tomorrow' : `${days} days left`
+  return <Stack main={formatEndOfDay(r.expiresAt)} sub={text ? <Badge tone={tone}>{text}</Badge> : undefined} />
+}
+
+export function ReservationsPage() {
+  const tab = useRouteTab(Object.keys(views))
+  const me = useMe()
+  const canReserve = useCan('ip:reserve')
+  const isAdmin = useCan('system:manage')
+  const segments = useSegments()
+  const f = useFilters(['segmentId', 'q', 'mine'] as const)
+  const { query, rows, meta, paging } = usePagedList<Reservation>('/reservations', { ...f.values, view: views[tab] })
+  const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<Reservation | null>(null)
+  const [converting, setConverting] = useState<Reservation | null>(null)
+  const confirm = useConfirm()
+  const refresh = useInvalidate(...inventoryKeys)
+  const release = useMutation({ mutationFn: (id: string) => post(`/reservations/${id}/release`), meta: { success: 'Reservation released.' }, onSuccess: () => void refresh() })
+  const mayManage = (r: Reservation) => canReserve && r.status === 'active' && (isAdmin || r.ownerId === me.id)
+
+  const columns: Column<Reservation>[] = [
+    { key: 'range', header: 'Addresses', cell: (r) => <Stack mono main={r.startIp === r.endIp ? r.startIp : `${r.startIp} – ${r.endIp}`}
+      sub={<span className="font-sans"><Link className="hover:text-accent hover:underline" to={`/segments/${r.segmentId}`}>{r.segmentName}</Link> · {r.size} address{r.size > 1 ? 'es' : ''}</span>} /> },
+    { key: 'reason', header: 'Reason', cell: (r) => <span className="text-ink">{r.reason}</span> },
+    { key: 'owner', header: 'Owner', hideBelow: 'md', cell: (r) => <Stack main={r.ownerId === me.id ? 'You' : r.ownerName || none} sub={r.createdByEmail && r.createdByEmail !== r.ownerName ? `by ${r.createdByEmail}` : undefined} /> },
+    { key: 'expiry', header: 'Expires', cell: (r) => <Expiry r={r} /> },
+    { key: 'status', header: 'Status', hideBelow: 'lg', cell: (r) => <Badge tone={r.status === 'active' ? 'warn' : r.status === 'converted' ? 'ok' : 'neutral'}>{r.status === 'active' ? 'Reserved' : r.status === 'converted' ? 'Assigned' : 'Released'}</Badge> },
+    { key: 'act', header: '', className: 'w-10 text-right', cell: (r) => (mayManage(r) ? (
+      <RowMenu actions={[
+        { label: 'Extend or edit', icon: <CalendarClock size={14} aria-hidden />, onSelect: () => setEditing(r) },
+        { label: 'Assign an address', icon: <CheckSquare size={14} aria-hidden />, onSelect: () => setConverting(r) },
+        { label: 'Release', icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: async () => {
+          if (await confirm({ title: `Release ${r.reason}?`, body: `${r.size} address${r.size > 1 ? 'es are' : ' is'} no longer held and can be assigned again. This is recorded in the audit log.`, confirmLabel: 'Release' })) release.mutate(r.id)
+        } },
+      ]} />
+    ) : null) },
+  ]
+
+  return (
+    <>
+      <PageHeader title="Reservations" description="Hold an IP or a small range for a purpose. A reserved address seen in use raises an alert. Expired holds are never released automatically."
+        actions={canReserve && <Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} aria-hidden />Reserve addresses</Button>} />
+      <PathTabs base="/reservations" tabs={[{ key: 'reservations', label: 'Active' }, { key: 'expiring', label: 'Expiring soon' }, { key: 'expired', label: 'Expired' }, { key: 'closed', label: 'Assigned or released' }, { key: 'all', label: 'All' }]} />
+      <Card>
+        <FilterBar active={f.active} onClear={f.clear}>
+          <SearchInput value={f.values.q} onChange={(v) => f.set('q', v)} placeholder="Search reason, owner, IP" />
+          <FilterSelect label="Segment" value={f.values.segmentId} onChange={(v) => f.set('segmentId', v)} options={(segments.data ?? []).map((s) => ({ value: s.id, text: s.name }))} />
+          <FilterSelect label="Owner" value={f.values.mine} onChange={(v) => f.set('mine', v)} anyLabel="Anyone's" options={[{ value: 'true', text: 'Mine' }]} />
+        </FilterBar>
+        <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
+          empty={{ title: tab === 'reservations' ? 'No active reservations' : 'Nothing here', body: 'Reserve an address or range to hold it for a purpose.' }} />
+      </Card>
+      <NewReservation open={creating} onClose={() => setCreating(false)} />
+      <EditReservation hold={editing} onClose={() => setEditing(null)} />
+      <ConvertReservation hold={converting} onClose={() => setConverting(null)} />
+    </>
+  )
 }

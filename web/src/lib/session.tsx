@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createContext, use, useEffect, useState, type ReactNode } from 'react'
-import { get } from './api'
+import { getBody } from './api'
 import { getAccessToken, onAuthChange } from './auth'
 import type { Me } from './types'
 
@@ -13,7 +13,7 @@ export function useSignedIn(): boolean | null {
   return signedIn
 }
 
-export const useMeQuery = () => useQuery({ queryKey: ['me'], queryFn: () => get<Me>('/auth/me'), retry: false })
+export const useMeQuery = () => useQuery({ queryKey: ['me'], queryFn: () => getBody<Me>('/auth/me'), retry: false })
 
 const MeContext = createContext<Me | null>(null)
 

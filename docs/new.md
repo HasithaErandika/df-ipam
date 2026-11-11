@@ -1,6 +1,6 @@
 # DF-IPAM Lite: the simpler plan
 
-**Status:** building on branch `lite`. **Steps 1–5 and 7 are done** (see Progress below). On this branch this file overrides the enterprise design in the other docs. Confirm the network questions at the end before enabling discovery on real segments.
+**Status:** building on branch `lite`. **Steps 1–7 are done**, with an optional read-only FortiGate source (see Progress below). On this branch this file overrides the enterprise design in the other docs. Confirm the network questions at the end before enabling discovery on real segments.
 
 **Branch:** `lite`, created on 2026-11-11 from `refactor/optimise-secure-document` at commit `70c583a`. All Lite work happens here. `main` and the old branch stay untouched until Lite is proven and merged.
 
@@ -17,9 +17,10 @@ What Dialog Finance actually needs is much smaller:
 | One building, 7 floors | Each floor has one user segment in `192.168.x.x`, served by DHCP |
 | Users on DHCP | Some users still set a static IP by hand |
 | Server segments | `172.x.x.x`, static IPs only, split by environment: Production, UAT and others. Must be tracked and watched |
+| Cloud segments | Networks hosted in a cloud: static like servers, never ping-swept from the building |
 | Auto-discovery | Must spot unknown or unauthorised devices |
 | No agents on PCs | No PC runs 24 hours, so nothing is installed on user machines |
-| No firewall access | The FortiGate is not connected to DF-IPAM for now |
+| Firewall | The FortiGate can be connected **read-only** (optional, off by default): ARP, DHCP leases and VPN sessions |
 | IPv4 only | No IPv6 anywhere |
 
 > **Check the server range.** `172.168.x.x` is a public internet range, not a private one. Private is `172.16.0.0` to `172.31.255.255`. If the servers really use `172.168.x.x`, traffic to some real internet sites can be misrouted. Use the exact range when setting up segments.
@@ -185,7 +186,7 @@ Kept from today's reports module, including the PDF renderer, with the report li
 | Discovery agents, policies, jobs, emergency stop, scopes | Replaced by one built-in scanner on the server |
 | Routing domains / VRFs | One building, one routing table |
 | IPv6, `math/big` and `numeric(39,0)` | IPv4 only. Addresses are plain `inet` in SQL and counts are plain numbers |
-| FortiGate, AWS, Azure, vCenter connectors | Not used. FortiGate can come back later if wanted |
+| AWS, Azure, vCenter connectors | Not used. The FortiGate came back as an optional, read-only evidence source (see Progress) |
 | Reconciliation engine and findings | Replaced by the alert rules above |
 | Multi-step approval workflows, scoped approvers, change requests | One approval step is enough (requests and reservations themselves stay) |
 | Organisations, business services, scoped roles, custom permissions | Three fixed roles are enough |
@@ -212,8 +213,9 @@ Kept from today's reports module, including the PDF renderer, with the report li
 
 `sightings` is updated in place (upsert), so it stays small: about as many rows as devices in the building.
 
-## Screens (8 instead of 20)
+## Screens (9 instead of 20)
 
+0. **Discovery:** everything the scanner and firewall have seen, filtered and paged, with scan status and Scan now. Each segment has an address page with a map of every address.
 1. **Dashboard:** floor DHCP usage summaries, open alerts by severity, servers down per environment.
 2. **Servers:** server register with live status, filtered by environment. Add a server with a suggested Available candidate IP.
 3. **Devices:** approved, pending and rejected, with approve / reject buttons.
@@ -250,7 +252,7 @@ Start a fresh, small codebase on a new branch rather than stripping the old one 
 | 3 | **Done.** Built-in option C scanner: bounded ping sweeps, reverse DNS, NetBIOS name / MAC lookup, and monitored IP health checks | ICMP approach from `internal/agent/ping.go` (from `70c583a`) |
 | 4 | **Done.** Alert rules, alert screen, notification bell, email outbox and preferences | `internal/platform/mail` |
 | 5 | **Done.** One-step IP requests and reservations, expiry reminders, release and conversion | `netcalc`, audit writer |
-| 6 | Reports (CSV and PDF) and the audit screen | `internal/modules/reports` and its PDF renderer, `internal/modules/auditlog`, `web/src/features/{requests,reservations,reports,audit}` |
+| 6 | **Done.** Reports (CSV, Excel and PDF) and the audit screen | `internal/modules/reports` and its PDF renderer, `internal/modules/auditlog`, `web/src/features/{requests,reservations,reports,audit}` |
 | 7 | **Done.** Dashboard with floor DHCP usage, alert counts and servers down by environment. No separate Floors page | UI components, theme |
 | 8 | Scanner option A (ARP scan per VLAN) once the trunk port is ready, or option B | |
 | 9 | Load real data, run a week alongside the network team, tune noise, then retire the old code | |
@@ -295,9 +297,9 @@ Added guarded segment CRUD; device CRUD, approval / rejection, and CSV import / 
 
 ### Step 3: scanner (done, 2026-11-11)
 
-The backend starts two cancellable background loops. Discovery runs immediately and then every `scan.interval_minutes` (default 5): it pings IPv4 hosts in each segment, records responsive addresses in `sightings`, looks up reverse DNS, and queries NetBIOS for a hostname and MAC when available. DHCP pool membership determines the `is_static` evidence flag; discovery does not write the IP register or assign ownership. A segment with more than 4,096 usable addresses is skipped with a logged error, so large ranges must be split before scanning.
+The backend starts two cancellable background loops. Discovery runs immediately and then every `scan.interval_minutes` (default 10 since step 6): it pings IPv4 hosts in each segment, records responsive addresses in `sightings`, looks up reverse DNS, and queries NetBIOS for a hostname and MAC when available. DHCP pool membership determines the `is_static` evidence flag; discovery does not write the IP register or assign ownership. A segment with more than 4,096 usable addresses is skipped with a logged error, so large ranges must be split before scanning.
 
-Monitored register entries are checked immediately and every `server_check.interval_seconds` (default 60). ICMP is tried first and the configured TCP port is used when ICMP does not answer. The scanner updates `health`, `health_changed_at` and the consecutive failure counter. Alerts and notifications for health transitions are Step 4. The backend container has `NET_RAW` for ICMP; all network operations are read-only.
+Monitored register entries are checked immediately and every `server_check.interval_seconds` (default 86400, once a day, since step 6). ICMP is tried first and the configured TCP port is used when ICMP does not answer. The scanner updates `health`, `health_changed_at` and the consecutive failure counter. Alerts and notifications for health transitions are Step 4. The backend container has `NET_RAW` for ICMP; all network operations are read-only.
 
 Option C cannot reliably discover MAC addresses across routed networks: NetBIOS supplies them only for hosts that answer the query. Phones, printers, and devices that block ICMP or NetBIOS may not appear. Option A or B is still needed for dependable MAC-level inventory.
 
@@ -316,6 +318,30 @@ Reservations support an IP or range, optional owner and expiry, extension, relea
 ### Step 7: dashboard (done, 2026-11-11)
 
 The Dashboard shows DHCP pool use and registered / seen counts per floor segment, open alerts by severity, and monitored servers down by environment. There is no separate Floors screen; detailed floor address browsing is omitted from this Lite build.
+
+### Step 6, Discovery screen and hardening (done, 2026-11-11)
+
+**Discovery and segments.** A Discovery screen lists every sighting across segments with filters (segment, online or not answering, not in the register, static, unknown or rejected device, private MAC, DHCP lease, VPN, has alerts; source; seen within 1 h to all; search) and shows first discovered, last seen and "unavailable since". Admins can start a scan of all segments or one; the server refuses while a scan runs and spaces manual scans a minute apart. Scan results per segment are kept in memory. Each segment has a page with an address map (every usable address of a /20 or smaller, coloured by state: assigned, reserved, blocked, held, gateway, seen-unregistered, DHCP in use, DHCP free, Available candidate) and a paged address list with Add to register.
+
+**Cloud segments.** A third segment type, `cloud`, behaves like a server segment (static, default environment, server alert rules) but is never ping-swept. Migration 000005.
+
+**FortiGate (optional, read-only).** Settings > FortiGate stores the address, VDOM, TLS verification, read interval and a REST API token encrypted with `SECRET_ENCRYPTION_KEY`; the token is never returned or logged. DF-IPAM sends only GET requests and reads the ARP table, DHCP leases (hostname, MAC and the DHCP vendor class, which hints at the OS) and SSL and IPsec VPN sessions. ARP and DHCP evidence is kept only inside known segments; VPN clients are recorded with source `vpn`. Nothing is sniffed and no device is logged in to. Off by default; "Test connection" and "Read now" work before the schedule is switched on.
+
+**Reports and audit.** Nine on-demand reports in CSV, Excel and PDF (PDF up to 5,000 rows; the others 200,000; a cut-off file says so). Server availability is derived from Server down alerts. The audit screen filters by user, action, record type, dates and free text (IP, MAC, name, record ID) and exports CSV or Excel.
+
+**Excel everywhere.** Devices, the IP register, the audit log and reports export as `.xlsx` or CSV. Device and register imports accept `.csv` or `.xlsx` (5 MB, 5,000 rows), insert all valid rows in one statement and report each skipped row. Spreadsheet formulas in imported or exported text are neutralised.
+
+**Settings.** Users and roles (never your own; never the last Admin), environments, segments, and System: discovery interval (default **10 minutes**), server check interval (default **once a day**), failed checks before Down, reservation reminder days, the **email switch (off by default)** and the **idle session timeout** (default 30 minutes, warning one minute before, activity in any tab counts).
+
+**Flood protection.** Alerts that close and reopen within an hour reopen quietly; more than five new High or Critical alerts in one evaluation become one summary notification; at most 20 emails an hour per person (the rest stay in-app); read notifications older than 90 days are removed; private MACs never create pending devices or unknown-device alerts; a requester can have at most 20 pending requests; reservations are at most 256 addresses; manual scans and FortiGate reads are a minute apart; searches are debounced and lists paged (25 by default, 200 at most).
+
+**Platforms and services.** Devices and register entries record a platform (Windows, macOS, iOS, Android, Linux and its distributions, VMware, network and printer brands, and others), and servers record their main services (Apache, Nginx, Tomcat, IIS, Docker, databases, DNS, DHCP and so on). Both are set by people (migration 000006). When none is recorded, the screens suggest a likely platform from the DHCP vendor class and hostname, shown faded and labelled "likely". Brand marks come from Simple Icons (CC0). Simple Icons carries no Microsoft marks, so Windows is drawn as a plain four-pane window.
+
+**Fixes.** `inet::text` returns `/32`, which broke address parsing: server checks never pinged (every monitored server would go Down), DHCP pool detection and the Available candidate ignored used addresses. All inet output now uses `host()`. A server is Down only after the configured number of failed checks. The Available candidate skips the gateway and the DHCP pool. Notifications returned Go field names, so the bell showed blank items. Missing records now answer 404, not 500.
+
+**Tests.** `make test-db` drives every API route against a throwaway database as the app role (lists, write flows, imports and exports, all reports in three formats, the address map) and drops the database afterwards. The FortiGate reader is tested against a fake firewall.
+
+**Databases.** Lite uses only the `df-ipam-lite-db-data` volume. The previous enterprise volume `df-ipam_db-data` was backed up to `../df-ipam-backups/df-ipam-enterprise-volume-2026-11-11.sql.gz` (with `SHA256SUMS`) and removed. Restore with `zcat <file> | psql -U postgres` into an empty PostgreSQL 16.
 
 ## Questions to answer first
 

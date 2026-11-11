@@ -36,3 +36,15 @@ func (r repository) profile(ctx context.Context, userID string) (Profile, error)
 	}
 	return p, err
 }
+
+// DefaultSessionTimeout applies until an Admin sets one in Settings.
+const DefaultSessionTimeout = 30
+
+func (r repository) sessionTimeout(ctx context.Context) int {
+	var n int
+	err := r.conn.QueryRow(ctx, `SELECT (value #>> '{}')::integer FROM settings WHERE key = 'session.idle_timeout_minutes'`).Scan(&n)
+	if err != nil || n < 5 {
+		return DefaultSessionTimeout
+	}
+	return n
+}

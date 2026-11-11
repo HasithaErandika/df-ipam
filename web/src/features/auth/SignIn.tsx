@@ -3,8 +3,9 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { SubnetMap } from '../../components/SubnetMap'
-import { Button, Field, FormError, Input } from '../../components/ui'
+import { Button, Field, FormError, Input, Notice } from '../../components/ui'
 import { signIn } from '../../lib/auth'
+import { takeSignOutReason } from '../../lib/idle'
 
 const schema = z.object({
   email: z.email('Enter a valid email address.'),
@@ -13,6 +14,7 @@ const schema = z.object({
 
 export function SignIn() {
   const [error, setError] = useState<unknown>(null)
+  const [reason] = useState(takeSignOutReason)
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({ resolver: zodResolver(schema) })
 
   const submit = handleSubmit(async ({ email, password }) => {
@@ -30,9 +32,9 @@ export function SignIn() {
         <SubnetMap />
         <div className="absolute inset-0 bg-gradient-to-t from-map via-map/70 to-map/10" />
         <div className="absolute inset-x-0 bottom-0 p-12">
-          <p className="font-mono text-[13px] text-map-accent">10.0.0.0/8 · 2001:db8::/32</p>
+          <p className="font-mono text-[13px] text-map-accent">192.168.0.0/16 · 172.16.0.0/12</p>
           <h2 className="mt-3 max-w-md text-3xl leading-tight font-semibold tracking-tight text-map-ink">
-            Every network, address and owner in one governed record.
+            Every floor, server and device on the network, in one record.
           </h2>
         </div>
       </div>
@@ -40,6 +42,7 @@ export function SignIn() {
         <div className="w-full max-w-sm">
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">Sign in to DF-IPAM</h1>
           <p className="mt-1 text-ink-2">Dialog Finance IP Address Management</p>
+          {reason && <div className="mt-5"><Notice tone="warn">{reason}</Notice></div>}
           <form onSubmit={submit} noValidate className="mt-7 space-y-4">
             <Field label="Work email" htmlFor="email" error={errors.email?.message}>
               <Input id="email" type="email" autoComplete="username" autoFocus {...register('email')} />

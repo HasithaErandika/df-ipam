@@ -352,19 +352,82 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON environments, segments, devices, ip_addr
   notifications, notification_preferences, settings TO dfipam_app;
 GRANT SELECT, INSERT ON audit_logs TO dfipam_app;
 
+-- 000002_lite_checks.up.sql
+ALTER TABLE ip_addresses
+  ADD COLUMN server_check_failures integer NOT NULL DEFAULT 0 CHECK (server_check_failures >= 0);
+
+-- 000003_lite_reservation_reminders.up.sql
+ALTER TABLE reservations ADD COLUMN reminder_sent_at timestamptz;
+
+-- 000004_lite_findings.up.sql
+-- Indexes for the Discovery findings, alert and audit filters. No new tables.
+CREATE INDEX alerts_ip_open_idx ON alerts (ip) WHERE status <> 'closed';
+CREATE INDEX alerts_closed_key_idx ON alerts (dedupe_key, closed_at) WHERE status = 'closed';
+CREATE INDEX sightings_last_seen_idx ON sightings (last_seen DESC);
+CREATE INDEX audit_logs_actor_idx ON audit_logs (actor_id, occurred_at DESC);
+CREATE INDEX notifications_sent_idx ON notifications (user_id, created_at) WHERE email_status = 'sent';
+
+-- Alert email goes to Admins by their own preferences; this list was never used.
+DELETE FROM settings WHERE key = 'alerts.email_recipients';
+
+-- Settings that Admins change, with their limits enforced in the database too.
+ALTER TABLE settings ADD CONSTRAINT settings_known_numbers CHECK (
+  key NOT IN ('scan.interval_minutes', 'server_check.interval_seconds', 'server_check.down_after_failures',
+              'reservations.reminder_days', 'session.idle_timeout_minutes')
+  OR jsonb_typeof(value) = 'number');
+ALTER TABLE settings ADD CONSTRAINT settings_email_flag CHECK (key <> 'email.enabled' OR jsonb_typeof(value) = 'boolean');
+
+-- 000005_lite_cloud_fortigate.up.sql
+-- Cloud segments: networks hosted in a cloud. Static like server segments, with a
+-- default environment, but never ping-swept from the building.
+ALTER TABLE segments DROP CONSTRAINT segments_kind_check;
+ALTER TABLE segments ADD CONSTRAINT segments_kind_check CHECK (kind IN ('dhcp', 'server', 'cloud'));
+ALTER TABLE segments DROP CONSTRAINT segments_check6;
+ALTER TABLE segments ADD CONSTRAINT segments_environment_kind CHECK (kind IN ('server', 'cloud') OR default_environment_id IS NULL);
+
+-- Evidence read from the FortiGate (read-only): DHCP leases and VPN sessions.
+-- ARP entries from it are recorded as 'arp'.
+ALTER TABLE sightings DROP CONSTRAINT sightings_source_check;
+ALTER TABLE sightings ADD CONSTRAINT sightings_source_check CHECK (source IN ('arp', 'ping', 'netbios', 'snmp', 'dns', 'dhcp', 'vpn'));
+
+-- New defaults: devices every 10 minutes, servers once a day. Only values still at
+-- the old defaults move; anything an Admin chose stays.
+UPDATE settings SET value = '10' WHERE key = 'scan.interval_minutes' AND value = '5';
+UPDATE settings SET value = '86400' WHERE key = 'server_check.interval_seconds' AND value = '60';
+
+ALTER TABLE settings DROP CONSTRAINT settings_known_numbers;
+ALTER TABLE settings ADD CONSTRAINT settings_known_numbers CHECK (
+  key NOT IN ('scan.interval_minutes', 'server_check.interval_seconds', 'server_check.down_after_failures',
+              'reservations.reminder_days', 'session.idle_timeout_minutes', 'fortigate.interval_minutes')
+  OR jsonb_typeof(value) = 'number');
+ALTER TABLE settings ADD CONSTRAINT settings_fortigate_flags CHECK (
+  key NOT IN ('fortigate.enabled', 'fortigate.verify_tls') OR jsonb_typeof(value) = 'boolean');
+
+-- 000006_lite_platforms.up.sql
+-- What runs on a device or server, set by a person: the operating system
+-- (platform) and, for servers, the main services. Discovery never writes these;
+-- the web app only suggests a likely platform from DHCP and hostname evidence.
+ALTER TABLE devices ADD COLUMN platform text NOT NULL DEFAULT '' CHECK (platform ~ '^[a-z0-9_]{0,30}$');
+ALTER TABLE ip_addresses ADD COLUMN platform text NOT NULL DEFAULT '' CHECK (platform ~ '^[a-z0-9_]{0,30}$');
+ALTER TABLE ip_addresses ADD COLUMN services text[] NOT NULL DEFAULT '{}' CHECK (cardinality(services) <= 10);
+
 -- Seed data
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Production', '#dc2626', 10, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('DR', '#9333ea', 20, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('UAT', '#d97706', 30, 'high', true, false) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Development', '#2563eb', 40, 'medium', false, false) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Test', '#64748b', 50, 'medium', false, false) ON CONFLICT ((lower(name))) DO NOTHING;
-INSERT INTO settings (key, value) VALUES ('scan.interval_minutes', '5'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('scan.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('scan.method', '"ping"'::jsonb) ON CONFLICT (key) DO NOTHING;
-INSERT INTO settings (key, value) VALUES ('server_check.interval_seconds', '60'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('server_check.interval_seconds', '86400'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('server_check.down_after_failures', '3'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('reservations.reminder_days', '7'::jsonb) ON CONFLICT (key) DO NOTHING;
-INSERT INTO settings (key, value) VALUES ('alerts.email_recipients', '[]'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('email.enabled', 'false'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('session.idle_timeout_minutes', '30'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('fortigate.enabled', 'false'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('fortigate.verify_tls', 'true'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('fortigate.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (1, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (6, false);
 
 COMMIT;

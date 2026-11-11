@@ -1,22 +1,37 @@
+import { lazy } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router'
-import { Planned } from '../features/planned/Planned'
-import { InventoryPage } from '../features/inventory/InventoryPage'
-import { DashboardPage } from '../features/dashboard/DashboardPage'
-import { AlertsPage } from '../features/alerts/AlertsPage'
-import { RequestsPage } from '../features/requests/RequestsPage'
-import { ReservationsPage } from '../features/reservations/ReservationsPage'
-import { allItems } from './nav'
 import { AppShell } from './shell/AppShell'
 
-/** Every Lite screen shows what it will do until its build step lands (docs/new.md). */
+// Each screen loads on first visit, so signing in doesn't download the whole app.
+const page = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })))
+
+const Dashboard = page(() => import('../features/dashboard/DashboardPage'), 'DashboardPage')
+const Discovery = page(() => import('../features/discovery/DiscoveryPage'), 'DiscoveryPage')
+const SegmentPage = page(() => import('../features/discovery/SegmentPage'), 'SegmentPage')
+const Servers = page(() => import('../features/servers/ServersPage'), 'ServersPage')
+const Devices = page(() => import('../features/devices/DevicesPage'), 'DevicesPage')
+const Alerts = page(() => import('../features/alerts/AlertsPage'), 'AlertsPage')
+const Requests = page(() => import('../features/requests/RequestsPage'), 'RequestsPage')
+const Reservations = page(() => import('../features/reservations/ReservationsPage'), 'ReservationsPage')
+const Reports = page(() => import('../features/reports/ReportsPage'), 'ReportsPage')
+const Settings = page(() => import('../features/settings/SettingsPage'), 'SettingsPage')
+
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <AppShell />,
     children: [
-      ...allItems.map((item) => (item.to === '/'
-        ? { index: true, element: <DashboardPage /> }
-        : { path: `${item.to.slice(1)}/:tab?`, element: item.to === '/alerts' ? <AlertsPage /> : item.to === '/requests' ? <RequestsPage /> : item.to === '/reservations' ? <ReservationsPage /> : ['/servers','/devices','/settings'].includes(item.to) ? <InventoryPage item={item} /> : <Planned item={item} /> })),
+      { index: true, element: <Dashboard /> },
+      { path: 'discovery/:tab?', element: <Discovery /> },
+      { path: 'segments/:id', element: <SegmentPage /> },
+      { path: 'servers/:tab?', element: <Servers /> },
+      { path: 'devices/:tab?', element: <Devices /> },
+      { path: 'alerts/:tab?', element: <Alerts /> },
+      { path: 'requests/:tab?', element: <Requests /> },
+      { path: 'reservations/:tab?', element: <Reservations /> },
+      { path: 'reports', element: <Reports /> },
+      { path: 'settings/:tab?', element: <Settings /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

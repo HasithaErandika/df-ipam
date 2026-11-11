@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { UserRound } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Badge, Button, ErrorState, Modal, SkeletonRows } from '../../components/ui'
-import { get } from '../../lib/api'
+import { getBody } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
 import { useMe } from '../../lib/session'
 import type { Profile } from '../../lib/types'
@@ -78,7 +78,7 @@ function Details({ profile, permissions }: { profile: Profile; permissions: stri
 
 export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { permissions } = useMe()
-  const query = useQuery({ queryKey: ['me', 'profile'], enabled: open, queryFn: () => get<Profile>('/auth/me/profile') })
+  const query = useQuery({ queryKey: ['me', 'profile'], enabled: open, queryFn: () => getBody<Profile>('/auth/me/profile') })
   return (
     <Modal open={open} onClose={onClose} title="Account details" size="xl" footer={<Button onClick={onClose}>Close</Button>}>
       {query.isPending && <SkeletonRows rows={5} />}

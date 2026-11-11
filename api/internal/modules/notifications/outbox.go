@@ -9,20 +9,38 @@ import (
 	"dfipam/api/internal/platform/mail"
 )
 
+const (
+	// maxPerHour caps email to one person. Past it, notices stay in the app only,
+	// so a burst of alerts can't flood anyone's mailbox.
+	maxPerHour  = 20
+	maxAttempts = 5
+	batchSize   = 20
+	// Read notifications older than this are removed; unread ones are kept.
+	keepRead = "90 days"
+)
+
 type outboxItem struct {
-	ID, Email, Kind, Message string
-	Attempts                 int
+	ID, Email, Kind, Message, Link string
+	Attempts                       int
 }
 
-// RunOutbox delivers queued email in the API process. With SMTP disabled,
-// queued mail is cleared while the in-app notification remains available.
-func RunOutbox(ctx context.Context, conn db.Conn, mailer mail.Mailer) {
+// RunOutbox delivers queued email in the API process. Email is sent only when
+// Settings > Email is on and SMTP is configured; otherwise queued email is
+// dropped while the in-app notification stays. A failed send is retried.
+func RunOutbox(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL string) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	tick := 0
 	for {
-		if err := deliverBatch(ctx, conn, mailer); err != nil && ctx.Err() == nil {
+		if err := deliverBatch(ctx, conn, mailer, baseURL); err != nil && ctx.Err() == nil {
 			slog.ErrorContext(ctx, "notification outbox failed", "error", err)
 		}
+		if tick%720 == 0 { // about hourly
+			if _, err := conn.Exec(ctx, `DELETE FROM notifications WHERE is_read AND created_at < now() - $1::interval`, keepRead); err != nil && ctx.Err() == nil {
+				slog.ErrorContext(ctx, "notification cleanup failed", "error", err)
+			}
+		}
+		tick++
 		select {
 		case <-ctx.Done():
 			return
@@ -31,80 +49,63 @@ func RunOutbox(ctx context.Context, conn db.Conn, mailer mail.Mailer) {
 	}
 }
 
-// RunReservationReminders queues a one-time reminder in the week before expiry.
-func RunReservationReminders(ctx context.Context, conn db.Conn) {
-	ticker := time.NewTicker(6 * time.Hour)
-	defer ticker.Stop()
-	for {
-		if err := queueReservationReminders(ctx, conn); err != nil && ctx.Err() == nil {
-			slog.ErrorContext(ctx, "reservation reminder check failed", "error", err)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+// EmailEnabled reads the switch in Settings. It is off until an Admin turns it on.
+func EmailEnabled(ctx context.Context, conn db.Conn) bool {
+	var on bool
+	_ = conn.QueryRow(ctx, `SELECT COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'email.enabled'), false)`).Scan(&on)
+	return on
+}
+
+func deliverBatch(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL string) error {
+	if mailer == nil || !EmailEnabled(ctx, conn) {
+		_, err := conn.Exec(ctx, `UPDATE notifications SET email_status = 'none' WHERE email_status = 'pending'`)
+		return err
 	}
-}
-
-func queueReservationReminders(ctx context.Context, conn db.Conn) error {
-	_, err := conn.Exec(ctx, `WITH due AS (
-		UPDATE reservations SET reminder_sent_at=now()
-		WHERE status='active' AND reminder_sent_at IS NULL AND expires_at>now() AND expires_at<=now()+interval '7 days'
-		RETURNING owner_id,owner_name,start_ip,end_ip,reason
-	), recipients AS (
-		SELECT d.owner_id AS user_id,d.reason,d.start_ip,d.end_ip FROM due d WHERE d.owner_id IS NOT NULL
-		UNION ALL SELECT u.id,d.reason,d.start_ip,d.end_ip FROM due d JOIN users u ON u.role='admin' AND u.is_active WHERE d.owner_id IS NULL
-	)
-	INSERT INTO notifications(user_id,kind,message,link,email_status)
-	SELECT r.user_id,'reservation_expiry','Reservation expires soon: '||r.reason||' ('||r.start_ip||'–'||r.end_ip||')','/reservations',
-		CASE WHEN COALESCE(p.email,true) THEN 'pending' ELSE 'none' END
-	FROM recipients r LEFT JOIN notification_preferences p ON p.user_id=r.user_id AND p.kind='reservation_expiry'`)
-	return err
-}
-
-func deliverBatch(ctx context.Context, conn db.Conn, mailer mail.Mailer) error {
-	rows, err := conn.Query(ctx, `SELECT n.id::text,u.email,n.kind,n.message,n.email_attempts FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.email_status='pending' ORDER BY n.created_at LIMIT 20`)
+	// Over the hourly cap, an email is skipped rather than delayed: the notice is
+	// still in the app, and a late burst of stale mail helps nobody.
+	if _, err := conn.Exec(ctx, `UPDATE notifications n SET email_status = 'none' WHERE n.email_status = 'pending'
+		AND (SELECT count(*) FROM notifications s WHERE s.user_id = n.user_id AND s.email_status = 'sent' AND s.created_at > now() - interval '1 hour') >= $1`,
+		maxPerHour); err != nil {
+		return err
+	}
+	rows, err := conn.Query(ctx, `SELECT n.id::text, u.email, n.kind, n.message, n.link, n.email_attempts FROM notifications n
+		JOIN users u ON u.id = n.user_id WHERE n.email_status = 'pending' ORDER BY n.created_at LIMIT $1`, batchSize)
 	if err != nil {
 		return err
 	}
 	var items []outboxItem
 	for rows.Next() {
 		var n outboxItem
-		if err := rows.Scan(&n.ID, &n.Email, &n.Kind, &n.Message, &n.Attempts); err != nil {
+		if err := rows.Scan(&n.ID, &n.Email, &n.Kind, &n.Message, &n.Link, &n.Attempts); err != nil {
 			rows.Close()
 			return err
 		}
 		items = append(items, n)
 	}
+	rows.Close()
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return err
 	}
-	rows.Close()
 	for _, n := range items {
-		if mailer == nil {
-			_, err = conn.Exec(ctx, `UPDATE notifications SET email_status='none' WHERE id=$1::uuid AND email_status='pending'`, n.ID)
-		} else {
-			err = mailer.Send(ctx, n.Email, "DF-IPAM notification", n.Message)
-			status := "sent"
-			if err != nil && n.Attempts+1 < 5 {
-				status = "pending"
-			} else if err != nil {
+		body := n.Message + "\n\nOpen DF-IPAM: " + baseURL + n.Link + "\n\nYou can turn these emails off under Alerts > Email notifications."
+		sendErr := mailer.Send(ctx, n.Email, "DF-IPAM: "+subjects[n.Kind], body)
+		status := "sent"
+		if sendErr != nil {
+			status = "pending"
+			if n.Attempts+1 >= maxAttempts {
 				status = "failed"
 			}
-			_, dbErr := conn.Exec(ctx, `UPDATE notifications SET email_status=$2,email_attempts=email_attempts+1 WHERE id=$1::uuid AND email_status='pending'`, n.ID, status)
-			if dbErr != nil {
-				return dbErr
-			}
-			if err != nil {
-				slog.WarnContext(ctx, "notification email delivery failed", "notificationId", n.ID, "attempt", n.Attempts+1)
-			}
-			err = nil
+			slog.WarnContext(ctx, "notification email failed", "notificationId", n.ID, "attempt", n.Attempts+1)
 		}
-		if err != nil {
+		if _, err := conn.Exec(ctx, `UPDATE notifications SET email_status = $2, email_attempts = email_attempts + 1 WHERE id = $1::uuid AND email_status = 'pending'`,
+			n.ID, status); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+var subjects = map[string]string{
+	"alert": "network alert", "server_up": "server back up", "request": "new IP request",
+	"request_decision": "your IP request", "reservation_expiry": "reservation expiring",
 }

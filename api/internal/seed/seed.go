@@ -26,12 +26,16 @@ var Environments = []Environment{
 
 // Settings are starting values for an Admin to review.
 var Settings = []struct{ Key, Value string }{
-	{"scan.interval_minutes", "5"},
+	{"scan.interval_minutes", "10"},
 	{"scan.method", `"ping"`},
-	{"server_check.interval_seconds", "60"},
+	{"server_check.interval_seconds", "86400"},
 	{"server_check.down_after_failures", "3"},
 	{"reservations.reminder_days", "7"},
-	{"alerts.email_recipients", "[]"},
+	{"email.enabled", "false"}, // email stays off until an Admin turns it on in Settings
+	{"session.idle_timeout_minutes", "30"},
+	{"fortigate.enabled", "false"}, // optional, read-only; set up in Settings > Integrations
+	{"fortigate.verify_tls", "true"},
+	{"fortigate.interval_minutes", "10"},
 }
 
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }

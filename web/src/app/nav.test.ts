@@ -9,10 +9,10 @@ const roles: Record<string, string[]> = {
 }
 
 const labels = (role: string) => navFor(roles[role]).flatMap((g) => g.items.map((i) => i.label))
-const network = ['Floors', 'Servers', 'Devices', 'Alerts']
+const network = ['Discovery', 'Servers', 'Devices', 'Alerts']
 
 describe('the menu follows the role', () => {
-  it('gives Admins all nine screens', () => {
+  it('gives Admins every screen', () => {
     expect(labels('admin')).toEqual(['Dashboard', ...network, 'IP Requests', 'Reservations', 'Reports', 'Settings'])
   })
 
@@ -23,6 +23,10 @@ describe('the menu follows the role', () => {
   it('keeps Viewers to reading', () => {
     expect(labels('viewer')).toEqual(['Dashboard', ...network, 'Reservations', 'Reports'])
   })
+
+  it('never lists drill-down pages', () => {
+    expect(labels('admin')).not.toContain('Segment')
+  })
 })
 
 describe('canOpen', () => {
@@ -30,7 +34,8 @@ describe('canOpen', () => {
     expect(canOpen('/settings/users', roles.requester)).toBe(false)
     expect(canOpen('/settings/users', roles.admin)).toBe(true)
     expect(canOpen('/requests', roles.viewer)).toBe(false)
-    expect(canOpen('/servers/production', roles.viewer)).toBe(true)
+    expect(canOpen('/servers/register', roles.viewer)).toBe(true)
+    expect(canOpen('/segments/abc', roles.viewer)).toBe(true)
   })
 
   it('always opens the dashboard', () => {

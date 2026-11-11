@@ -1,13 +1,16 @@
-// Package notifications serves per-user inbox and email preferences.
+// Package notifications serves each person's inbox and email preferences.
 package notifications
 
 import (
 	"net/http"
+	"slices"
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/notify"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,47 +18,51 @@ type Handler struct{ conn db.Conn }
 
 func New(conn db.Conn) *Handler { return &Handler{conn: conn} }
 
+// Every signed-in person with a role has an inbox, whatever the role.
+var anyRole = []string{auth.InventoryView, auth.IPRequest, auth.SystemManage}
+
 func (h *Handler) Register(g *auth.Guard) {
-	g.Handle(http.MethodGet, "/notifications", h.list, auth.InventoryView)
-	g.Handle(http.MethodPost, "/notifications/:id/read", h.read, auth.InventoryView)
-	g.Handle(http.MethodPost, "/notifications/read-all", h.readAll, auth.InventoryView)
-	g.Handle(http.MethodGet, "/notification-preferences", h.preferences, auth.InventoryView)
-	g.Handle(http.MethodPut, "/notification-preferences", h.updatePreference, auth.InventoryView)
+	g.Handle(http.MethodGet, "/notifications", h.list, anyRole...)
+	g.Handle(http.MethodGet, "/notifications/unread-count", h.unread, anyRole...)
+	g.Handle(http.MethodPost, "/notifications/:id/read", h.read, anyRole...)
+	g.Handle(http.MethodPost, "/notifications/read-all", h.readAll, anyRole...)
+	g.Handle(http.MethodGet, "/notification-preferences", h.preferences, anyRole...)
+	g.Handle(http.MethodPut, "/notification-preferences", h.updatePreference, anyRole...)
 }
 
-type notification struct {
-	ID, Kind, Message, Link, EmailStatus string
-	IsRead                               bool
-	CreatedAt                            time.Time
+type notificationDTO struct {
+	ID          string    `db:"id" json:"id"`
+	Kind        string    `db:"kind" json:"kind"`
+	Message     string    `db:"message" json:"message"`
+	Link        string    `db:"link" json:"link"`
+	IsRead      bool      `db:"is_read" json:"isRead"`
+	EmailStatus string    `db:"email_status" json:"emailStatus"`
+	CreatedAt   time.Time `db:"created_at" json:"createdAt"`
 }
 
 func (h *Handler) list(c *gin.Context) {
-	uid := auth.Current(c).UserID
-	rows, err := h.conn.Query(c, `SELECT id::text,kind,message,link,is_read,email_status,created_at FROM notifications WHERE user_id=$1::uuid ORDER BY created_at DESC LIMIT 100`, uid)
+	w := db.Where{}
+	w.Add("user_id = ?::uuid", auth.Current(c).UserID)
+	if c.Query("unread") == "true" {
+		w.Raw("NOT is_read")
+	}
+	page := httpx.ParsePage(c)
+	items, total, err := db.ListPage[notificationDTO](c, h.conn, `SELECT id::text AS id, kind, message, link, is_read, email_status, created_at
+		FROM notifications`+w.SQL()+" ORDER BY created_at DESC, id", "SELECT count(*) FROM notifications"+w.SQL(), w.Args, page)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	defer rows.Close()
-	out := []notification{}
-	for rows.Next() {
-		var n notification
-		if err := rows.Scan(&n.ID, &n.Kind, &n.Message, &n.Link, &n.IsRead, &n.EmailStatus, &n.CreatedAt); err != nil {
-			httpx.Fail(c, err)
-			return
-		}
-		out = append(out, n)
-	}
-	if rows.Err() != nil {
-		httpx.Fail(c, rows.Err())
-		return
-	}
-	var unread int
-	if err := h.conn.QueryRow(c, "SELECT count(*) FROM notifications WHERE user_id=$1::uuid AND NOT is_read", uid).Scan(&unread); err != nil {
+	httpx.List(c, items, page, total)
+}
+
+func (h *Handler) unread(c *gin.Context) {
+	var n int64
+	if err := h.conn.QueryRow(c, "SELECT count(*) FROM notifications WHERE user_id = $1::uuid AND NOT is_read", auth.Current(c).UserID).Scan(&n); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, 200, gin.H{"items": out, "unreadCount": unread})
+	httpx.OK(c, http.StatusOK, gin.H{"count": n})
 }
 
 func (h *Handler) read(c *gin.Context) {
@@ -63,7 +70,8 @@ func (h *Handler) read(c *gin.Context) {
 	if !ok {
 		return
 	}
-	tag, err := h.conn.Exec(c, `UPDATE notifications SET is_read=true,read_at=COALESCE(read_at,now()) WHERE id=$1::uuid AND user_id=$2::uuid`, id, auth.Current(c).UserID)
+	tag, err := h.conn.Exec(c, `UPDATE notifications SET is_read = true, read_at = COALESCE(read_at, now()) WHERE id = $1::uuid AND user_id = $2::uuid`,
+		id, auth.Current(c).UserID)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -72,22 +80,24 @@ func (h *Handler) read(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}
-	c.Status(204)
+	c.Status(http.StatusNoContent)
 }
+
 func (h *Handler) readAll(c *gin.Context) {
-	_, err := h.conn.Exec(c, `UPDATE notifications SET is_read=true,read_at=now() WHERE user_id=$1::uuid AND NOT is_read`, auth.Current(c).UserID)
-	if err != nil {
+	if _, err := h.conn.Exec(c, `UPDATE notifications SET is_read = true, read_at = now() WHERE user_id = $1::uuid AND NOT is_read`, auth.Current(c).UserID); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	c.Status(204)
+	c.Status(http.StatusNoContent)
 }
 
-var preferenceKinds = []string{"alert", "server_up", "request", "request_decision", "reservation_expiry"}
+type preference struct {
+	Kind  string `json:"kind"`
+	Email bool   `json:"email"`
+}
 
 func (h *Handler) preferences(c *gin.Context) {
-	uid := auth.Current(c).UserID
-	rows, err := h.conn.Query(c, `SELECT kind,email FROM notification_preferences WHERE user_id=$1::uuid ORDER BY kind`, uid)
+	rows, err := h.conn.Query(c, `SELECT kind, email FROM notification_preferences WHERE user_id = $1::uuid`, auth.Current(c).UserID)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -95,48 +105,36 @@ func (h *Handler) preferences(c *gin.Context) {
 	defer rows.Close()
 	values := map[string]bool{}
 	for rows.Next() {
-		var k string
-		var v bool
-		if err := rows.Scan(&k, &v); err != nil {
+		var p preference
+		if err := rows.Scan(&p.Kind, &p.Email); err != nil {
 			httpx.Fail(c, err)
 			return
 		}
-		values[k] = v
+		values[p.Kind] = p.Email
 	}
-	out := []gin.H{}
-	for _, k := range preferenceKinds {
-		enabled, ok := values[k]
-		if !ok {
-			enabled = true
-		}
-		out = append(out, gin.H{"kind": k, "email": enabled})
+	out := make([]preference, 0, len(notify.Kinds))
+	for _, k := range notify.Kinds {
+		on, set := values[k]
+		out = append(out, preference{Kind: k, Email: on || !set})
 	}
-	httpx.OK(c, 200, out)
+	var enabled bool
+	_ = h.conn.QueryRow(c, `SELECT COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'email.enabled'), false)`).Scan(&enabled)
+	httpx.OK(c, http.StatusOK, gin.H{"items": out, "emailEnabled": enabled})
 }
 
 func (h *Handler) updatePreference(c *gin.Context) {
-	var in struct {
-		Kind  string `json:"kind"`
-		Email bool   `json:"email"`
-	}
-	if c.ShouldBindJSON(&in) != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
+	var in preference
+	if !httpx.Bind(c, &in) {
 		return
 	}
-	valid := false
-	for _, k := range preferenceKinds {
-		if in.Kind == k {
-			valid = true
-		}
-	}
-	if !valid {
+	if !slices.Contains(notify.Kinds, in.Kind) {
 		httpx.Fail(c, httpx.Validation("kind", "Choose a supported notification type."))
 		return
 	}
-	_, err := h.conn.Exec(c, `INSERT INTO notification_preferences(user_id,kind,email) VALUES($1::uuid,$2,$3) ON CONFLICT(user_id,kind) DO UPDATE SET email=EXCLUDED.email`, auth.Current(c).UserID, in.Kind, in.Email)
-	if err != nil {
+	if _, err := h.conn.Exec(c, `INSERT INTO notification_preferences (user_id, kind, email) VALUES ($1::uuid, $2, $3)
+		ON CONFLICT (user_id, kind) DO UPDATE SET email = EXCLUDED.email`, auth.Current(c).UserID, in.Kind, in.Email); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	c.Status(204)
+	c.Status(http.StatusNoContent)
 }

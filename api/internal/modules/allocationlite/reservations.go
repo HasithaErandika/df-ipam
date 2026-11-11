@@ -1,43 +1,79 @@
 package allocationlite
 
 import (
-	"encoding/json"
 	"net/http"
-	"net/netip"
 	"strings"
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/ipam"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
+	"dfipam/api/internal/validate"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 )
 
+// maxRange keeps a reservation to "a small range" (docs/new.md, section 8).
+const maxRange = 256
+
+type reservationDTO struct {
+	ID          string     `db:"id" json:"id"`
+	SegmentID   string     `db:"segment_id" json:"segmentId"`
+	SegmentName string     `db:"segment_name" json:"segmentName"`
+	StartIP     string     `db:"start_ip" json:"startIp"`
+	EndIP       string     `db:"end_ip" json:"endIp"`
+	Size        int64      `db:"size" json:"size"`
+	Reason      string     `db:"reason" json:"reason"`
+	OwnerID     *string    `db:"owner_id" json:"ownerId"`
+	OwnerName   string     `db:"owner_name" json:"ownerName"`
+	ExpiresAt   *time.Time `db:"expires_at" json:"expiresAt"`
+	Status      string     `db:"status" json:"status"`
+	CreatedBy   *string    `db:"created_by_email" json:"createdByEmail"`
+	CreatedAt   time.Time  `db:"created_at" json:"createdAt"`
+}
+
+const reservationFrom = ` FROM reservations r JOIN segments s ON s.id = r.segment_id LEFT JOIN users cb ON cb.id = r.created_by`
+
+const reservationColumns = `SELECT r.id::text AS id, r.segment_id::text AS segment_id, s.name AS segment_name, host(r.start_ip) AS start_ip,
+	host(r.end_ip) AS end_ip, (r.end_ip - r.start_ip) + 1 AS size, r.reason, r.owner_id::text AS owner_id, r.owner_name,
+	r.expires_at, r.status, cb.email AS created_by_email, r.created_at`
+
+// Views of the list. Each is a constant condition.
+var reservationViews = map[string]string{
+	"active":   "r.status = 'active'",
+	"expiring": "r.status = 'active' AND r.expires_at IS NOT NULL AND r.expires_at <= now() + interval '7 days' AND r.expires_at > now()",
+	"expired":  "r.status = 'active' AND r.expires_at <= now()",
+	"closed":   "r.status IN ('converted', 'released')",
+}
+
 func (h *Handler) listReservations(c *gin.Context) {
-	rows, err := h.conn.Query(c, `SELECT r.id::text,r.segment_id::text,s.name,r.start_ip::text,r.end_ip::text,r.reason,r.owner_id::text,r.owner_name,r.expires_at,r.status,r.created_at FROM reservations r JOIN segments s ON s.id=r.segment_id WHERE ($1='all' OR r.status=$1) ORDER BY r.expires_at NULLS LAST,r.created_at DESC LIMIT 200`, c.DefaultQuery("status", "active"))
+	var w db.Where
+	view := c.DefaultQuery("view", "active")
+	if cond, ok := reservationViews[view]; ok {
+		w.Raw(cond)
+	} else if view != "all" {
+		httpx.Fail(c, httpx.Validation("view", "Choose a valid view."))
+		return
+	}
+	if id := c.Query("segmentId"); httpx.IsUUID(id) {
+		w.Add("r.segment_id = ?::uuid", id)
+	}
+	if c.Query("mine") == "true" {
+		w.Add("r.owner_id = ?::uuid", actor(c))
+	}
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		w.Add(`(r.reason ILIKE ? ESCAPE '\' OR r.owner_name ILIKE ? ESCAPE '\' OR host(r.start_ip) ILIKE ? ESCAPE '\' OR s.name ILIKE ? ESCAPE '\')`, db.Contains(q))
+	}
+	page := httpx.ParsePage(c)
+	items, total, err := db.ListPage[reservationDTO](c, h.conn, reservationColumns+reservationFrom+w.SQL()+" ORDER BY r.expires_at NULLS LAST, r.created_at DESC, r.id",
+		"SELECT count(*)"+reservationFrom+w.SQL(), w.Args, page)
 	if err != nil {
-		fail(c, err)
+		httpx.Fail(c, err)
 		return
 	}
-	defer rows.Close()
-	out := []gin.H{}
-	for rows.Next() {
-		var id, sid, sname, start, end, reason, status string
-		var ownerID *string
-		var owner string
-		var expires, created *time.Time
-		if err := rows.Scan(&id, &sid, &sname, &start, &end, &reason, &ownerID, &owner, &expires, &status, &created); err != nil {
-			fail(c, err)
-			return
-		}
-		out = append(out, gin.H{"id": id, "segmentId": sid, "segmentName": sname, "startIp": start, "endIp": end, "reason": reason, "ownerId": ownerID, "ownerName": owner, "expiresAt": expires, "status": status, "createdAt": created})
-	}
-	if rows.Err() != nil {
-		fail(c, rows.Err())
-		return
-	}
-	httpx.OK(c, 200, out)
+	httpx.List(c, items, page, total)
 }
 
 type reserveInput struct {
@@ -47,215 +83,77 @@ type reserveInput struct {
 	Reason    string `json:"reason"`
 	OwnerID   string `json:"ownerId"`
 	OwnerName string `json:"ownerName"`
-	ExpiresAt string `json:"expiresAt"`
+	ExpiresOn string `json:"expiresOn"`
 }
 
-func (h *Handler) createReservation(c *gin.Context) {
-	var in reserveInput
-	if c.ShouldBindJSON(&in) != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
-		return
-	}
-	in.Reason = clean(in.Reason)
-	if in.EndIP == "" {
+func (in *reserveInput) validate(admin bool) error {
+	var v validate.V
+	v.UUID("segmentId", in.SegmentID, true, "a segment")
+	first := v.IPv4("startIp", &in.StartIP, true)
+	if strings.TrimSpace(in.EndIP) == "" {
 		in.EndIP = in.StartIP
 	}
-	if in.SegmentID == "" || in.StartIP == "" || in.Reason == "" {
-		httpx.Fail(c, httpx.Validation("reason", "Choose a segment, address range and reason."))
+	last := v.IPv4("endIp", &in.EndIP, true)
+	if first.IsValid() && last.IsValid() {
+		if last.Less(first) {
+			v.Add("endIp", "The last IP must not be before the first.")
+		} else if ipam.RangeSize(first, last) > maxRange {
+			v.Add("endIp", "Reserve at most 256 addresses at a time.")
+		}
+	}
+	v.Text("reason", &in.Reason, 300, true, "Reason")
+	v.Text("ownerName", &in.OwnerName, 120, false, "Owner")
+	v.UUID("ownerId", in.OwnerID, false, "an owner")
+	if in.OwnerID != "" && !admin {
+		v.Add("ownerId", "Only an Admin can reserve on behalf of someone else.")
+	}
+	v.Date("expiresOn", &in.ExpiresOn, true, "Expiry")
+	return v.Err()
+}
+
+// createReservation holds a free range. It refuses one that overlaps a register
+// entry, another active hold or an address seen in use recently.
+func (h *Handler) createReservation(c *gin.Context) {
+	var in reserveInput
+	if !httpx.Bind(c, &in) {
 		return
 	}
-	uid := auth.Current(c).UserID
+	p := auth.Current(c)
+	if err := in.validate(p.Has(auth.SystemManage)); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if in.OwnerID == "" {
+		in.OwnerID = p.UserID
+	}
+	if in.OwnerName == "" {
+		in.OwnerName = p.Email
+	}
 	var id string
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var locked string
-		if err := tx.QueryRow(c, "SELECT id::text FROM segments WHERE id=$1::uuid FOR UPDATE", in.SegmentID).Scan(&locked); err != nil {
+		if _, err := tx.Exec(c, "SELECT 1 FROM segments WHERE id = $1::uuid FOR UPDATE", in.SegmentID); err != nil {
 			return err
 		}
-		var conflict bool
-		if err := tx.QueryRow(c, `SELECT EXISTS(SELECT 1 FROM reservations r WHERE r.segment_id=$1::uuid AND r.status='active' AND r.start_ip<=$3::inet AND r.end_ip>=$2::inet)
-			OR EXISTS(SELECT 1 FROM ip_addresses i WHERE i.ip BETWEEN $2::inet AND $3::inet)
-			OR EXISTS(SELECT 1 FROM sightings s WHERE s.segment_id=$1::uuid AND s.ip BETWEEN $2::inet AND $3::inet AND s.last_seen>now()-interval '24 hours')`, in.SegmentID, in.StartIP, in.EndIP).Scan(&conflict); err != nil {
+		var busy bool
+		if err := tx.QueryRow(c, `SELECT EXISTS (SELECT 1 FROM reservations WHERE status = 'active' AND start_ip <= $2::inet AND end_ip >= $1::inet)
+			OR EXISTS (SELECT 1 FROM ip_addresses WHERE ip BETWEEN $1::inet AND $2::inet)
+			OR EXISTS (SELECT 1 FROM sightings WHERE ip BETWEEN $1::inet AND $2::inet AND last_seen > now() - $3::interval)`,
+			in.StartIP, in.EndIP, ipam.SeenWindow).Scan(&busy); err != nil {
 			return err
 		}
-		if conflict {
-			return httpx.NewError(409, "RANGE_IN_USE", "The selected range contains a registered, reserved or recently observed IP.")
+		if busy {
+			return httpx.NewError(http.StatusConflict, "RANGE_IN_USE", "The range includes an address that is registered, reserved or was seen in use in the last 24 hours.")
 		}
-		if err := tx.QueryRow(c, `INSERT INTO reservations(segment_id,start_ip,end_ip,reason,owner_id,owner_name,expires_at,created_by,updated_by)
-			VALUES($1::uuid,$2::inet,$3::inet,$4,NULLIF($5,'')::uuid,$6,NULLIF($7,'')::timestamptz,$8::uuid,$8::uuid) RETURNING id::text`, in.SegmentID, in.StartIP, in.EndIP, in.Reason, in.OwnerID, in.OwnerName, in.ExpiresAt, uid).Scan(&id); err != nil {
+		if err := tx.QueryRow(c, `INSERT INTO reservations (segment_id, start_ip, end_ip, reason, owner_id, owner_name, expires_at, created_by, updated_by)
+			VALUES ($1::uuid, $2::inet, $3::inet, $4, $5::uuid, $6, NULLIF($7, '')::date + interval '1 day', $8::uuid, $8::uuid) RETURNING id::text`,
+			in.SegmentID, in.StartIP, in.EndIP, in.Reason, in.OwnerID, in.OwnerName, in.ExpiresOn, p.UserID).Scan(&id); err != nil {
 			return err
 		}
-		if err := auditChange(c, tx, "reserve", "reservation", id, nil, in); err != nil {
-			return err
-		}
-		if in.OwnerID != "" {
-			return notifyUser(c, tx, in.OwnerID, "reservation_expiry", "An IP reservation was created: "+in.Reason, "/reservations", false)
-		}
-		return nil
+		return auditChange(c, tx, "reserve", "reservation", id, nil, in)
 	})
 	if err != nil {
-		fail(c, err)
+		httpx.Fail(c, friendly(err))
 		return
 	}
 	httpx.OK(c, http.StatusCreated, gin.H{"id": id, "status": "active"})
-}
-
-func (h *Handler) updateReservation(c *gin.Context) {
-	id, ok := httpx.PathID(c)
-	if !ok {
-		return
-	}
-	var in struct {
-		Reason    string `json:"reason"`
-		OwnerName string `json:"ownerName"`
-		OwnerID   string `json:"ownerId"`
-		ExpiresAt string `json:"expiresAt"`
-	}
-	if c.ShouldBindJSON(&in) != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
-		return
-	}
-	uid := auth.Current(c).UserID
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var old []byte
-		var owner *string
-		var status string
-		if err := tx.QueryRow(c, "SELECT to_jsonb(r),owner_id::text,status FROM reservations r WHERE id=$1::uuid FOR UPDATE", id).Scan(&old, &owner, &status); err != nil {
-			return err
-		}
-		if !auth.Current(c).Has(auth.SystemManage) && (owner == nil || *owner != uid) {
-			return httpx.ErrNotFound
-		}
-		if status != "active" {
-			return httpx.NewError(409, "RESERVATION_CLOSED", "Only an active reservation can be changed.")
-		}
-		_, err := tx.Exec(c, `UPDATE reservations SET reason=COALESCE(NULLIF($2,''),reason),owner_id=COALESCE(NULLIF($3,'')::uuid,owner_id),owner_name=COALESCE(NULLIF($4,''),owner_name),expires_at=NULLIF($5,'')::timestamptz,updated_by=$6::uuid WHERE id=$1::uuid`, id, strings.TrimSpace(in.Reason), in.OwnerID, in.OwnerName, in.ExpiresAt, uid)
-		if err != nil {
-			return err
-		}
-		return auditChange(c, tx, "update", "reservation", id, json.RawMessage(old), in)
-	})
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
-func (h *Handler) releaseReservation(c *gin.Context) {
-	id, ok := httpx.PathID(c)
-	if !ok {
-		return
-	}
-	uid := auth.Current(c).UserID
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var old []byte
-		var owner *string
-		if err := tx.QueryRow(c, "SELECT to_jsonb(r),owner_id::text FROM reservations r WHERE id=$1::uuid AND status='active' FOR UPDATE", id).Scan(&old, &owner); err != nil {
-			return err
-		}
-		if !auth.Current(c).Has(auth.SystemManage) && (owner == nil || *owner != uid) {
-			return httpx.ErrNotFound
-		}
-		if _, err := tx.Exec(c, "UPDATE reservations SET status='released',updated_by=$2::uuid WHERE id=$1::uuid", id, uid); err != nil {
-			return err
-		}
-		return auditChange(c, tx, "release", "reservation", id, json.RawMessage(old), map[string]string{"status": "released"})
-	})
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
-func (h *Handler) convertReservation(c *gin.Context) {
-	id, ok := httpx.PathID(c)
-	if !ok {
-		return
-	}
-	var in struct {
-		IP    string `json:"ip"`
-		Type  string `json:"ipType"`
-		Name  string `json:"name"`
-		Owner string `json:"owner"`
-	}
-	if c.ShouldBindJSON(&in) != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
-		return
-	}
-	uid := auth.Current(c).UserID
-	var assigned string
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var old []byte
-		var sid, start, end, reason, ownerName string
-		var ownerID *string
-		var expires *time.Time
-		if err := tx.QueryRow(c, `SELECT to_jsonb(r),segment_id::text,start_ip::text,end_ip::text,reason,owner_id::text,owner_name,expires_at FROM reservations r WHERE id=$1::uuid AND status='active' FOR UPDATE`, id).Scan(&old, &sid, &start, &end, &reason, &ownerID, &ownerName, &expires); err != nil {
-			return err
-		}
-		if !auth.Current(c).Has(auth.SystemManage) && (ownerID == nil || *ownerID != uid) {
-			return httpx.ErrNotFound
-		}
-		if in.IP == "" {
-			if start != end {
-				return httpx.Validation("ip", "Choose an IP from the reserved range to assign.")
-			}
-			in.IP = start
-		}
-		var inside bool
-		if err := tx.QueryRow(c, "SELECT $1::inet BETWEEN $2::inet AND $3::inet", in.IP, start, end).Scan(&inside); err != nil {
-			return err
-		}
-		if !inside {
-			return httpx.Validation("ip", "Choose an address inside this reservation.")
-		}
-		if in.Type == "" {
-			in.Type = "other"
-		}
-		name := strings.TrimSpace(in.Name)
-		if name == "" {
-			name = reason
-		}
-		own := in.Owner
-		if own == "" {
-			own = ownerName
-		}
-		if err := tx.QueryRow(c, `INSERT INTO ip_addresses(segment_id,ip,status,ip_type,assigned_name,owner,reservation_id,created_by,updated_by)
-			VALUES($1::uuid,$2::inet,'assigned',$3,$4,$5,$6::uuid,$7::uuid,$7::uuid) RETURNING id::text`, sid, in.IP, in.Type, name, own, id, uid).Scan(&assigned); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(c, "UPDATE reservations SET status='converted',updated_by=$2::uuid WHERE id=$1::uuid", id, uid); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(c, `INSERT INTO reservations(segment_id,start_ip,end_ip,reason,owner_id,owner_name,expires_at,created_by,updated_by)
-			SELECT $1::uuid,$2::inet,$3::inet,$4,NULLIF($5,'')::uuid,$6,$7,$8::uuid,$8::uuid WHERE $2::inet<=$3::inet`, sid, start, previousIP(in.IP), reason, nullable(ownerID), ownerName, expires, uid); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(c, `INSERT INTO reservations(segment_id,start_ip,end_ip,reason,owner_id,owner_name,expires_at,created_by,updated_by)
-			SELECT $1::uuid,$2::inet,$3::inet,$4,NULLIF($5,'')::uuid,$6,$7,$8::uuid,$8::uuid WHERE $2::inet<=$3::inet`, sid, nextIP(in.IP), end, reason, nullable(ownerID), ownerName, expires, uid); err != nil {
-			return err
-		}
-		if err := auditChange(c, tx, "convert", "reservation", id, json.RawMessage(old), map[string]string{"ip": in.IP, "assignedIpId": assigned}); err != nil {
-			return err
-		}
-		return auditChange(c, tx, "assign", "ip_address", assigned, nil, in)
-	})
-	if err != nil {
-		fail(c, err)
-		return
-	}
-	httpx.OK(c, 200, gin.H{"ipAddressId": assigned})
-}
-
-func previousIP(ip string) string { return adjustIP(ip, -1) }
-func nextIP(ip string) string     { return adjustIP(ip, 1) }
-func adjustIP(ip string, delta int) string {
-	parsed, err := netip.ParseAddr(ip)
-	if err != nil {
-		return ""
-	}
-	if delta < 0 {
-		return parsed.Prev().String()
-	}
-	return parsed.Next().String()
 }

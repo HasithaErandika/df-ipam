@@ -1,17 +1,68 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
+import { Plus } from 'lucide-react'
 import { useState } from 'react'
-import { Button, Card, EmptyState, ErrorState, Field, Input, PageHeader, Select, SkeletonRows, Td, Th } from '../../components/ui'
-import { get, post } from '../../lib/api'
-import { useCan } from '../../lib/session'
+import { Badge, Button, Card, DataTable, FilterBar, FilterSelect, none, PageHeader, PathTabs, SearchInput, Stack, useConfirm, type Column } from '../../components/ui'
+import { post } from '../../lib/api'
+import { formatAgo, formatDate, formatDateTime } from '../../lib/format'
+import { ipTypes, label, options, requestStatuses, requestTone } from '../../lib/labels'
+import { useFilters, usePagedList } from '../../lib/listing'
+import { useInvalidate } from '../../lib/queries'
+import { useCan, useMe } from '../../lib/session'
+import { useRouteTab } from '../../lib/tabs'
+import type { IPRequest } from '../../lib/types'
+import { ApproveRequestModal, RejectRequestModal } from './DecisionModals'
+import { RequestForm } from './RequestForm'
 
-type Segment={id:string;name:string;kind:string;network:string}
-type RequestRow={id:string;segmentId:string;segmentName:string;requesterEmail:string;ipType:string;name:string;purpose:string;requestedIp?:string;status:string;decisionReason:string;assignedIpId?:string;createdAt:string}
-export function RequestsPage(){
- const client=useQueryClient();const canApprove=useCan('requests:approve');const [segmentId,setSegmentId]=useState('');const [name,setName]=useState('');const [purpose,setPurpose]=useState('');const [type,setType]=useState('server');const [requestedIp,setRequestedIp]=useState('');const [neededBy,setNeededBy]=useState('');const [error,setError]=useState('')
- const segments=useQuery({queryKey:['/segments'],queryFn:()=>get<Segment[]>('/segments')});const requests=useQuery({queryKey:['/ip-requests'],queryFn:()=>get<RequestRow[]>('/ip-requests')})
- const create=useMutation({mutationFn:()=>post('/ip-requests',{segmentId,ipType:type,name,purpose,requestedIp,neededBy}),onSuccess:()=>{setError('');setName('');setPurpose('');setRequestedIp('');setNeededBy('');void client.invalidateQueries({queryKey:['/ip-requests']})},onError:e=>setError(e instanceof Error?e.message:'Could not submit the request.')})
- const decide=useMutation({mutationFn:({id,status,reason}:{id:string;status:string;reason?:string})=>post(`/ip-requests/${id}/decision`,{status,reason}),onSuccess:()=>void client.invalidateQueries({queryKey:['/ip-requests']})})
- return <><PageHeader title="IP Requests" description="Request an address and track its approval."/>
- {!canApprove&&<Card title="Request an IP" className="mb-4"><div className="grid gap-3 p-4 md:grid-cols-2"><Field label="Segment" htmlFor="req-segment"><Select id="req-segment" value={segmentId} onChange={e=>setSegmentId(e.target.value)}><option value="">Choose a segment</option>{segments.data?.map(s=><option key={s.id} value={s.id}>{s.name} · {s.network}</option>)}</Select></Field><Field label="Device type" htmlFor="req-type"><Select id="req-type" value={type} onChange={e=>setType(e.target.value)}>{['server','printer','network','cctv','access_point','user_pc','other'].map(t=><option key={t}>{t}</option>)}</Select></Field><Field label="Device name" htmlFor="req-name"><Input id="req-name" value={name} onChange={e=>setName(e.target.value)}/></Field><Field label="Purpose" htmlFor="req-purpose"><Input id="req-purpose" value={purpose} onChange={e=>setPurpose(e.target.value)}/></Field><Field label="Preferred IP (optional)" htmlFor="req-ip"><Input id="req-ip" value={requestedIp} onChange={e=>setRequestedIp(e.target.value)}/></Field><Field label="Needed by (optional)" htmlFor="req-needed"><Input id="req-needed" type="date" value={neededBy} onChange={e=>setNeededBy(e.target.value)}/></Field>{error&&<p role="alert" className="text-danger">{error}</p>}<Button variant="primary" busy={create.isPending} onClick={()=>create.mutate()}>Submit request</Button></div></Card>}
- <Card title={canApprove?'Requests awaiting decision':'My requests'}>{requests.isLoading?<SkeletonRows/>:requests.isError?<ErrorState error={requests.error} onRetry={()=>void requests.refetch()}/>:!requests.data?.length?<EmptyState title="No requests" body="Submitted IP requests will appear here."/>:<div className="overflow-x-auto"><table className="w-full"><thead><tr>{['Device','Requested by','Segment','Purpose','Status','Assigned IP','Decision'].map(x=><Th key={x}>{x}</Th>)}</tr></thead><tbody>{requests.data.map(r=><tr key={r.id}><Td>{r.name}<div className="text-xs text-ink-3">{r.ipType}</div></Td><Td>{r.requesterEmail}</Td><Td>{r.segmentName}</Td><Td>{r.purpose||'—'}</Td><Td>{r.status}</Td><Td>{r.status==='approved'?'Registered':'—'}</Td><Td>{canApprove&&r.status==='pending'?<div className="flex gap-1"><Button busy={decide.isPending} onClick={()=>decide.mutate({id:r.id,status:'approved'})}>Approve candidate</Button><Button variant="danger" busy={decide.isPending} onClick={()=>{const reason=window.prompt('Reason for rejection');if(reason)decide.mutate({id:r.id,status:'rejected',reason})}}>Reject</Button></div>:r.decisionReason||'—'}</Td></tr>)}</tbody></table></div>}</Card></>
+export function RequestsPage() {
+  const me = useMe()
+  const canApprove = useCan('requests:approve')
+  const canAsk = useCan('ip:request')
+  const tab = useRouteTab(['requests', 'all'])
+  const f = useFilters(['status', 'q'] as const)
+  const status = canApprove && tab === 'requests' ? 'pending' : f.values.status
+  const { query, rows, meta, paging } = usePagedList<IPRequest>('/ip-requests', { status, q: f.values.q })
+  const [creating, setCreating] = useState(false)
+  const [approving, setApproving] = useState<IPRequest | null>(null)
+  const [rejecting, setRejecting] = useState<IPRequest | null>(null)
+  const confirm = useConfirm()
+  const refresh = useInvalidate('/ip-requests', '/dashboard')
+  const cancel = useMutation({ mutationFn: (id: string) => post(`/ip-requests/${id}/cancel`), meta: { success: 'Request cancelled.' }, onSuccess: () => void refresh() })
+
+  const columns: Column<IPRequest>[] = [
+    { key: 'name', header: 'Request', cell: (r) => <Stack main={<span className="font-medium">{r.name}</span>} sub={`${label(ipTypes, r.ipType)} · ${r.segmentName}`} /> },
+    { key: 'purpose', header: 'Purpose', hideBelow: 'lg', className: 'max-w-xs', cell: (r) => <span className="line-clamp-2 text-ink-2">{r.purpose || '—'}</span> },
+    { key: 'who', header: 'Requested', cell: (r) => <Stack main={r.requesterId === me.id ? 'You' : r.requesterEmail} sub={<span title={formatDateTime(r.createdAt)}>{formatAgo(r.createdAt)}</span>} /> },
+    { key: 'needed', header: 'Needed by', hideBelow: 'md', cell: (r) => (r.neededBy ? formatDate(r.neededBy) : none) },
+    { key: 'status', header: 'Status', cell: (r) => <Stack main={<Badge tone={requestTone[r.status]}>{label(requestStatuses, r.status)}</Badge>}
+      sub={r.status === 'rejected' ? r.decisionReason : r.decidedByEmail ? `by ${r.decidedByEmail}` : undefined} /> },
+    { key: 'ip', header: 'IP', cell: (r) => (r.assignedIp ? <span className="font-mono text-[12.5px] font-medium text-ok">{r.assignedIp}</span> : r.requestedIp ? <span className="font-mono text-[12.5px] text-ink-3" title="Requested">{r.requestedIp}?</span> : none) },
+    { key: 'act', header: '', className: 'text-right whitespace-nowrap', cell: (r) => {
+      if (r.status !== 'pending') return null
+      if (canApprove) return <div className="flex justify-end gap-1"><Button onClick={() => setApproving(r)}>Approve</Button><Button variant="ghost" className="text-danger" onClick={() => setRejecting(r)}>Reject</Button></div>
+      if (r.requesterId === me.id) {
+        return <Button variant="ghost" onClick={async () => { if (await confirm({ title: `Cancel the request for ${r.name}?`, body: 'Admins will no longer see it in their queue.', confirmLabel: 'Cancel request' })) cancel.mutate(r.id) }}>Cancel</Button>
+      }
+      return null
+    } },
+  ]
+
+  const tabs = canApprove ? [{ key: 'requests', label: 'Waiting for decision', count: tab === 'requests' ? meta?.total : undefined }, { key: 'all', label: 'All requests' }] : [{ key: 'requests', label: 'My requests' }]
+  return (
+    <>
+      <PageHeader title="IP Requests" description={canApprove ? 'Approve with one address, or reject with a reason. Approval adds the address to the register in the same step.' : 'Ask for an IP for a new device. You are told the address once an Admin approves.'}
+        actions={canAsk && <Button variant="primary" onClick={() => setCreating(true)}><Plus size={14} aria-hidden />Request an IP</Button>} />
+      <PathTabs base="/requests" tabs={tabs} />
+      <Card>
+        <FilterBar active={f.active} onClear={f.clear}>
+          <SearchInput value={f.values.q} onChange={(v) => f.set('q', v)} placeholder="Search name, purpose, requester" />
+          {!(canApprove && tab === 'requests') && <FilterSelect label="Status" value={f.values.status} onChange={(v) => f.set('status', v)} anyLabel="Any status" options={options(requestStatuses)} />}
+        </FilterBar>
+        <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
+          empty={canApprove && tab === 'requests' ? { title: 'Nothing waiting', body: 'New requests appear here, and Admins are notified.' } : { title: 'No requests yet', body: 'Raise a request when you need an IP for a new device.' }} />
+      </Card>
+      <RequestForm open={creating} onClose={() => setCreating(false)} />
+      <ApproveRequestModal request={approving} onClose={() => setApproving(null)} />
+      <RejectRequestModal request={rejecting} onClose={() => setRejecting(null)} />
+    </>
+  )
 }

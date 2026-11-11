@@ -1,5 +1,5 @@
-// Command server is the DF-IPAM Lite backend: the HTTP API. The scanner and server
-// checks will run in this process too (docs/new.md, build step 3).
+// Command server is the DF-IPAM Lite backend: the HTTP API, the built-in scanner,
+// server checks, alert rules and the email outbox, in one process (docs/new.md).
 package main
 
 import (
@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/integrations/fortigate"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/platform/config"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/mail"
+	"dfipam/api/internal/platform/secrets"
 	"dfipam/api/internal/scanner"
 	"dfipam/api/internal/server"
 
@@ -49,7 +51,8 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
-	go scanner.New(pool).Run(ctx)
+	scan := scanner.New(pool)
+	go scan.Run(ctx)
 	mailCfg, mailEnabled, err := mail.FromEnv()
 	if err != nil {
 		return err
@@ -58,8 +61,17 @@ func run() error {
 	if mailEnabled {
 		mailer = mail.NewSMTP(mailCfg)
 	}
-	go notifications.RunOutbox(ctx, pool, mailer)
+	go notifications.RunOutbox(ctx, pool, mailer, cfg.AppBaseURL)
 	go notifications.RunReservationReminders(ctx, pool)
+
+	// The FortiGate token is stored encrypted, so the integration needs the master key.
+	keys, err := secrets.FromEnv()
+	if err != nil {
+		slog.Warn("stored credentials are unavailable; the FortiGate can't be connected", "reason", err.Error())
+		keys = nil
+	}
+	firewall := fortigate.NewSyncer(pool, keys)
+	go firewall.Run(ctx)
 
 	admin := auth.NewSupabaseAdmin(cfg.SupabaseURL, cfg.SupabaseAnonKey, cfg.SupabaseServiceKey)
 	if err := admin.Check(ctx); err != nil {
@@ -68,7 +80,7 @@ func run() error {
 	verifier := auth.NewSupabaseVerifier(cfg.SupabaseURL+"/auth/v1", cfg.AuthAudience, cfg.SupabaseURL+"/auth/v1/.well-known/jwks.json")
 	resolver := &auth.Resolver{Pool: pool, Provider: verifier.Provider()}
 	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
-		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight}
+		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
