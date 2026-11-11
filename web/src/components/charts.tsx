@@ -59,34 +59,33 @@ export const addressStates: Record<string, { label: string; color: string; hint:
 export interface Run { start: string; end: string; state: string; count: number }
 
 /**
- * Every usable address of a segment as a cell, 32 to a row, coloured by state.
- * Hovering names the address; clicking hands it to the page.
+ * Every usable address of a segment as a cell, filling the width: 16 to a row on
+ * phones, 32 on tablets, 64 on wide screens, so rows stay aligned to address
+ * boundaries. Hovering names the address; clicking hands it to the page. The
+ * address list below the map gives the same information as a table.
  */
 export function AddressMap({ runs, onPick }: { runs: Run[]; onPick?: (ip: string, state: string) => void }) {
   const [hover, setHover] = useState<{ ip: string; state: string } | null>(null)
   const cells: { ip: string; state: string }[] = []
   for (const r of runs) for (let n = ipToInt(r.start); n <= ipToInt(r.end); n++) cells.push({ ip: intToIP(n), state: r.state })
-  const cols = 32
-  const size = 14
-  const gap = 2
-  const rows = Math.ceil(cells.length / cols)
   return (
     <div>
-      <div className="mb-2 h-5 text-[12.5px] text-ink-2" aria-live="polite">
+      <div className="mb-2 h-5 truncate text-[12.5px] text-ink-2" aria-live="polite">
         {hover
           ? <><span className="font-mono font-medium text-ink">{hover.ip}</span> · {addressStates[hover.state]?.label}<span className="text-ink-3"> · {addressStates[hover.state]?.hint}</span></>
-          : <span className="text-ink-3">Hover an address to see its state{onPick ? '; click to act on it' : ''}.</span>}
+          : <span className="text-ink-3">Hover an address to see its state{onPick ? '; click an available or unregistered one to register it' : ''}.</span>}
       </div>
-      <div className="overflow-x-auto">
-        <svg role="img" aria-label={`Address map of ${cells.length} addresses`} width={cols * (size + gap)} height={rows * (size + gap)} onMouseLeave={() => setHover(null)}>
-          {cells.map((c, i) => (
-            <rect key={c.ip} x={(i % cols) * (size + gap)} y={Math.floor(i / cols) * (size + gap)} width={size} height={size} rx={3}
-              fill={addressStates[c.state]?.color ?? 'var(--track)'} stroke={hover?.ip === c.ip ? 'var(--ink)' : 'none'} strokeWidth={1.5}
-              className={onPick ? 'cursor-pointer' : undefined} onMouseEnter={() => setHover(c)} onClick={() => onPick?.(c.ip, c.state)}>
-              <title>{`${c.ip} · ${addressStates[c.state]?.label ?? c.state}`}</title>
-            </rect>
-          ))}
-        </svg>
+      <div role="img" aria-label={`Address map of ${cells.length} addresses`} onMouseLeave={() => setHover(null)}
+        className="grid w-full grid-cols-[repeat(16,minmax(0,1fr))] gap-[2px] md:grid-cols-[repeat(32,minmax(0,1fr))] xl:grid-cols-[repeat(64,minmax(0,1fr))]">
+        {cells.map((c) => {
+          const actionable = onPick && (c.state === 'available' || c.state === 'seen')
+          return (
+            <div key={c.ip} title={`${c.ip} · ${addressStates[c.state]?.label ?? c.state}`}
+              onMouseEnter={() => setHover(c)} onClick={() => onPick?.(c.ip, c.state)}
+              className={`aspect-square min-h-2 rounded-[3px] transition-[outline] ${actionable ? 'cursor-pointer' : ''} ${hover?.ip === c.ip ? 'outline-2 outline-offset-1 outline-ink' : ''}`}
+              style={{ backgroundColor: addressStates[c.state]?.color ?? 'var(--track)' }} />
+          )
+        })}
       </div>
     </div>
   )
