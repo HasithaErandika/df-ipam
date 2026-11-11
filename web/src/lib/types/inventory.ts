@@ -21,6 +21,12 @@ export interface Segment {
   description: string
   registered: number
   seen: number
+  online: number
+  poolSize: number
+  poolUsed: number
+  unknownDevices: number
+  openAlerts: number
+  lastSeen: string | null
   usableSize: number
   updatedAt: string
 }

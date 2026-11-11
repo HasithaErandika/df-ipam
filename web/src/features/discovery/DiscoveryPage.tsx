@@ -11,6 +11,7 @@ import { ApproveDeviceModal, type DecisionTarget, useRejectDevice } from '../sha
 import { RegisterIPModal, type RegisterPrefill } from '../shared/RegisterIPModal'
 import { findingColumns } from './findingColumns'
 import { ScanStatusPanel, ScanSummary } from './ScanSummary'
+import { SegmentsOverview } from './SegmentsOverview'
 
 const kinds = [
   { value: 'online', text: 'Online now' }, { value: 'offline', text: 'Not answering' },
@@ -58,12 +59,12 @@ function Findings() {
 }
 
 export function DiscoveryPage() {
-  const tab = useRouteTab(['discovery', 'scans'])
+  const tab = useRouteTab(['discovery', 'segments', 'scans'])
   return (
     <>
       <PageHeader title="Discovery" description="Everything the scanner and the firewall have seen. Evidence only: the register changes only when a person decides." actions={<ScanSummary compact />} />
-      <PathTabs base="/discovery" tabs={[{ key: 'discovery', label: 'Findings' }, { key: 'scans', label: 'Scan status' }]} />
-      {tab === 'scans' ? <ScanStatusPanel /> : <Findings />}
+      <PathTabs base="/discovery" tabs={[{ key: 'discovery', label: 'Findings' }, { key: 'segments', label: 'Segments' }, { key: 'scans', label: 'Scan status' }]} />
+      {tab === 'scans' ? <ScanStatusPanel /> : tab === 'segments' ? <SegmentsOverview /> : <Findings />}
     </>
   )
 }

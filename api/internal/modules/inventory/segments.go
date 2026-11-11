@@ -9,29 +9,34 @@ import (
 	"dfipam/api/internal/netcalc"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
-	"dfipam/api/internal/validate"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 )
 
 type segmentDTO struct {
-	ID              string    `db:"id" json:"id"`
-	Name            string    `db:"name" json:"name"`
-	Kind            string    `db:"kind" json:"kind"`
-	Floor           *int      `db:"floor" json:"floor"`
-	VLAN            *int      `db:"vlan" json:"vlan"`
-	Network         string    `db:"network" json:"network"`
-	Gateway         *string   `db:"gateway" json:"gateway"`
-	DHCPStart       *string   `db:"dhcp_start" json:"dhcpStart"`
-	DHCPEnd         *string   `db:"dhcp_end" json:"dhcpEnd"`
-	EnvironmentID   *string   `db:"default_environment_id" json:"defaultEnvironmentId"`
-	EnvironmentName *string   `db:"environment_name" json:"environmentName"`
-	Description     string    `db:"description" json:"description"`
-	Registered      int64     `db:"registered" json:"registered"`
-	Seen            int64     `db:"seen" json:"seen"`
-	UsableSize      int64     `db:"-" json:"usableSize"`
-	UpdatedAt       time.Time `db:"updated_at" json:"updatedAt"`
+	ID              string     `db:"id" json:"id"`
+	Name            string     `db:"name" json:"name"`
+	Kind            string     `db:"kind" json:"kind"`
+	Floor           *int       `db:"floor" json:"floor"`
+	VLAN            *int       `db:"vlan" json:"vlan"`
+	Network         string     `db:"network" json:"network"`
+	Gateway         *string    `db:"gateway" json:"gateway"`
+	DHCPStart       *string    `db:"dhcp_start" json:"dhcpStart"`
+	DHCPEnd         *string    `db:"dhcp_end" json:"dhcpEnd"`
+	EnvironmentID   *string    `db:"default_environment_id" json:"defaultEnvironmentId"`
+	EnvironmentName *string    `db:"environment_name" json:"environmentName"`
+	Description     string     `db:"description" json:"description"`
+	Registered      int64      `db:"registered" json:"registered"`
+	Seen            int64      `db:"seen" json:"seen"`
+	Online          int64      `db:"online" json:"online"`
+	PoolSize        int64      `db:"pool_size" json:"poolSize"`
+	PoolUsed        int64      `db:"pool_used" json:"poolUsed"`
+	Unknown         int64      `db:"unknown_devices" json:"unknownDevices"`
+	OpenAlerts      int64      `db:"open_alerts" json:"openAlerts"`
+	LastSeen        *time.Time `db:"last_seen" json:"lastSeen"`
+	UsableSize      int64      `db:"-" json:"usableSize"`
+	UpdatedAt       time.Time  `db:"updated_at" json:"updatedAt"`
 }
 
 const segmentSelect = `SELECT s.id::text AS id, s.name, s.kind, s.floor, s.vlan, s.network::text AS network,
@@ -39,8 +44,19 @@ const segmentSelect = `SELECT s.id::text AS id, s.name, s.kind, s.floor, s.vlan,
 	s.default_environment_id::text AS default_environment_id, e.name AS environment_name, s.description,
 	(SELECT count(*) FROM ip_addresses i WHERE i.segment_id = s.id) AS registered,
 	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - interval '24 hours') AS seen,
+	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - ` + recentWindow + `) AS online,
+	COALESCE(s.dhcp_end - s.dhcp_start + 1, 0) AS pool_size,
+	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - ` + recentWindow + `
+		AND s.dhcp_start IS NOT NULL AND v.ip BETWEEN s.dhcp_start AND s.dhcp_end) AS pool_used,
+	(SELECT count(DISTINCT v.mac) FROM sightings v LEFT JOIN devices d ON d.mac = v.mac WHERE v.segment_id = s.id AND v.mac IS NOT NULL
+		AND NOT v.is_private_mac AND v.last_seen > now() - interval '24 hours' AND d.status IS DISTINCT FROM 'approved') AS unknown_devices,
+	(SELECT count(*) FROM alerts a WHERE a.segment_id = s.id AND a.status <> 'closed') AS open_alerts,
+	(SELECT max(v.last_seen) FROM sightings v WHERE v.segment_id = s.id) AS last_seen,
 	s.updated_at
 	FROM segments s LEFT JOIN environments e ON e.id = s.default_environment_id`
+
+// recentWindow is "answered within two scan intervals", as the alert rules use.
+const recentWindow = `make_interval(mins => GREATEST(10, 2 * COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 10)))`
 
 // segments lists every segment. There are few (one per floor and server network),
 // and forms need all of them, so this list is not paged.
@@ -61,55 +77,6 @@ func (h *Handler) segments(c *gin.Context) {
 		}
 	}
 	httpx.OK(c, http.StatusOK, out)
-}
-
-type segmentInput struct {
-	Name          string `json:"name"`
-	Kind          string `json:"kind"`
-	Floor         *int   `json:"floor"`
-	VLAN          *int   `json:"vlan"`
-	Network       string `json:"network"`
-	Gateway       string `json:"gateway"`
-	DHCPStart     string `json:"dhcpStart"`
-	DHCPEnd       string `json:"dhcpEnd"`
-	EnvironmentID string `json:"defaultEnvironmentId"`
-	Description   string `json:"description"`
-}
-
-func (in *segmentInput) validate() error {
-	var v validate.V
-	v.Text("name", &in.Name, 80, true, "Name")
-	v.OneOf("kind", in.Kind, []string{"dhcp", "server", "cloud"}, "segment type")
-	v.IntRange("floor", in.Floor, -5, 200, "Floor")
-	v.IntRange("vlan", in.VLAN, 1, 4094, "VLAN")
-	v.Text("description", &in.Description, 500, false, "Description")
-	p := v.CIDR("network", &in.Network)
-	gw := v.IPv4("gateway", &in.Gateway, false)
-	start := v.IPv4("dhcpStart", &in.DHCPStart, false)
-	end := v.IPv4("dhcpEnd", &in.DHCPEnd, false)
-	inside := func(field string, a netip.Addr) {
-		if p.IsValid() && a.IsValid() && !p.Contains(a) {
-			v.Add(field, "Must be inside "+p.String()+".")
-		}
-	}
-	inside("gateway", gw)
-	inside("dhcpStart", start)
-	inside("dhcpEnd", end)
-	switch {
-	case in.Kind != "dhcp" && (in.DHCPStart != "" || in.DHCPEnd != ""):
-		v.Add("dhcpStart", "Only floor segments have a DHCP pool.")
-	case (in.DHCPStart == "") != (in.DHCPEnd == ""):
-		v.Add("dhcpEnd", "Enter both the first and last pool address.")
-	case start.IsValid() && end.IsValid() && end.Less(start):
-		v.Add("dhcpEnd", "The last pool address must not be before the first.")
-	case gw.IsValid() && start.IsValid() && end.IsValid() && !gw.Less(start) && !end.Less(gw):
-		v.Add("gateway", "The gateway can't be inside the DHCP pool.")
-	}
-	v.UUID("defaultEnvironmentId", in.EnvironmentID, false, "an environment")
-	if in.Kind == "dhcp" {
-		in.EnvironmentID = ""
-	}
-	return v.Err()
 }
 
 func (h *Handler) createSegment(c *gin.Context) { h.saveSegment(c, "") }

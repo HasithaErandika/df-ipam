@@ -11,7 +11,7 @@ export function useInvalidate(...keys: string[]) {
 }
 
 /** Every segment. Few and rarely changed, so cached for a minute and shared by all screens. */
-export const useSegments = () => useQuery({ queryKey: ['/segments'], queryFn: () => get<Segment[]>('/segments'), staleTime: 60_000 })
+export const useSegments = () => useQuery({ queryKey: ['/segments'], queryFn: () => get<Segment[]>('/segments'), staleTime: 60_000, refetchInterval: 60_000 })
 
 export const useEnvironments = () => useQuery({ queryKey: ['/environments'], queryFn: () => get<Environment[]>('/environments'), staleTime: 60_000 })
 

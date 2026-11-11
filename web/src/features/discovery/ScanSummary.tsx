@@ -26,7 +26,7 @@ export function ScanSummary({ compact }: { compact?: boolean }) {
         ? <StateBadge tone="accent">Scanning now{s.startedAt ? ` · started ${formatAgo(s.startedAt)}` : ''}</StateBadge>
         : <StateBadge tone={s.finishedAt ? 'ok' : 'neutral'}>{s.finishedAt ? `Last scan ${formatAgo(s.finishedAt)}` : 'No scan since the server started'}</StateBadge>}
       {!s.running && s.nextScanAt && <span className="text-ink-3">Next {formatIn(s.nextScanAt)}</span>}
-      <ScanButton running={s.running} label={compact ? 'Scan now' : 'Scan all segments'} />
+      <ScanButton running={s.running} />
     </div>
   )
 }
