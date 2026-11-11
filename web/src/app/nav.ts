@@ -1,5 +1,5 @@
 import {
-  Bell, BookCheck, Building2, ClipboardList, FileBarChart, LayoutDashboard, MonitorSmartphone, Server, Settings, type LucideIcon,
+  Bell, BookCheck, ClipboardList, FileBarChart, LayoutDashboard, MonitorSmartphone, Server, Settings, type LucideIcon,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -21,18 +21,13 @@ export const nav: { group: string; items: NavItem[] }[] = [
     group: 'Overview',
     items: [{
       to: '/', label: 'Dashboard', icon: LayoutDashboard, step: 7,
-      summary: 'The building at a glance.',
-      features: ['A card per floor with address usage', 'Open alerts by severity', 'Servers down, per environment'],
+      summary: 'Network inventory and monitoring at a glance.',
+      features: ['Floor DHCP pool usage', 'Open alerts by severity', 'Servers down per environment'],
     }],
   },
   {
     group: 'Network',
     items: [
-      {
-        to: '/floors', label: 'Floors', icon: Building2, anyOf: view, step: 7,
-        summary: 'Every address seen on each floor, next to what the IP register says it is.',
-        features: ['Pick a floor and see every address seen there', 'Register and seen state as separate badges', 'Mark, assign, reserve or release an IP', 'Add a seen address to the register in one step'],
-      },
       {
         to: '/servers', label: 'Servers', icon: Server, anyOf: view, step: 2,
         summary: 'The server register, by environment, with live status.',

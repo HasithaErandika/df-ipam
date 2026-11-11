@@ -1,6 +1,6 @@
 # DF-IPAM Lite: the simpler plan
 
-**Status:** building on branch `lite`. **Step 1 is done** (see Progress below). On this branch this file overrides the enterprise design in the other docs. Answer the questions at the end before step 3 (the scanner).
+**Status:** building on branch `lite`. **Steps 1–5 and 7 are done** (see Progress below). On this branch this file overrides the enterprise design in the other docs. Confirm the network questions at the end before enabling discovery on real segments.
 
 **Branch:** `lite`, created on 2026-11-11 from `refactor/optimise-secure-document` at commit `70c583a`. All Lite work happens here. `main` and the old branch stay untouched until Lite is proven and merged.
 
@@ -212,17 +212,16 @@ Kept from today's reports module, including the PDF renderer, with the report li
 
 `sightings` is updated in place (upsert), so it stays small: about as many rows as devices in the building.
 
-## Screens (9 instead of 20)
+## Screens (8 instead of 20)
 
-1. **Dashboard:** floor cards with usage, open alerts by severity, servers down per environment.
-2. **Floors:** pick a floor, see every address with its register badge and its seen badge. Mark, assign, reserve or release from here.
-3. **Servers:** server register with live status, filtered by environment tabs (All, Production, UAT, ...). Add a server with a suggested Available candidate IP.
-4. **Devices:** approved, pending and rejected, with approve / reject buttons.
-5. **Alerts:** open and recent, acknowledge.
-6. **Requests:** raise a request, and for Admins the approval queue.
-7. **Reservations:** active and expiring holds, extend, convert or release.
-8. **Reports:** pick a report and date range, download CSV or PDF.
-9. **Settings:** segments, environments, users, email, audit log.
+1. **Dashboard:** floor DHCP usage summaries, open alerts by severity, servers down per environment.
+2. **Servers:** server register with live status, filtered by environment. Add a server with a suggested Available candidate IP.
+3. **Devices:** approved, pending and rejected, with approve / reject buttons.
+4. **Alerts:** open and recent alerts, acknowledge, and manage email preferences.
+5. **Requests:** raise a request, and for Admins the approval queue.
+6. **Reservations:** active and expiring holds, extend, convert or release.
+7. **Reports:** pick a report and date range, download CSV or PDF.
+8. **Settings:** segments, environments, users and audit log.
 
 The notification bell sits in the top bar on every screen.
 
@@ -247,12 +246,12 @@ Start a fresh, small codebase on a new branch rather than stripping the old one 
 | Step | Work | Reuse |
 | --- | --- | --- |
 | 1 | **Done.** Branch `lite`. New migration set (13 tables, RLS and grants as today). Old modules, agent and worker removed. Containers: `db`, `backend`, `web` | Auth (`internal/auth`), `platform`, `netcalc`, Docker setup |
-| 2 | Segments, IP register (mark, assign, reserve range, release, Available candidate), devices: CRUD, CSV import / export, audit | Route guard, error format, audit writer, `netcalc` |
-| 3 | Scanner, option C first: ping sweep, reverse DNS, NetBIOS name and MAC, server checks | `internal/agent/ping.go` (from `70c583a`) |
-| 4 | Alert rules, alert screen, notifications (bell, email, preferences) | `internal/modules/notifications` and its outbox, `internal/platform/mail` |
-| 5 | Requests and reservations | `internal/modules/allocation` (requests, reservations, Available candidate), trimmed to one approval step |
+| 2 | **Done.** Segment and IP register APIs, device CRUD and CSV import / export, Available candidate and range reservation; basic segment, server and device screens. Mutations write audit records in the same transaction | Route guard, error format, audit writer, `netcalc` |
+| 3 | **Done.** Built-in option C scanner: bounded ping sweeps, reverse DNS, NetBIOS name / MAC lookup, and monitored IP health checks | ICMP approach from `internal/agent/ping.go` (from `70c583a`) |
+| 4 | **Done.** Alert rules, alert screen, notification bell, email outbox and preferences | `internal/platform/mail` |
+| 5 | **Done.** One-step IP requests and reservations, expiry reminders, release and conversion | `netcalc`, audit writer |
 | 6 | Reports (CSV and PDF) and the audit screen | `internal/modules/reports` and its PDF renderer, `internal/modules/auditlog`, `web/src/features/{requests,reservations,reports,audit}` |
-| 7 | Dashboard and floor pages | UI components, theme, `Modal` |
+| 7 | **Done.** Dashboard with floor DHCP usage, alert counts and servers down by environment. No separate Floors page | UI components, theme |
 | 8 | Scanner option A (ARP scan per VLAN) once the trunk port is ready, or option B | |
 | 9 | Load real data, run a week alongside the network team, tune noise, then retire the old code | |
 
@@ -274,13 +273,13 @@ Code marked "from `70c583a`" was removed in step 1 and is still in git history. 
 
 `make test-db` checks all of these against a throwaway `dfipam_test` database.
 
-**Backend.** Only sign-in, `/auth/me` and `/auth/me/profile` remain. Roles are fixed in code (`api/internal/auth/permissions.go`) and stored in `users.role`. The seed loads the 5 environments and default settings. The AWS, Azure, vCenter and spreadsheet libraries are gone.
+**Backend at the end of Step 1.** Sign-in, `/auth/me` and `/auth/me/profile` remained. Roles are fixed in code (`api/internal/auth/permissions.go`) and stored in `users.role`. The seed loads the 5 environments and default settings. The AWS, Azure, vCenter and spreadsheet libraries are gone.
 
-**Web.** The menu has the 9 Lite screens. Each says "Not built yet" and lists what it will do, with no sample data.
+**Web at the end of Step 1.** The menu had the Lite screens, each saying "Not built yet" without sample data.
 
 **Docker.** `db`, `migrate` (runs once), `backend` and `web`. The plan said two containers, but `web` stays: it is Nginx, the only public entry, with TLS and rate limits. The agent container, worker and retention timers are gone.
 
-**Switching an existing database.** A database made by the old migrations can't be upgraded in place. Locally, `make db-reset CONFIRM=yes` then `make docker-up`. **This deletes all local data.**
+**Switching an existing database.** A database made by the old migrations can't be upgraded in place. Docker uses a separate `df-ipam-lite-db-data` volume for Lite and leaves the previous `df-ipam_db-data` volume untouched.
 
 **First Admin.** Sign in once, then in `make db-shell`:
 
@@ -289,6 +288,34 @@ UPDATE users SET role = 'admin' WHERE lower(email) = lower('<your email>');
 ```
 
 Other roles are `requester` and `viewer`. Admins will manage roles in Settings from step 2.
+
+### Step 2: inventory and register (done, 2026-11-11)
+
+Added guarded segment CRUD; device CRUD, approval / rejection, and CSV import / export; IP register create, update and release; range reservations; and Available candidate lookup. Mutations write audit records in the same database transaction. The web app now has live segment, server-register and device lists with basic create, device decision and CSV controls. More detailed edit forms remain part of screen polish as the related workflows land.
+
+### Step 3: scanner (done, 2026-11-11)
+
+The backend starts two cancellable background loops. Discovery runs immediately and then every `scan.interval_minutes` (default 5): it pings IPv4 hosts in each segment, records responsive addresses in `sightings`, looks up reverse DNS, and queries NetBIOS for a hostname and MAC when available. DHCP pool membership determines the `is_static` evidence flag; discovery does not write the IP register or assign ownership. A segment with more than 4,096 usable addresses is skipped with a logged error, so large ranges must be split before scanning.
+
+Monitored register entries are checked immediately and every `server_check.interval_seconds` (default 60). ICMP is tried first and the configured TCP port is used when ICMP does not answer. The scanner updates `health`, `health_changed_at` and the consecutive failure counter. Alerts and notifications for health transitions are Step 4. The backend container has `NET_RAW` for ICMP; all network operations are read-only.
+
+Option C cannot reliably discover MAC addresses across routed networks: NetBIOS supplies them only for hosts that answer the query. Phones, printers, and devices that block ICMP or NetBIOS may not appear. Option A or B is still needed for dependable MAC-level inventory.
+
+### Step 4: alerts and notifications (done, 2026-11-11)
+
+The monitoring engine evaluates recent sightings and health checks, deduplicates open alert causes, and closes alerts when their cause disappears. It covers unknown and rejected devices, unregistered static and server IPs, register misuse, IP conflicts, server MAC changes and server downtime after the configured consecutive failure count. Production server alerts use the environment severity. Unknown MACs create pending device records for review.
+
+The Alerts screen supports severity ordering and acknowledgement. The notification bell shows each user's inbox and unread count; users can mark one or all read and change email preferences by notification type. High and Critical alerts and request decisions use the SMTP outbox. Reservation expiry reminders are queued once during the seven days before expiry; nothing is released automatically. With SMTP unset, in-app notifications remain and email queue entries are cleared.
+
+### Step 5: requests and reservations (done, 2026-11-11)
+
+Requesters can submit, view and cancel their own pending IP requests. Admins approve with a selected or suggested Available candidate IP, or reject with a required reason. Approval creates the register row and decides the request in one transaction, with audit rows and requester notifications.
+
+Reservations support an IP or range, optional owner and expiry, extension, release and conversion of a chosen address into an assignment. Converting part of a range keeps the remaining addresses held by splitting the active range. A reservation overlapping a registered, recently seen or already reserved address is rejected. Owners and Admins may manage their holds.
+
+### Step 7: dashboard (done, 2026-11-11)
+
+The Dashboard shows DHCP pool use and registered / seen counts per floor segment, open alerts by severity, and monitored servers down by environment. There is no separate Floors screen; detailed floor address browsing is omitted from this Lite build.
 
 ## Questions to answer first
 

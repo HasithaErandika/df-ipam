@@ -12,8 +12,11 @@ import (
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/platform/config"
 	"dfipam/api/internal/platform/db"
+	"dfipam/api/internal/platform/mail"
+	"dfipam/api/internal/scanner"
 	"dfipam/api/internal/server"
 
 	"github.com/gin-gonic/gin"
@@ -46,6 +49,17 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	go scanner.New(pool).Run(ctx)
+	mailCfg, mailEnabled, err := mail.FromEnv()
+	if err != nil {
+		return err
+	}
+	var mailer mail.Mailer
+	if mailEnabled {
+		mailer = mail.NewSMTP(mailCfg)
+	}
+	go notifications.RunOutbox(ctx, pool, mailer)
+	go notifications.RunReservationReminders(ctx, pool)
 
 	admin := auth.NewSupabaseAdmin(cfg.SupabaseURL, cfg.SupabaseAnonKey, cfg.SupabaseServiceKey)
 	if err := admin.Check(ctx); err != nil {

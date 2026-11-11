@@ -8,7 +8,10 @@ import (
 
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/modules/account"
+	"dfipam/api/internal/modules/alerts"
+	"dfipam/api/internal/modules/allocationlite"
 	"dfipam/api/internal/modules/inventory"
+	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
@@ -63,5 +66,8 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	guard := auth.NewGuard(v1)
 	account.NewHandler(d.Conn).Register(guard)
 	inventory.NewHandler(d.Conn).Register(guard)
+	alerts.New(d.Conn).Register(guard)
+	notifications.New(d.Conn).Register(guard)
+	allocationlite.New(d.Conn).Register(guard)
 	return r, guard
 }

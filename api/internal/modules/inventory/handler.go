@@ -37,7 +37,7 @@ func (h *Handler) Register(g *auth.Guard) {
 		{http.MethodGet, "/devices/export.csv", h.exportDevices, edit}, {http.MethodPost, "/devices/import.csv", h.importDevices, edit},
 		{http.MethodGet, "/ip-addresses", h.ips, read}, {http.MethodPost, "/ip-addresses", h.createIP, edit},
 		{http.MethodPut, "/ip-addresses/:id", h.updateIP, edit}, {http.MethodDelete, "/ip-addresses/:id", h.releaseIP, edit},
-		{http.MethodPost, "/reservations", h.reserve, auth.IPReserve}, {http.MethodGet, "/ip-addresses/available-candidate", h.candidate, edit},
+		{http.MethodGet, "/ip-addresses/available-candidate", h.candidate, edit},
 	} {
 		g.Handle(r.method, r.path, r.fn, r.permission)
 	}

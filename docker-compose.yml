@@ -63,6 +63,7 @@ services:
   backend:
     <<: *backend
     command: [/app/server]
+    cap_add: [NET_RAW]
     restart: unless-stopped
     environment:
       <<: *backend-env
