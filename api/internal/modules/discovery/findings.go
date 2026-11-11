@@ -93,7 +93,13 @@ func findingFilter(c *gin.Context) (db.Where, error) {
 		v.OneOf("source", src, []string{"arp", "ping", "netbios", "snmp", "dns", "dhcp", "vpn"}, "source")
 		w.Add("v.source = ?", src)
 	}
-	if seen := c.DefaultQuery("seen", "24h"); seen != "all" {
+	// "now" is what is connected: it answered within the last two scans. A device
+	// that leaves drops out of this view; longer windows keep the history.
+	switch seen := c.DefaultQuery("seen", "now"); seen {
+	case "all":
+	case "now":
+		w.Raw("v.last_seen > now() - " + recent)
+	default:
 		span, ok := windows[seen]
 		if !ok {
 			v.Add("seen", "Choose a valid time window.")

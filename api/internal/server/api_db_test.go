@@ -131,6 +131,14 @@ func TestAPIAgainstDatabase(t *testing.T) {
 	for _, s := range []string{"", "unregistered", "registered", "static", "unknown"} {
 		e.call("GET", "/segments/"+floor+"/addresses?state="+s, nil, 200)
 	}
+	if _, err := e.tx.Exec(e.ctx, `INSERT INTO sightings (segment_id, ip, mac, source, first_seen, last_seen)
+		VALUES ($1, '192.168.1.60', '00:11:22:33:44:60', 'arp', now() - interval '2 days', now() - interval '1 day')`, floor); err != nil {
+		t.Fatal(err)
+	}
+	connected := total(e.call("GET", "/discovery/findings", nil, 200))
+	if all := total(e.call("GET", "/discovery/findings?seen=all", nil, 200)); all != connected+1 {
+		t.Fatalf("a device that left must drop out of the default view: %v connected, %v in all", connected, all)
+	}
 	e.call("GET", "/discovery/findings?kind=bogus", nil, 422)
 	e.call("GET", "/discovery/status", nil, 503)
 

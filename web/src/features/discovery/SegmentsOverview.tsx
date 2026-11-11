@@ -46,7 +46,7 @@ function SegmentCard({ s }: { s: Segment }) {
         <Meter wide pct={pct} level={level(pct, 75, 90)} label={`${s.name} use`} />
       </div>
       <dl className="mt-3 grid grid-cols-4 gap-1 border-t border-line pt-2.5 text-center">
-        <Figure label="Answering" value={s.online} to={findings('online')} />
+        <Figure label="Answering" value={s.online} to={`/discovery?segmentId=${s.id}`} />
         <Figure label="Registered" value={s.registered} />
         <Figure label="Unknown" value={s.unknownDevices} tone="warn" to={findings('unknown')} />
         <Figure label="Alerts" value={s.openAlerts} tone="danger" to={`/alerts?segmentId=${s.id}`} />

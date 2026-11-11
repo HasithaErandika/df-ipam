@@ -14,20 +14,20 @@ import { ScanStatusPanel, ScanSummary } from './ScanSummary'
 import { SegmentsOverview } from './SegmentsOverview'
 
 const kinds = [
-  { value: 'online', text: 'Online now' }, { value: 'offline', text: 'Not answering' },
+  { value: 'offline', text: 'Left (not answering)' },
   { value: 'unregistered', text: 'Not in the register' }, { value: 'registered', text: 'In the register' },
   { value: 'static', text: 'Static on a floor' }, { value: 'unknown', text: 'Unknown device' },
   { value: 'rejected', text: 'Rejected device' }, { value: 'private', text: 'Private MAC' },
   { value: 'gateway', text: 'Gateways' }, { value: 'dhcp', text: 'DHCP lease' }, { value: 'vpn', text: 'VPN client' }, { value: 'alerting', text: 'Has open alerts' },
 ]
 
-const windows = [{ value: '1h', text: '1 h' }, { value: '24h', text: '24 h' }, { value: '7d', text: '7 days' }, { value: '30d', text: '30 days' }, { value: 'all', text: 'All' }]
+const windows = [{ value: 'now', text: 'Connected now' }, { value: '24h', text: '24 h' }, { value: '7d', text: '7 days' }, { value: '30d', text: '30 days' }, { value: 'all', text: 'All' }]
 
 function Findings() {
   const segments = useSegments()
   const canEdit = useCan('inventory:edit')
   const f = useFilters(['segmentId', 'kind', 'source', 'seen', 'q', 'sort'] as const)
-  const seen = f.values.seen || '24h'
+  const seen = f.values.seen || 'now'
   const { query, rows, meta, paging } = usePagedList<Finding>('/discovery/findings', { ...f.values, seen }, { refetchInterval: 30_000 })
   const [prefill, setPrefill] = useState<RegisterPrefill | null>(null)
   const [approve, setApprove] = useState<DecisionTarget | null>(null)
@@ -41,17 +41,19 @@ function Findings() {
   return (
     <Card>
       <FilterBar active={f.active} onClear={f.clear}
-        end={<Segmented label="Seen within" value={seen} onChange={(v) => f.set('seen', v === '24h' ? '' : v)} options={windows} />}>
+        end={<Segmented label="Seen within" value={seen} onChange={(v) => f.set('seen', v === 'now' ? '' : v)} options={windows} />}>
         <SearchInput value={f.values.q} onChange={(v) => f.set('q', v)} placeholder="Search IP, MAC, hostname, vendor" />
         <FilterSelect label="Segment" value={f.values.segmentId} onChange={(v) => f.set('segmentId', v)} options={(segments.data ?? []).map((s) => ({ value: s.id, text: s.name }))} />
-        <FilterSelect label="Finding" value={f.values.kind} onChange={(v) => f.set('kind', v)} options={kinds} anyLabel="All findings" />
+        <FilterSelect label="Finding" value={f.values.kind} onChange={(v) => { f.set('kind', v); if (v === 'offline' && seen === 'now') f.set('seen', '24h') }} options={kinds} anyLabel="All findings" />
         <FilterSelect label="Source" value={f.values.source} onChange={(v) => f.set('source', v)} options={options(sources)} />
         <FilterSelect label="Sort" value={f.values.sort} onChange={(v) => f.set('sort', v)} anyLabel="Newest first" options={[
           { value: 'ip', text: 'By IP' }, { value: '-firstSeen', text: 'First seen, newest' }, { value: 'firstSeen', text: 'First seen, oldest' }, { value: 'hostname', text: 'By hostname' }, { value: 'segment', text: 'By segment' },
         ]} />
       </FilterBar>
       <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
-        empty={{ title: 'Nothing seen in this window', body: 'Findings appear after a scan. Try a longer time window, or start a scan.' }} />
+        empty={seen === 'now'
+          ? { title: 'Nothing connected right now', body: 'Devices appear here while they answer scans, and drop off when they leave. Choose 24 h or longer to see recent history, or start a scan.' }
+          : { title: 'Nothing seen in this window', body: 'Try a longer time window, or start a scan.' }} />
       <RegisterIPModal open={prefill !== null} prefill={prefill ?? undefined} onClose={() => setPrefill(null)} />
       <ApproveDeviceModal target={approve} onClose={() => setApprove(null)} />
     </Card>

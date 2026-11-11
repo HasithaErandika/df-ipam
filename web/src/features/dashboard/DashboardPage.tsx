@@ -33,7 +33,7 @@ export function DashboardPage() {
         <Stat label="Open alerts" value={formatCount(open)} tone={urgent ? 'danger' : undefined} hint={urgent ? `${urgent} High or Critical` : 'None urgent'} onClick={() => navigate('/alerts')} />
         <Stat label="Servers down" value={formatCount(down)} tone={down ? 'danger' : monitored ? 'ok' : undefined} hint={`${formatCount(monitored)} monitored`} onClick={() => navigate('/servers?health=down')} />
         <Stat label="Devices to review" value={formatCount(d.totals.pendingDevices)} tone={d.totals.pendingDevices ? 'warn' : undefined} hint="Unknown MACs seen" onClick={() => navigate('/devices')} />
-        <Stat label="Online now" value={formatCount(d.totals.online)} hint="Addresses answering" onClick={() => navigate('/discovery?kind=online')} />
+        <Stat label="Online now" value={formatCount(d.totals.online)} hint="Addresses answering" onClick={() => navigate('/discovery')} />
         {canRequests && <Stat label="Pending requests" value={formatCount(d.totals.pendingRequests)} tone={d.totals.pendingRequests ? 'warn' : undefined} hint="Waiting for a decision" onClick={() => navigate('/requests')} />}
         <Stat label="Expiring holds" value={formatCount(d.totals.expiringReservations)} tone={d.totals.expiringReservations ? 'warn' : undefined} hint="Reservations, next 7 days" onClick={() => navigate('/reservations/expiring')} />
       </div>
