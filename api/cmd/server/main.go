@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -83,13 +84,23 @@ func run() error {
 		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
-	errs := make(chan error, 1)
-	go func() {
-		slog.Info("server listening", "addr", cfg.ListenAddr)
-		errs <- srv.ListenAndServe()
-	}()
+	// API_LISTEN_ADDR may list several addresses, for host networking: loopback
+	// for local tools, and the Docker gateway for the web container.
+	var servers []*http.Server
+	errs := make(chan error, 4)
+	for _, addr := range strings.Split(cfg.ListenAddr, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		srv := &http.Server{Addr: addr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
+		servers = append(servers, srv)
+		go func() {
+			slog.Info("server listening", "addr", addr)
+			errs <- srv.ListenAndServe()
+		}()
+	}
 	select {
 	case err := <-errs:
 		stop()
@@ -98,5 +109,11 @@ func run() error {
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
-	return srv.Shutdown(shutdown)
+	var failed error
+	for _, srv := range servers {
+		if err := srv.Shutdown(shutdown); err != nil {
+			failed = err
+		}
+	}
+	return failed
 }

@@ -11,9 +11,11 @@ import { useSegments } from '../../lib/queries'
 import { useCan } from '../../lib/session'
 import { RegisterIPModal, type RegisterPrefill } from '../shared/RegisterIPModal'
 import { ScanButton } from '../shared/ScanButton'
+import { GatewayHint } from './GatewayHint'
 import { SegmentAddresses } from './SegmentAddresses'
+import { AvailableList, type FreeRange, NetworkFacts, type NetworkInfo, UsageBreakdown } from './SegmentFacts'
 
-interface AddressMapData { usable: number; mapped: boolean; first?: string; counts: Record<string, number>; runs: Run[] }
+interface AddressMapData { usable: number; mapped: boolean; first?: string; counts: Record<string, number>; runs: Run[]; network: NetworkInfo; available: FreeRange[] }
 
 const order = ['assigned', 'reserved', 'blocked', 'held', 'gateway', 'seen', 'dhcp_used', 'dhcp_free', 'available']
 
@@ -47,6 +49,7 @@ export function SegmentPage() {
           {canEdit && <Button variant="primary" onClick={() => setPrefill({ segmentId: id })}><Plus size={14} aria-hidden />Add to register</Button>}
         </>} />
 
+      <GatewayHint segment={segment} />
       <Card title="Address space" subtitle={map.data ? `${formatCount(map.data.usable)} usable addresses · ${formatCount(free)} Available candidates` : undefined}>
         <div className="space-y-5 p-4">
           {map.isPending ? <SkeletonRows rows={3} /> : map.isError ? <ErrorState error={map.error} onRetry={() => void map.refetch()} /> : (
@@ -60,6 +63,13 @@ export function SegmentPage() {
         </div>
       </Card>
 
+      {map.data && (
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <NetworkFacts segment={segment} info={map.data.network} />
+          {map.data.mapped && <UsageBreakdown counts={map.data.counts} usable={map.data.usable} />}
+          <AvailableList segment={segment} ranges={map.data.available} onRegister={canEdit ? (ip) => setPrefill({ segmentId: id, ip }) : undefined} />
+        </div>
+      )}
       <SegmentAddresses segmentId={id} onRegister={canEdit ? setPrefill : undefined} />
       <RegisterIPModal open={prefill !== null} prefill={prefill ?? undefined} onClose={() => setPrefill(null)} />
     </>

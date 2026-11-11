@@ -27,6 +27,7 @@ export interface Segment {
   unknownDevices: number
   openAlerts: number
   lastSeen: string | null
+  detectedGateway: string | null
   usableSize: number
   updatedAt: string
 }
@@ -103,6 +104,7 @@ export interface Finding {
   source: string
   isStatic: boolean
   isPrivateMac: boolean
+  isGateway: boolean
   firstSeen: string
   lastSeen: string
   segmentId: string | null
@@ -128,6 +130,7 @@ export interface SegmentAddress {
   hostname: string | null
   isStatic: boolean | null
   isPrivateMac: boolean | null
+  isGateway: boolean
   source: string | null
   firstSeen: string | null
   lastSeen: string | null

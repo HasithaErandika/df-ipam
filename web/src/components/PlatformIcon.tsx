@@ -1,10 +1,12 @@
-import { Database, Folder, Globe, HardDrive, Laptop, Mail, Monitor, Network, Printer, Server, Shield, Smartphone, Wifi, type LucideIcon } from 'lucide-react'
+import { Cctv, Database, Folder, Globe, HardDrive, Laptop, Mail, Monitor, Network, Printer, Router, Server, Shield, Smartphone, Tv, Wifi, type LucideIcon } from 'lucide-react'
 import {
   siAlmalinux, siAndroid, siApache, siApachetomcat, siApple, siCentos, siCisco, siDebian, siDocker, siEpson, siFedora, siFortinet,
   siFreebsd, siHp, siHuawei, siIos, siLinux, siMacos, siMikrotik, siMysql, siNginx, siPostgresql, siRaspberrypi, siRedhat,
-  siRockylinux, siSynology, siUbiquiti, siUbuntu, siVmware, type SimpleIcon,
+  siRockylinux, siSynology, siUbiquiti, siUbuntu, siVmware, siSamsung, siLg, siSony, siXiaomi, siDell, siLenovo, siGoogle, siTplink, siAsus,
+  siIntel, siKyocera, siNetgear, siOneplus, siOppo, siVivo, siMotorola, siNokia, siPanasonic, siToshiba, siAcer, siMsi, siRoku, siPlaystation,
+  type SimpleIcon,
 } from 'simple-icons'
-import { platformOf, platforms, services } from '../lib/platforms'
+import { platformName, platformOf, platforms, services } from '../lib/platforms'
 
 // Brand marks from Simple Icons (CC0). Simple Icons carries no Microsoft marks, so
 // Windows is drawn as a plain four-pane window in Windows blue.
@@ -13,11 +15,14 @@ const brand: Record<string, SimpleIcon> = {
   rocky: siRockylinux, alma: siAlmalinux, fedora: siFedora, freebsd: siFreebsd, vmware: siVmware, cisco: siCisco, fortinet: siFortinet,
   mikrotik: siMikrotik, ubiquiti: siUbiquiti, huawei: siHuawei, hp: siHp, epson: siEpson, synology: siSynology, raspberrypi: siRaspberrypi,
   apache: siApache, nginx: siNginx, tomcat: siApachetomcat, docker: siDocker, postgresql: siPostgresql, mysql: siMysql, apple: siApple,
+  samsung: siSamsung, lg: siLg, sony: siSony, xiaomi: siXiaomi, dell: siDell, lenovo: siLenovo, google: siGoogle, tplink: siTplink, asus: siAsus,
+  intel: siIntel, kyocera: siKyocera, netgear: siNetgear, oneplus: siOneplus, oppo: siOppo, vivo: siVivo, motorola: siMotorola, nokia: siNokia,
+  panasonic: siPanasonic, toshiba: siToshiba, acer: siAcer, msi: siMsi, roku: siRoku, playstation: siPlaystation,
 }
 
 const generic: Record<string, LucideIcon> = {
   chromeos: Laptop, other: Monitor, iis: Globe, mssql: Database, oracle: Database, dns: Network, dhcp: Network, mail: Mail,
-  file: Folder, active_directory: Shield, backup: HardDrive,
+  file: Folder, active_directory: Shield, backup: HardDrive, tv: Tv, printer: Printer, router: Router, camera: Cctv, media: Tv,
 }
 
 /** A fallback by device or IP type when nothing names the platform. */
@@ -51,7 +56,7 @@ function Glyph({ code, size, fallback }: { code: string; size: number; fallback?
  * label, so evidence is never mistaken for what a person recorded.
  */
 export function PlatformIcon({ platform, guessed, size = 16, fallbackType }: { platform: string | null; guessed?: boolean; size?: number; fallbackType?: string }) {
-  const name = platform ? platforms[platform] ?? platform : 'Platform not known'
+  const name = platform ? platformName(platform) : 'Platform not known'
   const title = platform && guessed ? `Likely ${name} (from DHCP or hostname)` : name
   return (
     <span role="img" aria-label={title} title={title} className={`inline-grid shrink-0 place-items-center ${guessed ? 'opacity-60' : ''}`} style={{ width: size, height: size }}>
@@ -77,14 +82,16 @@ export function ServiceIcons({ list, max = 4 }: { list: string[]; max?: number }
 }
 
 /** A name with its platform mark (recorded, or likely from evidence) in front. */
-export function WithPlatform({ platform, vendor, hostname, type, children }: {
-  platform?: string | null; vendor?: string | null; hostname?: string | null; type?: string; children: React.ReactNode
+export function WithPlatform({ platform, vendor, hostname, type, gateway, children }: {
+  platform?: string | null; vendor?: string | null; hostname?: string | null; type?: string; gateway?: boolean; children: React.ReactNode
 }) {
   const p = platformOf(platform, vendor, hostname)
   return (
     <div className="flex min-w-0 items-start gap-2.5">
-      <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[5px] border border-line bg-surface">
-        <PlatformIcon platform={p?.platform ?? null} guessed={p?.guessed} size={16} fallbackType={type} />
+      <span className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-[5px] border ${gateway && !p ? 'border-[var(--addr-gateway)] bg-[var(--addr-gateway)] text-white' : 'border-line bg-surface'}`}>
+        {gateway && !p
+          ? <span role="img" aria-label="Gateway" title="Gateway: the router for this network"><Router size={15} strokeWidth={1.9} aria-hidden /></span>
+          : <PlatformIcon platform={p?.platform ?? null} guessed={p?.guessed} size={16} fallbackType={type} />}
       </span>
       <div className="min-w-0 flex-1">{children}</div>
     </div>

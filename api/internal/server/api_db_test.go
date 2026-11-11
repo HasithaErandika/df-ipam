@@ -181,6 +181,13 @@ func TestAPIAgainstDatabase(t *testing.T) {
 	if counts["gateway"] != 1.0 || counts["dhcp_free"] != 101.0 || counts["assigned"] != 2.0 {
 		t.Fatalf("address map counts: %v", counts)
 	}
+	if net := m["network"].(map[string]any); net["mask"] != "255.255.255.0" || net["usableAddresses"] != "254" {
+		t.Fatalf("network facts: %v", net)
+	}
+	free := m["available"].([]any)
+	if first := free[0].(map[string]any); first["start"] != "192.168.1.3" || first["end"] != "192.168.1.19" {
+		t.Fatalf("free ranges must skip the gateway, register and seen hosts: %v", free[:2])
+	}
 	e.call("GET", "/integrations/fortigate", nil, 503)
 	e.call("GET", "/discovery/findings?kind=online", nil, 200)
 	for _, r := range e.call("GET", "/reports", nil, 200)["data"].([]any) {

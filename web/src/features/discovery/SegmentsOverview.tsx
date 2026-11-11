@@ -28,6 +28,12 @@ function SegmentCard({ s }: { s: Segment }) {
         <div className="min-w-0">
           <Link to={`/segments/${s.id}`} className="block truncate text-[14px] font-semibold text-ink hover:text-accent">{s.name}</Link>
           <p className="truncate font-mono text-[11.5px] text-ink-3">{segmentCaption(s)}</p>
+          {(s.gateway || s.detectedGateway) && (
+            <p className="mt-0.5 flex items-center gap-1 text-[11.5px] text-ink-3">
+              <span aria-hidden className="size-1.5 rounded-full bg-[var(--addr-gateway)]" />
+              Gateway <span className="font-mono text-ink-2">{s.gateway ?? s.detectedGateway}</span>{!s.gateway && ' (detected)'}
+            </p>
+          )}
         </div>
         {s.environmentName ? <EnvironmentBadge name={s.environmentName} /> : <Badge tone={floor ? 'accent' : 'neutral'}>{label(segmentKinds, s.kind)}</Badge>}
       </div>

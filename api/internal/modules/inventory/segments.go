@@ -35,6 +35,7 @@ type segmentDTO struct {
 	Unknown         int64      `db:"unknown_devices" json:"unknownDevices"`
 	OpenAlerts      int64      `db:"open_alerts" json:"openAlerts"`
 	LastSeen        *time.Time `db:"last_seen" json:"lastSeen"`
+	DetectedGateway *string    `db:"detected_gateway" json:"detectedGateway"`
 	UsableSize      int64      `db:"-" json:"usableSize"`
 	UpdatedAt       time.Time  `db:"updated_at" json:"updatedAt"`
 }
@@ -52,6 +53,7 @@ const segmentSelect = `SELECT s.id::text AS id, s.name, s.kind, s.floor, s.vlan,
 		AND NOT v.is_private_mac AND v.last_seen > now() - interval '24 hours' AND d.status IS DISTINCT FROM 'approved') AS unknown_devices,
 	(SELECT count(*) FROM alerts a WHERE a.segment_id = s.id AND a.status <> 'closed') AS open_alerts,
 	(SELECT max(v.last_seen) FROM sightings v WHERE v.segment_id = s.id) AS last_seen,
+	(SELECT host(v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.is_gateway ORDER BY v.last_seen DESC LIMIT 1) AS detected_gateway,
 	s.updated_at
 	FROM segments s LEFT JOIN environments e ON e.id = s.default_environment_id`
 

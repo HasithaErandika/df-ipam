@@ -1,0 +1,24 @@
+# Option A (docs/new.md) on one Linux machine: the backend shares the host's
+# network, so the scanner reads MAC addresses from the host's ARP table and sees
+# the real default gateway. Turn it on with HOST_NETWORK=true in api/.env; make
+# adds this file after docker-compose.dev.yml.
+#
+# The API listens on loopback (for Vite and make test-db) and on the Docker
+# gateway, where only the web container reaches it. It never listens on Wi-Fi
+# or Ethernet addresses.
+services:
+  backend:
+    network_mode: host
+    networks: !reset null
+    ports: !reset []
+    environment:
+      API_LISTEN_ADDR: 127.0.0.1:${API_PORT:-8080},${DOCKER_GATEWAY:-172.30.0.1}:${API_PORT:-8080}
+      DATABASE_URL: postgres://dfipam_app:${DFIPAM_APP_PASSWORD:?use make, or set it in api/.env}@127.0.0.1:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-dfipam}?sslmode=disable
+      TRUSTED_PROXIES: ${WEB_ADDRESS:-172.30.0.10},127.0.0.1
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:${API_PORT:-8080}/ready']
+
+  # Nginx still proxies to "backend": point that name at the Docker gateway.
+  web:
+    extra_hosts:
+      - backend:${DOCKER_GATEWAY:-172.30.0.1}

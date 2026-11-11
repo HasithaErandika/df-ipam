@@ -6,7 +6,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # Sourcing in the shell, not `include`, keeps `$` and `#` in passwords intact.
-LOAD_ENV := set -a; [ -f api/.env ] && . api/.env; [ -f web/.env ] && . web/.env; COMPOSE_FILE=$${COMPOSE_FILE:-docker-compose.yml:docker-compose.dev.yml}; set +a;
+LOAD_ENV := set -a; [ -f api/.env ] && . api/.env; [ -f web/.env ] && . web/.env; COMPOSE_FILE=$${COMPOSE_FILE:-docker-compose.yml:docker-compose.dev.yml$$([ "$${HOST_NETWORK:-}" = true ] && echo :docker-compose.hostnet.yml)}; set +a;
 BIN := api/bin
 
 COMPOSE := docker compose

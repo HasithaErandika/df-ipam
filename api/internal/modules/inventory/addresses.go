@@ -23,6 +23,7 @@ type addressDTO struct {
 	Hostname       *string    `db:"hostname" json:"hostname"`
 	IsStatic       *bool      `db:"is_static" json:"isStatic"`
 	IsPrivateMAC   *bool      `db:"is_private_mac" json:"isPrivateMac"`
+	IsGateway      bool       `db:"is_gateway" json:"isGateway"`
 	Source         *string    `db:"source" json:"source"`
 	FirstSeen      *time.Time `db:"first_seen" json:"firstSeen"`
 	LastSeen       *time.Time `db:"last_seen" json:"lastSeen"`
@@ -35,11 +36,11 @@ type addressDTO struct {
 }
 
 const addressBase = `WITH seen AS (
-	SELECT DISTINCT ON (ip) ip, mac, hostname, vendor, is_static, is_private_mac, source, first_seen, last_seen
+	SELECT DISTINCT ON (ip) ip, mac, hostname, vendor, is_static, is_private_mac, is_gateway, source, first_seen, last_seen
 	FROM sightings WHERE segment_id = $1::uuid ORDER BY ip, last_seen DESC
 ), merged AS (
 	SELECT COALESCE(r.ip, v.ip) AS addr, host(COALESCE(r.ip, v.ip)) AS ip, r.id::text AS register_id, r.status AS register_status,
-		r.assigned_name, r.owner, v.mac::text AS mac, NULLIF(v.hostname, '') AS hostname, v.is_static, v.is_private_mac, v.source,
+		r.assigned_name, r.owner, v.mac::text AS mac, NULLIF(v.hostname, '') AS hostname, v.is_static, v.is_private_mac, (COALESCE(v.is_gateway, false) OR COALESCE(r.ip, v.ip) IS NOT DISTINCT FROM s.gateway) AS is_gateway, v.source,
 		v.first_seen, v.last_seen, d.id::text AS device_id, d.status AS device_status, NULLIF(d.name, '') AS device_name, COALESCE(NULLIF(r.platform, ''), d.platform, '') AS platform, COALESCE(v.vendor, '') AS vendor,
 		(s.dhcp_start IS NOT NULL AND COALESCE(r.ip, v.ip) BETWEEN s.dhcp_start AND s.dhcp_end) AS in_pool
 	FROM (SELECT * FROM ip_addresses WHERE segment_id = $1::uuid) r
@@ -48,7 +49,7 @@ const addressBase = `WITH seen AS (
 	LEFT JOIN devices d ON d.mac = v.mac
 ) `
 
-const addressColumns = `SELECT ip, register_id, register_status, assigned_name, owner, mac, hostname, is_static, is_private_mac, source,
+const addressColumns = `SELECT ip, register_id, register_status, assigned_name, owner, mac, hostname, is_static, is_private_mac, is_gateway, source,
 	first_seen, last_seen, device_id, device_status, device_name, platform, vendor, in_pool FROM merged`
 
 // addresses lists every address in a segment that is registered or has been seen.

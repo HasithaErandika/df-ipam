@@ -45,8 +45,6 @@ func (in *segmentInput) validate() error {
 		v.Add("dhcpEnd", "Enter both the first and last pool address.")
 	case start.IsValid() && end.IsValid() && end.Less(start):
 		v.Add("dhcpEnd", "The last pool address must not be before the first.")
-	case gw.IsValid() && start.IsValid() && end.IsValid() && !gw.Less(start) && !end.Less(gw):
-		v.Add("gateway", "The gateway can't be inside the DHCP pool.")
 	}
 	v.UUID("defaultEnvironmentId", in.EnvironmentID, false, "an environment")
 	if in.Kind == "dhcp" {

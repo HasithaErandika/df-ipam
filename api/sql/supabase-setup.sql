@@ -411,6 +411,16 @@ ALTER TABLE devices ADD COLUMN platform text NOT NULL DEFAULT '' CHECK (platform
 ALTER TABLE ip_addresses ADD COLUMN platform text NOT NULL DEFAULT '' CHECK (platform ~ '^[a-z0-9_]{0,30}$');
 ALTER TABLE ip_addresses ADD COLUMN services text[] NOT NULL DEFAULT '{}' CHECK (cardinality(services) <= 10);
 
+-- 000007_lite_gateways.up.sql
+-- Evidence that an address is a gateway: it is the scanner's default route, or
+-- the resolver named it the gateway. Shown with a router mark; the segment's own
+-- gateway setting stays a person's decision.
+ALTER TABLE sightings ADD COLUMN is_gateway boolean NOT NULL DEFAULT false;
+
+-- Synthetic resolver names (such as "_gateway") are not hostnames.
+UPDATE sightings SET is_gateway = true WHERE hostname = '_gateway';
+UPDATE sightings SET hostname = '' WHERE hostname LIKE '\_%';
+
 -- Seed data
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Production', '#dc2626', 10, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('DR', '#9333ea', 20, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
@@ -428,6 +438,6 @@ INSERT INTO settings (key, value) VALUES ('fortigate.enabled', 'false'::jsonb) O
 INSERT INTO settings (key, value) VALUES ('fortigate.verify_tls', 'true'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('fortigate.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (6, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (7, false);
 
 COMMIT;

@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2, PlusCircle, XCircle } from 'lucide-react'
 import { Link } from 'react-router'
 import { WithPlatform } from '../../components/PlatformIcon'
-import { DeviceBadge, none, PrivateMacBadge, RegisterBadge, RowMenu, Stack, StateBadge, type Column } from '../../components/ui'
+import { DeviceBadge, GatewayBadge, none, PrivateMacBadge, RegisterBadge, RowMenu, Stack, StateBadge, type Column } from '../../components/ui'
 import { formatAgo, formatDateTime } from '../../lib/format'
 import { label, sources } from '../../lib/labels'
 import type { Finding } from '../../lib/types'
@@ -28,8 +28,8 @@ export function findingColumns({ canEdit, onRegister, onApprove, onReject }: {
   return [
     { key: 'ip', header: 'Address', cell: (r) => <Stack mono main={r.ip} sub={r.segmentId ? <Link className="font-sans hover:text-accent hover:underline" to={`/segments/${r.segmentId}`}>{r.segmentName}</Link> : 'No segment'} /> },
     { key: 'device', header: 'Device', cell: (r) => (
-      <WithPlatform platform={r.platform} vendor={r.vendor} hostname={r.hostname || r.deviceName}>
-        <div className="truncate text-ink">{r.deviceName || r.hostname || <span className="text-ink-3">No name found</span>}</div>
+      <WithPlatform platform={r.platform} vendor={r.vendor} hostname={r.hostname || r.deviceName} gateway={r.isGateway}>
+        <div className="flex items-center gap-2 truncate text-ink">{r.deviceName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}{r.isGateway && <GatewayBadge />}</div>
         <div className="flex items-center gap-2 font-mono text-[11.5px] text-ink-3">{r.mac ?? 'MAC not visible'}{r.isPrivateMac && <PrivateMacBadge />}</div>
         {r.vendor && <div className="truncate text-[11.5px] text-ink-3" title="DHCP vendor class">{r.vendor}</div>}
       </WithPlatform>

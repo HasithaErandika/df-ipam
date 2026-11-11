@@ -5,7 +5,8 @@ import { Link, Outlet, useLocation } from 'react-router'
 import { Button, Card, EmptyState, ErrorBoundary, Modal, SkeletonRows } from '../../components/ui'
 import { signOut } from '../../lib/auth'
 import { useIdleTimeout } from '../../lib/idle'
-import { useMe } from '../../lib/session'
+import { useCan, useMe } from '../../lib/session'
+import { useScanStatus } from '../../lib/scan'
 import { canOpen, pageFor } from '../nav'
 import { NotificationBell } from './NotificationBell'
 import { Sidebar } from './Sidebar'
@@ -26,6 +27,12 @@ function readCollapsed(): boolean {
   }
 }
 
+/** Keeps screens current: reloads results whenever a scan finishes. */
+function ScanWatcher() {
+  useScanStatus()
+  return null
+}
+
 /** Signs out after the idle time set in Settings, with a minute's warning. */
 function SessionGuard() {
   const { sessionTimeoutMinutes } = useMe()
@@ -42,6 +49,7 @@ function SessionGuard() {
 
 export function AppShell() {
   const { pathname } = useLocation()
+  const canView = useCan('inventory:view')
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const toggle = () => setCollapsed((c) => {
     try {
@@ -75,6 +83,7 @@ export function AppShell() {
         </main>
       </div>
       <SessionGuard />
+      {canView && <ScanWatcher />}
     </div>
   )
 }

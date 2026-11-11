@@ -23,6 +23,7 @@ type findingDTO struct {
 	Source         string    `db:"source" json:"source"`
 	IsStatic       bool      `db:"is_static" json:"isStatic"`
 	IsPrivateMAC   bool      `db:"is_private_mac" json:"isPrivateMac"`
+	IsGateway      bool      `db:"is_gateway" json:"isGateway"`
 	FirstSeen      time.Time `db:"first_seen" json:"firstSeen"`
 	LastSeen       time.Time `db:"last_seen" json:"lastSeen"`
 	SegmentID      *string   `db:"segment_id" json:"segmentId"`
@@ -44,6 +45,7 @@ const findingFrom = ` FROM sightings v
 	LEFT JOIN devices d ON d.mac = v.mac`
 
 const findingColumns = `SELECT v.id::text AS id, host(v.ip) AS ip, v.mac::text AS mac, v.hostname, v.vendor, v.last_seen > now() - ` + recent + ` AS online, v.source, v.is_static, v.is_private_mac,
+	COALESCE(v.is_gateway OR v.ip = s.gateway, v.is_gateway) AS is_gateway,
 	v.first_seen, v.last_seen, v.segment_id::text AS segment_id, s.name AS segment_name, s.kind AS segment_kind,
 	i.id::text AS register_id, i.status AS register_status, NULLIF(i.assigned_name, '') AS assigned_name,
 	d.id::text AS device_id, d.status AS device_status, NULLIF(d.name, '') AS device_name,
@@ -65,6 +67,7 @@ var kinds = map[string]string{
 	"unknown":      "v.mac IS NOT NULL AND NOT v.is_private_mac AND d.status IS DISTINCT FROM 'approved'",
 	"rejected":     "d.status = 'rejected'",
 	"private":      "v.is_private_mac",
+	"gateway":      "(v.is_gateway OR v.ip IS NOT DISTINCT FROM s.gateway)",
 	"alerting":     "EXISTS (SELECT 1 FROM alerts a WHERE a.ip = v.ip AND a.status <> 'closed')",
 }
 

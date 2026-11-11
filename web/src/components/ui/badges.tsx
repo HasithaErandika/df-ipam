@@ -53,6 +53,11 @@ export function EnvironmentBadge({ name, colour }: { name: string | null; colour
   )
 }
 
+/** Marks the router of a network: the segment's gateway or the scanner's default route. */
+export function GatewayBadge() {
+  return <Badge tone="neutral"><span className="inline-flex items-center gap-1 text-ink"><span aria-hidden className="size-1.5 rounded-full bg-[var(--addr-gateway)]" />Gateway</span></Badge>
+}
+
 export function PrivateMacBadge() {
   return <span title="A randomised (private) MAC address, as phones and laptops use on Wi-Fi. It is not raised as an unknown device." className="inline-flex items-center gap-1 text-[11.5px] text-ink-3"><CircleDot size={11} aria-hidden />Private MAC</span>
 }

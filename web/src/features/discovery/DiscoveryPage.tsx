@@ -18,7 +18,7 @@ const kinds = [
   { value: 'unregistered', text: 'Not in the register' }, { value: 'registered', text: 'In the register' },
   { value: 'static', text: 'Static on a floor' }, { value: 'unknown', text: 'Unknown device' },
   { value: 'rejected', text: 'Rejected device' }, { value: 'private', text: 'Private MAC' },
-  { value: 'dhcp', text: 'DHCP lease' }, { value: 'vpn', text: 'VPN client' }, { value: 'alerting', text: 'Has open alerts' },
+  { value: 'gateway', text: 'Gateways' }, { value: 'dhcp', text: 'DHCP lease' }, { value: 'vpn', text: 'VPN client' }, { value: 'alerting', text: 'Has open alerts' },
 ]
 
 const windows = [{ value: '1h', text: '1 h' }, { value: '24h', text: '24 h' }, { value: '7d', text: '7 days' }, { value: '30d', text: '30 days' }, { value: 'all', text: 'All' }]
@@ -28,7 +28,7 @@ function Findings() {
   const canEdit = useCan('inventory:edit')
   const f = useFilters(['segmentId', 'kind', 'source', 'seen', 'q', 'sort'] as const)
   const seen = f.values.seen || '24h'
-  const { query, rows, meta, paging } = usePagedList<Finding>('/discovery/findings', { ...f.values, seen }, { refetchInterval: 60_000 })
+  const { query, rows, meta, paging } = usePagedList<Finding>('/discovery/findings', { ...f.values, seen }, { refetchInterval: 30_000 })
   const [prefill, setPrefill] = useState<RegisterPrefill | null>(null)
   const [approve, setApprove] = useState<DecisionTarget | null>(null)
   const reject = useRejectDevice()

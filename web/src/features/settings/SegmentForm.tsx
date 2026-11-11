@@ -28,9 +28,6 @@ const schema = z.object({
   }
   if (v.kind === 'dhcp' && Boolean(v.dhcpStart) !== Boolean(v.dhcpEnd)) ctx.addIssue({ code: 'custom', path: ['dhcpEnd'], message: 'Enter both the first and last pool address.' })
   if (v.dhcpStart && v.dhcpEnd && ipToInt(v.dhcpEnd) < ipToInt(v.dhcpStart)) ctx.addIssue({ code: 'custom', path: ['dhcpEnd'], message: 'The last pool address must not be before the first.' })
-  if (v.gateway && v.dhcpStart && v.dhcpEnd && ipToInt(v.gateway) >= ipToInt(v.dhcpStart) && ipToInt(v.gateway) <= ipToInt(v.dhcpEnd)) {
-    ctx.addIssue({ code: 'custom', path: ['gateway'], message: "The gateway can't be inside the DHCP pool." })
-  }
 })
 type Values = z.infer<typeof schema>
 const fields = Object.keys(schema.shape)

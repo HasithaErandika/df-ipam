@@ -56,8 +56,14 @@ func (h *Handler) addressMap(c *gin.Context) {
 	prefix, _ := netip.ParsePrefix(network)
 	usable := netcalc.UsableRange(prefix)
 	size := ipam.RangeSize(usable.First, usable.Last)
+	free, err := freeRanges(c, h, id)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	info := netcalc.Calculate(prefix)
 	if size > maxMapped {
-		httpx.OK(c, http.StatusOK, gin.H{"usable": size, "mapped": false, "counts": gin.H{}, "runs": []run{}})
+		httpx.OK(c, http.StatusOK, gin.H{"usable": size, "mapped": false, "counts": gin.H{}, "runs": []run{}, "network": info, "available": free})
 		return
 	}
 	// Lowest priority first: later rows overwrite earlier ones.
@@ -67,6 +73,7 @@ func (h *Handler) addressMap(c *gin.Context) {
 			FROM sightings v JOIN segments s ON s.id = v.segment_id WHERE v.segment_id = $1::uuid AND v.last_seen > now() - $2::interval
 		UNION ALL SELECT host(start_ip), host(end_ip), 'held' FROM reservations WHERE segment_id = $1::uuid AND status = 'active'
 		UNION ALL SELECT host(gateway), host(gateway), 'gateway' FROM segments WHERE id = $1::uuid AND gateway IS NOT NULL
+		UNION ALL SELECT DISTINCT host(ip), host(ip), 'gateway' FROM sightings WHERE segment_id = $1::uuid AND is_gateway
 		UNION ALL SELECT host(ip), host(ip), status FROM ip_addresses WHERE segment_id = $1::uuid`, id, ipam.SeenWindow)
 	if err != nil {
 		httpx.Fail(c, err)
@@ -101,7 +108,8 @@ func (h *Handler) addressMap(c *gin.Context) {
 		}
 		runs = append(runs, run{Start: ip, End: ip, State: st, Count: 1})
 	}
-	httpx.OK(c, http.StatusOK, gin.H{"usable": size, "mapped": true, "first": usable.First.String(), "counts": counts, "runs": runs})
+	httpx.OK(c, http.StatusOK, gin.H{"usable": size, "mapped": true, "first": usable.First.String(), "counts": counts, "runs": runs,
+		"network": info, "available": free})
 }
 
 func toUint(a netip.Addr) uint32 {
@@ -111,4 +119,29 @@ func toUint(a netip.Addr) uint32 {
 
 func fromUint(n uint32) netip.Addr {
 	return netip.AddrFrom4([4]byte{byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)})
+}
+
+// freeRange is one run of Available candidates.
+type freeRange struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+	Count int64  `json:"count"`
+}
+
+// maxFreeRanges bounds the list; a fragmented /16 could otherwise be very long.
+const maxFreeRanges = 200
+
+func freeRanges(c *gin.Context, h *Handler, id string) ([]freeRange, error) {
+	ranges, err := ipam.Available(c, h.conn, id)
+	if err != nil {
+		return nil, err
+	}
+	out := []freeRange{}
+	for _, r := range ranges {
+		if len(out) == maxFreeRanges {
+			break
+		}
+		out = append(out, freeRange{Start: r.First.String(), End: r.Last.String(), Count: ipam.RangeSize(r.First, r.Last)})
+	}
+	return out, nil
 }

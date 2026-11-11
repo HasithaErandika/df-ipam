@@ -1,4 +1,4 @@
-import { Badge, Card, DataTable, DeviceBadge, FilterBar, none, PrivateMacBadge, RegisterBadge, SearchInput, Segmented, Stack, type Column } from '../../components/ui'
+import { Badge, Card, DataTable, DeviceBadge, FilterBar, GatewayBadge, none, PrivateMacBadge, RegisterBadge, SearchInput, Segmented, Stack, type Column } from '../../components/ui'
 import { useFilters, usePagedList } from '../../lib/listing'
 import { WithPlatform } from '../../components/PlatformIcon'
 import { platformOf } from '../../lib/platforms'
@@ -20,7 +20,7 @@ export function SegmentAddresses({ segmentId, onRegister }: { segmentId: string;
     { key: 'ip', header: 'Address', cell: (r) => <div className="flex items-center gap-2"><span className="font-mono text-[12.5px]">{r.ip}</span>{r.inPool && <Badge>DHCP pool</Badge>}</div> },
     { key: 'register', header: 'Register', cell: (r) => <Stack main={<RegisterBadge status={r.registerStatus} />} sub={[r.assignedName, r.owner].filter(Boolean).join(' · ') || undefined} /> },
     { key: 'device', header: 'Seen as', cell: (r) => (r.mac || r.hostname
-      ? <WithPlatform platform={r.platform} vendor={r.vendor} hostname={r.hostname ?? r.deviceName}><div className="truncate">{r.deviceName || r.hostname || <span className="text-ink-3">No name</span>}</div>
+      ? <WithPlatform platform={r.platform} vendor={r.vendor} hostname={r.hostname ?? r.deviceName} gateway={r.isGateway}><div className="flex items-center gap-2 truncate">{r.deviceName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name</span>)}{r.isGateway && <GatewayBadge />}</div>
         <div className="flex items-center gap-2 font-mono text-[11.5px] text-ink-3">{r.mac ?? ''}{r.isPrivateMac && <PrivateMacBadge />}</div></WithPlatform>
       : none) },
     { key: 'approval', header: 'Approval', hideBelow: 'lg', cell: (r) => (r.mac && !r.isPrivateMac ? <DeviceBadge status={r.deviceStatus} /> : none) },

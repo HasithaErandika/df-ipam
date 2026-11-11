@@ -63,34 +63,46 @@ func Check(ctx context.Context, conn db.Conn, segmentID string, ip netip.Addr) (
 	return out, nil
 }
 
-// Candidate returns the lowest address that is usable, not the gateway, outside the DHCP pool, not
-// registered, not reserved and not seen recently. It never walks the range: it
-// works on the sorted list of used ranges.
+// Candidate returns the lowest Available candidate: usable, not the gateway,
+// outside the DHCP pool, not registered, not reserved and not seen recently.
 func Candidate(ctx context.Context, conn db.Conn, segmentID string) (string, error) {
+	free, err := Available(ctx, conn, segmentID)
+	if err != nil {
+		return "", err
+	}
+	if len(free) == 0 {
+		return "", ErrNoCandidate
+	}
+	return free[0].First.String(), nil
+}
+
+// Available lists every run of Available candidates in a segment, lowest first.
+// It never walks the range: it subtracts the sorted used ranges from the usable one.
+func Available(ctx context.Context, conn db.Conn, segmentID string) ([]netcalc.Range, error) {
 	var network string
 	if err := conn.QueryRow(ctx, "SELECT network::text FROM segments WHERE id = $1::uuid", segmentID).Scan(&network); err != nil {
-		return "", db.Friendly(err)
+		return nil, db.Friendly(err)
 	}
 	prefix, err := netip.ParsePrefix(network)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	rows, err := conn.Query(ctx, `
 		SELECT host(ip), host(ip) FROM ip_addresses WHERE segment_id = $1::uuid
 		UNION ALL SELECT host(start_ip), host(end_ip) FROM reservations WHERE segment_id = $1::uuid AND status = 'active'
 		UNION ALL SELECT host(dhcp_start), host(dhcp_end) FROM segments WHERE id = $1::uuid AND dhcp_start IS NOT NULL
 		UNION ALL SELECT host(gateway), host(gateway) FROM segments WHERE id = $1::uuid AND gateway IS NOT NULL
-		UNION ALL SELECT DISTINCT host(ip), host(ip) FROM sightings WHERE segment_id = $1::uuid AND last_seen > now() - $2::interval`,
+		UNION ALL SELECT DISTINCT host(ip), host(ip) FROM sightings WHERE segment_id = $1::uuid AND (last_seen > now() - $2::interval OR is_gateway)`,
 		segmentID, SeenWindow)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer rows.Close()
 	var used []netcalc.Range
 	for rows.Next() {
 		var a, b string
 		if err := rows.Scan(&a, &b); err != nil {
-			return "", err
+			return nil, err
 		}
 		first, e1 := netip.ParseAddr(a)
 		last, e2 := netip.ParseAddr(b)
@@ -99,14 +111,15 @@ func Candidate(ctx context.Context, conn db.Conn, segmentID string) (string, err
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return "", err
+		return nil, err
 	}
+	var out []netcalc.Range
 	for _, gap := range netcalc.Gaps(netcalc.UsableRange(prefix), used) {
 		if gap.First.IsValid() {
-			return gap.First.String(), nil
+			out = append(out, gap)
 		}
 	}
-	return "", ErrNoCandidate
+	return out, nil
 }
 
 // RangeSize is the number of addresses from first to last inclusive, for IPv4.

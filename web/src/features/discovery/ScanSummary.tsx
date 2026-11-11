@@ -1,17 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { Card, DataTable, ErrorState, SkeletonRows, StateBadge, type Column } from '../../components/ui'
-import { get } from '../../lib/api'
 import { formatAgo, formatDateTime, formatIn } from '../../lib/format'
+import { useScanStatus } from '../../lib/scan'
 import type { ScanStatus } from '../../lib/types'
 import { ScanButton } from '../shared/ScanButton'
+import { DiscoveryMethods } from './DiscoveryMethods'
 
-/** Refresh quickly while a scan runs, slowly otherwise. */
-export const useScanStatus = () => useQuery({
-  queryKey: ['/discovery/status'],
-  queryFn: () => get<ScanStatus>('/discovery/status'),
-  refetchInterval: (q) => (q.state.data?.running ? 5_000 : 30_000),
-})
 
 const method: Record<string, string> = { ping: 'Ping sweep with reverse DNS and NetBIOS', arp: 'ARP scan per VLAN', snmp: 'Switch SNMP tables' }
 
@@ -58,6 +52,7 @@ export function ScanStatusPanel() {
         <DataTable columns={columns} rows={s?.segments ?? []} query={q} rowKey={(r) => r.id}
           empty={{ title: 'No segments scanned yet', body: 'Results appear here as each segment finishes. Add segments in Settings first.' }} />
       </Card>
+      <DiscoveryMethods />
     </div>
   )
 }

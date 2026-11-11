@@ -16,7 +16,6 @@ export const services: Record<string, string> = {
 const byVendorClass: [RegExp, string][] = [
   [/^MSFT/i, 'windows'], [/android/i, 'android'], [/ubuntu/i, 'ubuntu'], [/debian/i, 'debian'], [/red ?hat|rhel/i, 'redhat'],
   [/darwin|mac ?os/i, 'macos'], [/iphone|ipad|ios/i, 'ios'], [/^dhcpcd|^udhcp|linux/i, 'linux'], [/cisco/i, 'cisco'],
-  [/HP |hewlett/i, 'hp'], [/epson/i, 'epson'],
 ]
 
 const byHostname: [RegExp, string][] = [
@@ -27,13 +26,45 @@ const byHostname: [RegExp, string][] = [
   [/chromebook/i, 'chromeos'],
 ]
 
+/** Device kinds read from UPnP descriptions, and makers read from the MAC or UPnP. Guesses only, never saved. */
+export const kinds: Record<string, string> = { tv: 'TV or media player', printer: 'Printer', router: 'Router', camera: 'Camera', media: 'Media server' }
+
+export const makers: Record<string, string> = {
+  apple: 'Apple', samsung: 'Samsung', lg: 'LG', sony: 'Sony', xiaomi: 'Xiaomi', huawei: 'Huawei', dell: 'Dell', lenovo: 'Lenovo',
+  google: 'Google', tplink: 'TP-Link', asus: 'ASUS', intel: 'Intel', kyocera: 'Kyocera', netgear: 'Netgear', oneplus: 'OnePlus',
+  oppo: 'OPPO', vivo: 'vivo', motorola: 'Motorola', nokia: 'Nokia', panasonic: 'Panasonic', toshiba: 'Toshiba', acer: 'Acer',
+  msi: 'MSI', roku: 'Roku', playstation: 'PlayStation', hp: 'HP', epson: 'Epson', cisco: 'Cisco', ubiquiti: 'Ubiquiti',
+  mikrotik: 'MikroTik', fortinet: 'Fortinet', synology: 'Synology', raspberrypi: 'Raspberry Pi', vmware: 'VMware',
+}
+
+const byKind: [RegExp, string][] = [
+  [/TV or media player|\bTV\b|smart ?tv|bravia|webos|tizen|android ?tv/i, 'tv'], [/printer|laserjet|officejet|deskjet|ecotank|imageclass/i, 'printer'],
+  [/\brouter\b|gateway device/i, 'router'], [/camera|nvr|dvr/i, 'camera'], [/media server/i, 'media'],
+]
+
+const byMaker: [RegExp, string][] = [
+  [/^apple/i, 'apple'], [/samsung/i, 'samsung'], [/^lg /i, 'lg'], [/^sony/i, 'sony'], [/xiaomi|redmi/i, 'xiaomi'], [/huawei|honor device/i, 'huawei'],
+  [/^dell/i, 'dell'], [/lenovo|motorola mobility/i, 'lenovo'], [/^google/i, 'google'], [/tp-?link/i, 'tplink'], [/asustek|^asus/i, 'asus'],
+  [/^intel/i, 'intel'], [/kyocera/i, 'kyocera'], [/netgear/i, 'netgear'], [/oneplus/i, 'oneplus'], [/^oppo|guangdong oppo/i, 'oppo'],
+  [/^vivo/i, 'vivo'], [/^motorola/i, 'motorola'], [/^nokia/i, 'nokia'], [/panasonic/i, 'panasonic'], [/toshiba/i, 'toshiba'],
+  [/^acer/i, 'acer'], [/micro-star|^msi/i, 'msi'], [/^roku/i, 'roku'], [/sony interactive/i, 'playstation'], [/hewlett|^hp /i, 'hp'],
+  [/seiko epson|^epson/i, 'epson'], [/^cisco/i, 'cisco'], [/ubiquiti/i, 'ubiquiti'], [/mikrotik|routerboard/i, 'mikrotik'],
+  [/fortinet/i, 'fortinet'], [/synology/i, 'synology'], [/raspberry/i, 'raspberrypi'], [/vmware/i, 'vmware'],
+]
+
 /**
- * The platform a person recorded, or a likely one from DHCP and name evidence.
+ * The platform a person recorded, or a likely one from the evidence: the DHCP
+ * vendor class, the UPnP device type, the hostname, then the maker of the MAC.
  * A guess is only a hint: it is shown as "likely" and never saved by itself.
  */
 export function platformOf(recorded: string | null | undefined, vendor?: string | null, hostname?: string | null): { platform: string; guessed: boolean } | null {
   if (recorded) return { platform: recorded, guessed: false }
   for (const [re, p] of byVendorClass) if (vendor && re.test(vendor)) return { platform: p, guessed: true }
+  for (const [re, p] of byKind) if (vendor && re.test(vendor)) return { platform: p, guessed: true }
   for (const [re, p] of byHostname) if (hostname && re.test(hostname)) return { platform: p, guessed: true }
+  for (const [re, p] of byMaker) if (vendor && re.test(vendor)) return { platform: p, guessed: true }
   return null
 }
+
+/** A readable name for any platform, kind or maker code. */
+export const platformName = (code: string) => platforms[code] ?? kinds[code] ?? makers[code] ?? code
