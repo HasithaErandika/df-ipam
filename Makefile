@@ -117,7 +117,7 @@ test-db: ## Run database tests on a throwaway dfipam_test database (dropped afte
 	@$(LOAD_ENV) $(COMPOSE) exec -T db psql -q -U postgres -c 'DROP DATABASE IF EXISTS dfipam_test' -c 'CREATE DATABASE dfipam_test'
 	@$(LOAD_ENV) db="$${POSTGRES_DB:-dfipam}"; owner="$${MIGRATION_DATABASE_URL/\/$$db\?/\/dfipam_test?}"; app="$${DATABASE_URL/\/$$db\?/\/dfipam_test?}"; \
 	cd api && MIGRATION_DATABASE_URL="$$owner" go run ./cmd/migrate up && MIGRATION_DATABASE_URL="$$owner" go run ./cmd/seed && \
-	TEST_DATABASE_URL="$$owner" TEST_APP_DATABASE_URL="$$app" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server; \
+	TEST_DATABASE_URL="$$owner" TEST_APP_DATABASE_URL="$$app" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/scanner; \
 	status=$$?; cd .. && $(COMPOSE) exec -T db psql -q -U postgres -c 'DROP DATABASE IF EXISTS dfipam_test'; exit $$status
 
 test-db-supabase: ## Run database tests on Supabase. Every test rolls back
