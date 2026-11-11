@@ -22,9 +22,10 @@ WITH win AS (
         CASE WHEN r.device_status = 'rejected' THEN 'Rejected device ' ELSE 'Unapproved device ' END || r.mac || ' is active at ' || host(r.ip) || ' on ' || r.segment_name AS message
  FROM recent r WHERE r.mac IS NOT NULL AND NOT r.is_private_mac AND r.device_status IS DISTINCT FROM 'approved'
  UNION ALL
- SELECT 'private_mac_device', CASE WHEN r.kind = 'dhcp' THEN 'medium' ELSE 'high' END, r.segment_id, NULL::uuid, NULL::uuid, host(r.ip), NULL::text,
-        'Device with a private MAC (' || r.mac || ') is active at ' || host(r.ip) || ' on ' || r.segment_name
- FROM recent r WHERE r.alert_private_macs AND r.is_private_mac AND NOT r.is_gateway AND r.register_id IS NULL
+ SELECT CASE WHEN r.device_status = 'rejected' THEN 'rejected_device' ELSE 'private_mac_device' END,
+        CASE WHEN r.device_status = 'rejected' OR r.kind <> 'dhcp' THEN 'high' ELSE 'medium' END, r.segment_id, NULL::uuid, r.device_id, host(r.ip), r.mac::text,
+        CASE WHEN r.device_status = 'rejected' THEN 'Rejected device ' ELSE 'Unapproved device with a private MAC ' END || r.mac || ' is active at ' || host(r.ip) || ' on ' || r.segment_name
+ FROM recent r WHERE r.alert_private_macs AND r.is_private_mac AND NOT r.is_gateway AND r.device_status IS DISTINCT FROM 'approved'
  UNION ALL
  SELECT 'unregistered_static', 'medium', r.segment_id, NULL::uuid, NULL::uuid, host(r.ip), r.mac::text,
         'Static IP ' || host(r.ip) || ' is in use on ' || r.segment_name || ' but is not in the register'
@@ -63,10 +64,13 @@ SELECT typ, severity, COALESCE(segment_id::text, ''), COALESCE(ipid::text, ''), 
        COALESCE(ip, ''), COALESCE(mac, ''), message FROM rules`
 
 // pendingDevicesSQL records MACs nobody has decided on yet, so people can approve
-// or reject them. Randomised MACs are skipped: they change and would flood the list.
+// or reject them, whatever address DHCP gives them. Randomised (private) MACs are
+// recorded only on segments that watch them: phones keep one per Wi-Fi network,
+// but elsewhere they would only add noise.
 const pendingDevicesSQL = `INSERT INTO devices (mac, status, first_seen, last_seen)
-	SELECT mac, 'pending', min(first_seen), max(last_seen) FROM sightings
-	WHERE mac IS NOT NULL AND NOT is_private_mac AND last_seen > now() - interval '30 minutes' GROUP BY mac
+	SELECT v.mac, 'pending', min(v.first_seen), max(v.last_seen) FROM sightings v LEFT JOIN segments s ON s.id = v.segment_id
+	WHERE v.mac IS NOT NULL AND (NOT v.is_private_mac OR (s.alert_private_macs AND NOT v.is_gateway))
+	  AND v.last_seen > now() - interval '30 minutes' GROUP BY v.mac
 	ON CONFLICT (mac) DO UPDATE SET first_seen = COALESCE(devices.first_seen, EXCLUDED.first_seen),
 		last_seen = GREATEST(COALESCE(devices.last_seen, EXCLUDED.last_seen), EXCLUDED.last_seen)`
 

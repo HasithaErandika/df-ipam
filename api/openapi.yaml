@@ -108,6 +108,32 @@ paths:
       description: "Permission: inventory:view."
       parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: kind, in: query, schema: { type: string } }, { name: source, in: query, schema: { type: string } }, { name: seen, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /departments:
+    get:
+      summary: "Departments people pick from, with how many devices and register entries use each"
+      description: "Permission: inventory:view or ip:request."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Add a department"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /departments/{id}:
+    put:
+      summary: "Rename or describe a department; a rename carries over to the devices and register entries using it"
+      description: "Permission: system:manage."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: "Delete a department nobody uses"
+      description: "Permission: system:manage."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /discovery/summary:
+    get:
+      summary: "Counts of findings in a segment and time window: total, needing action, undecided devices, with alerts, known and new"
+      description: "Permission: inventory:view."
+      parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: seen, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /devices:
     get:
       summary: "Known devices, pending first"

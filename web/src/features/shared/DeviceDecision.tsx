@@ -4,8 +4,9 @@ import { Button, Field, FormError, FormSection, Input, Modal, Select, Switch, us
 import { post } from '../../lib/api'
 import { deviceTypes, ipTypes, options } from '../../lib/labels'
 import { inventoryKeys, useInvalidate } from '../../lib/queries'
-import { platformOf } from '../../lib/platforms'
+import { knownPlatform, likelyPlatform } from '../../lib/platforms'
 import { AddressCheck } from './AddressCheck'
+import { DepartmentSelect } from './DepartmentSelect'
 import { PlatformSelect } from './PlatformFields'
 
 /** What the approval dialog needs to know about a device. */
@@ -23,6 +24,8 @@ export interface DecisionTarget {
   registered?: boolean
   vendor?: string | null
   platform?: string | null
+  model?: string | null
+  osHint?: string | null
 }
 
 /**
@@ -47,7 +50,7 @@ export function ApproveDeviceModal({ target, onClose }: { target: DecisionTarget
     setOwner(target.owner ?? '')
     setDepartment(target.department ?? '')
     setDeviceType(target.deviceType && target.deviceType !== 'other' ? target.deviceType : 'pc')
-    setPlatform(target.platform || platformOf(null, target.vendor, target.hostname)?.platform || '')
+    setPlatform(knownPlatform(target.platform)) // a guess is offered below, never filled in
     setRegisterIp(false)
     setError(null)
   }, [target])
@@ -70,10 +73,10 @@ export function ApproveDeviceModal({ target, onClose }: { target: DecisionTarget
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name" htmlFor="dev-name" error={!name.trim() ? 'Give the device a name.' : undefined}><Input id="dev-name" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Type" htmlFor="dev-type"><Select id="dev-type" value={deviceType} onChange={(e) => setDeviceType(e.target.value)}>{options(deviceTypes).map((o) => <option key={o.value} value={o.value}>{o.text}</option>)}</Select></Field>
-            <PlatformSelect id="dev-platform" value={platform} onChange={setPlatform} />
+            <PlatformSelect id="dev-platform" value={platform} onChange={setPlatform} guess={target ? likelyPlatform(target) : null} />
             <div className="hidden sm:block" />
             <Field label="Owner" htmlFor="dev-owner"><Input id="dev-owner" value={owner} maxLength={120} onChange={(e) => setOwner(e.target.value)} /></Field>
-            <Field label="Department" htmlFor="dev-dept"><Input id="dev-dept" value={department} maxLength={120} onChange={(e) => setDepartment(e.target.value)} /></Field>
+            <DepartmentSelect id="dev-dept" value={department} onChange={setDepartment} />
           </div>
         </FormSection>
         {canRegister && (

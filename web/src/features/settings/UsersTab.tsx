@@ -5,6 +5,7 @@ import { put } from '../../lib/api'
 import { formatAgo, formatDateTime } from '../../lib/format'
 import { useFilters, usePagedList } from '../../lib/listing'
 import { useInvalidate } from '../../lib/queries'
+import { listChanges } from '../../lib/changes'
 import { useMe } from '../../lib/session'
 import { roleLabels } from '../../lib/types/core'
 import type { User } from '../../lib/types'
@@ -29,9 +30,12 @@ function EditUser({ user, onClose }: { user: User | null; onClose: () => void })
     meta: { inlineError: true, success: 'Access updated. It applies on their next request.' }, onSuccess: () => { void refresh(); onClose() },
   })
   const self = user?.id === me.id
+  const roleName = (r: unknown) => (roleLabels as Record<string, string>)[String(r)] ?? 'No role'
+  const changes = user ? listChanges({ name: user.displayName, role: user.role ?? '', active: user.isActive }, { name, role, active },
+    { name: 'Display name', role: 'Role', active: 'Can sign in' }, { role: roleName }) : []
   return (
     <Modal open={user !== null} onClose={onClose} title="Edit access" subtitle={user?.email}
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => void confirmSave(user!.email, () => save.mutate(), 'Role and access changes apply immediately and are recorded in the audit log.')}>Save changes</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} disabled={changes.length === 0} onClick={() => void confirmSave(user!.email, () => save.mutate(), 'Role and access changes apply immediately and are recorded in the audit log.', changes)}>Save changes</Button></>}>
       <div className="space-y-4">
         <Field label="Display name" htmlFor="u-name"><Input id="u-name" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Role" htmlFor="u-role" hint={self ? "You can't change your own role." : roleHelp[role]}>

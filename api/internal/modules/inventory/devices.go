@@ -128,6 +128,7 @@ func (h *Handler) createDevice(c *gin.Context) {
 		httpx.Fail(c, db.Friendly(err, "A device with this MAC address already exists."))
 		return
 	}
+	h.recheck(c)
 	httpx.OK(c, http.StatusCreated, gin.H{"id": id})
 }
 
@@ -159,5 +160,6 @@ func (h *Handler) updateDevice(c *gin.Context) {
 		httpx.Fail(c, db.Friendly(err))
 		return
 	}
+	h.recheck(c)
 	c.Status(http.StatusNoContent)
 }

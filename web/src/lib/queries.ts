@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { get } from './api'
-import type { Environment, Segment } from './types'
+import type { Department, Environment, Segment } from './types'
 
 /** Returns a function that marks out of date every query whose path starts with one of these. */
 export function useInvalidate(...keys: string[]) {
@@ -17,3 +17,6 @@ export const useEnvironments = () => useQuery({ queryKey: ['/environments'], que
 
 /** Everything that shows register, device or alert state, refreshed after a change to any of them. */
 export const inventoryKeys = ['/ip-addresses', '/devices', '/discovery', '/segments', '/dashboard', '/alerts', '/reservations', '/ip-requests']
+
+/** Departments to pick from on devices and register entries. */
+export const useDepartments = () => useQuery({ queryKey: ['/departments'], queryFn: () => get<Department[]>('/departments'), staleTime: 60_000 })

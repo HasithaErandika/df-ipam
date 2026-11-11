@@ -18,6 +18,7 @@ type segmentInput struct {
 	EnvironmentID    string `json:"defaultEnvironmentId"`
 	Description      string `json:"description"`
 	AlertPrivateMACs bool   `json:"alertPrivateMacs"`
+	CheckPorts       bool   `json:"checkPorts"`
 }
 
 func (in *segmentInput) validate() error {
@@ -50,6 +51,9 @@ func (in *segmentInput) validate() error {
 	v.UUID("defaultEnvironmentId", in.EnvironmentID, false, "an environment")
 	if in.Kind == "dhcp" {
 		in.EnvironmentID = ""
+	}
+	if in.Kind == "cloud" {
+		in.CheckPorts = false // never swept from the building
 	}
 	return v.Err()
 }

@@ -34,6 +34,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/discovery/status", h.status, auth.InventoryView)
 	g.Handle(http.MethodPost, "/discovery/scan", h.start, auth.SystemManage)
 	g.Handle(http.MethodGet, "/discovery/findings", h.findings, auth.InventoryView)
+	g.Handle(http.MethodGet, "/discovery/summary", h.summary, auth.InventoryView)
 }
 
 var errUnavailable = httpx.NewError(http.StatusServiceUnavailable, "SCANNER_UNAVAILABLE", "The scanner is not running in this process.")

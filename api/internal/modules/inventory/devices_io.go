@@ -106,6 +106,7 @@ func (h *Handler) importDevices(c *gin.Context) {
 	if already := len(batch[0]) - result.Imported; already > 0 {
 		result.Issues = append(result.Issues, rowIssue{0, fmt.Sprintf("%d MAC addresses were already known and were left unchanged.", already)})
 	}
+	h.recheck(c)
 	httpx.OK(c, http.StatusOK, result)
 }
 

@@ -2,13 +2,13 @@
 
 Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web/`, design docs in `docs/`, Docker in `docker-compose.yml`. Run `make help` for commands. Before finishing a change, run `make lint test`.
 
-**On branch `lite`, `docs/new.md` overrides everything below and the other docs.** Lite is one building, IPv4 only, one routing table, three fixed roles (`admin`, `requester`, `viewer`) and 13 tables. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
+**On branch `lite`, `docs/new.md` overrides everything below and the other docs.** Lite is one building, IPv4 only, one routing table, three fixed roles (`admin`, `requester`, `viewer`) and 14 tables. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
 
 ## Read first
 
 - `docs/README.md` for the non-negotiable rules
 - `docs/database.md` before changing the schema
-- `docs/requirements.md` for scope, deviations and open items
+- `docs/new.md` for scope, what is built, what isn't, and open questions
 - `docs/development_phase.md` for what is done: update it when a feature changes status
 
 ## Hard rules

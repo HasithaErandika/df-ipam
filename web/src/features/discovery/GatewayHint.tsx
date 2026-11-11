@@ -18,7 +18,7 @@ export function GatewayHint({ segment: s }: { segment: Segment }) {
   const save = useMutation({
     mutationFn: () => put(`/segments/${s.id}`, {
       name: s.name, kind: s.kind, floor: s.floor, vlan: s.vlan, network: s.network, gateway: s.detectedGateway,
-      dhcpStart: s.dhcpStart ?? '', dhcpEnd: s.dhcpEnd ?? '', defaultEnvironmentId: s.defaultEnvironmentId ?? '', description: s.description, alertPrivateMacs: s.alertPrivateMacs,
+      dhcpStart: s.dhcpStart ?? '', dhcpEnd: s.dhcpEnd ?? '', defaultEnvironmentId: s.defaultEnvironmentId ?? '', description: s.description, alertPrivateMacs: s.alertPrivateMacs, checkPorts: s.checkPorts,
     }),
     meta: { success: `Gateway set to ${s.detectedGateway}.` },
     onSuccess: () => void refresh(),

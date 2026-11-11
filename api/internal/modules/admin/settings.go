@@ -21,7 +21,7 @@ type numberSetting struct {
 
 // Settings people can change. Keys are fixed here, never taken from a request.
 var numbers = []numberSetting{
-	{"scan.interval_minutes", "scanIntervalMinutes", "Scan interval", 1, 1440},
+	{"scan.interval_minutes", "scanIntervalMinutes", "Scan interval", 5, 1440},
 	{"server_check.interval_seconds", "serverCheckSeconds", "Server check interval", 60, 86400},
 	{"server_check.down_after_failures", "downAfterFailures", "Failed checks before Down", 1, 20},
 	{"reservations.reminder_days", "reminderDays", "Reminder days", 1, 60},

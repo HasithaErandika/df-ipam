@@ -38,7 +38,7 @@ export function Select({ className, ref, ...rest }: SelectHTMLAttributes<HTMLSel
 
 /** Ties the message to its control, so screen readers announce it. */
 export function Field({ label, error, hint, htmlFor, children }:
-  { label: string; error?: string; hint?: string; htmlFor: string; children: ReactNode }) {
+  { label: string; error?: string; hint?: ReactNode; htmlFor: string; children: ReactNode }) {
   const noteId = `${htmlFor}-note`
   const note = error || hint ? noteId : undefined
   const linked = isValidElement<Record<string, unknown>>(children) && children.type !== Fragment

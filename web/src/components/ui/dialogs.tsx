@@ -34,8 +34,8 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
   )
 }
 
-export function ConfirmDialog({ open, title, body, confirmLabel, busy, error, tone = 'danger', onConfirm, onCancel }:
-  { open: boolean; title: string; body: string; confirmLabel: string; busy?: boolean; error?: unknown; tone?: 'danger' | 'primary'; onConfirm: () => void; onCancel: () => void }) {
+export function ConfirmDialog({ open, title, body, confirmLabel, busy, error, tone = 'danger', changes, onConfirm, onCancel }:
+  { open: boolean; title: string; body: string; confirmLabel: string; busy?: boolean; error?: unknown; tone?: 'danger' | 'primary'; changes?: string[]; onConfirm: () => void; onCancel: () => void }) {
   return (
     <Dialog.Root open={open} onOpenChange={(next) => !next && onCancel()}>
       <Dialog.Portal>
@@ -43,6 +43,11 @@ export function ConfirmDialog({ open, title, body, confirmLabel, busy, error, to
           <Dialog.Content className="modal w-full max-w-md rounded-lg border border-line-strong/70 bg-surface p-5 shadow-[0_24px_64px_-16px_rgba(11,18,32,.35)]">
             <Dialog.Title className="text-[15px] font-semibold text-ink">{title}</Dialog.Title>
             <Dialog.Description className="mt-1.5 text-ink-2">{body}</Dialog.Description>
+            {changes && changes.length > 0 && (
+              <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-md border border-line bg-surface-2 px-3 py-2 text-[13px] text-ink" aria-label="Changes">
+                {changes.map((c) => <li key={c} className="flex gap-2"><span aria-hidden className="text-ink-3">•</span><span className="min-w-0 break-words">{c}</span></li>)}
+              </ul>
+            )}
             {error ? <div className="mt-3"><FormError error={error} /></div> : null}
             <div className="mt-5 flex justify-end gap-2">
               <Button onClick={onCancel}>Cancel</Button>

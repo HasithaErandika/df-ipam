@@ -3,7 +3,8 @@ import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Badge, Button, Card, DataTable, EnvironmentBadge, Field, FormError, Input, Modal, RowMenu, Select, SeverityBadge, Switch, useConfirm, useConfirmSave, type Column } from '../../components/ui'
 import { del, post, put } from '../../lib/api'
-import { options, severities } from '../../lib/labels'
+import { listChanges } from '../../lib/changes'
+import { label, options, severities } from '../../lib/labels'
 import { useEnvironments, useInvalidate } from '../../lib/queries'
 import type { Environment } from '../../lib/types'
 
@@ -20,11 +21,13 @@ function EnvironmentForm({ open, env, onClose }: { open: boolean; env?: Environm
     meta: { inlineError: true, success: `${v.name} saved.` }, onSuccess: () => { void refresh(); onClose() },
   })
   const set = <K extends keyof Values>(k: K, value: Values[K]) => setV((x) => ({ ...x, [k]: value }))
+  const changes = env ? listChanges({ ...blank, ...env }, v, { name: 'Name', colour: 'Colour', sortOrder: 'Order', defaultSeverity: 'Alert severity',
+    defaultMonitor: 'Monitor new servers', defaultCritical: 'Mark new servers critical' }, { defaultSeverity: (x) => label(severities, String(x)) }) : []
   const nameIssue = !v.name.trim() ? 'Name is required.' : v.name.length > 40 ? 'Keep the name under 40 characters.' : undefined
   return (
     <Modal open={open} onClose={onClose} title={env ? `Edit ${env.name}` : 'Add an environment'} subtitle="Defaults apply to new servers. Each server can still be set by hand."
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={Boolean(nameIssue)} busy={save.isPending}
-        onClick={() => (env ? void confirmSave(env.name, () => save.mutate()) : save.mutate())}>{env ? 'Save changes' : 'Add environment'}</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={Boolean(nameIssue) || (Boolean(env) && changes.length === 0)} busy={save.isPending}
+        onClick={() => (env ? void confirmSave(env.name, () => save.mutate(), undefined, changes) : save.mutate())}>{env ? 'Save changes' : 'Add environment'}</Button></>}>
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
           <Field label="Name" htmlFor="ev-name" error={v.name ? nameIssue : undefined}><Input id="ev-name" value={v.name} placeholder="Staging" onChange={(e) => set('name', e.target.value)} /></Field>

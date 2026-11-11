@@ -14,7 +14,7 @@ import { RegisterIPModal } from '../shared/RegisterIPModal'
 import { registerColumns, serverColumns } from './registerColumns'
 
 const keys = ['segmentId', 'environmentId', 'status', 'health', 'ipType', 'q', 'sort'] as const
-const importColumns = ['ip', 'segment', 'status', 'ipType', 'assignedName', 'expectedMac', 'owner', 'department', 'notes']
+const importColumns = ['ip', 'status', 'ipType', 'environment', 'assignedName', 'platform', 'services', 'expectedMac', 'owner', 'department', 'monitor', 'critical', 'checkPort', 'notes']
 
 function useRelease() {
   const confirm = useConfirm()
@@ -51,7 +51,10 @@ export function ServersPage() {
       <PageHeader title="Servers" description="The register is the official record. Monitored entries are checked by ping, or a TCP port when ping is blocked."
         actions={<>
           <ExportMenu path="/ip-addresses/export" params={Object.fromEntries(Object.entries(params).filter(([, v]) => v)) as Record<string, string>} name={servers ? 'servers' : 'ip-register'} />
-          {canEdit && !servers && <ImportButton path="/ip-addresses/import" title="Import IP register" columns={importColumns} required="ip" refreshKeys={inventoryKeys} />}
+          {canEdit && (servers
+            ? <ImportButton path="/ip-addresses/import?as=server" title="Import servers" columns={importColumns} required="ip" refreshKeys={inventoryKeys}
+                notes={<>A blank <code className="font-mono">ipType</code> means Server. A blank <code className="font-mono">monitor</code> or <code className="font-mono">critical</code> takes the environment's default; <code className="font-mono">environment</code> is a name from Settings, or the segment's default. Services are codes separated by spaces, such as <code className="font-mono">nginx docker</code>. An export from this page imports back as it is.</>} />
+            : <ImportButton path="/ip-addresses/import" title="Import IP register" columns={importColumns} required="ip" refreshKeys={inventoryKeys} />)}
           {canEdit && <Button variant="primary" onClick={() => setAdding(true)}><Plus size={14} aria-hidden />{servers ? 'Add server' : 'Add address'}</Button>}
         </>} />
       <PathTabs base="/servers" tabs={[{ key: 'servers', label: 'Servers' }, { key: 'register', label: 'IP register' }]} />

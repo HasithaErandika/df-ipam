@@ -1,9 +1,10 @@
 import { PlatformIcon, PlatformLabel } from '../../components/PlatformIcon'
 import { Field, Select } from '../../components/ui'
-import { platforms, services } from '../../lib/platforms'
+import { knownPlatform, platforms, services } from '../../lib/platforms'
 
 /** The operating system, with its mark beside the choice and an offer to use the likely one. */
-export function PlatformSelect({ id, value, onChange, guess }: { id: string; value: string; onChange: (v: string) => void; guess?: string | null }) {
+export function PlatformSelect({ id, value: raw, onChange, guess }: { id: string; value: string; onChange: (v: string) => void; guess?: string | null }) {
+  const value = knownPlatform(raw)
   return (
     <Field label="Platform" htmlFor={id} hint={!value && guess ? undefined : 'The operating system or appliance family.'}>
       <div>

@@ -7,6 +7,7 @@ import { Button, Field, FormError, FormSection, Input, Modal, Select, Switch, Te
 import { post, put } from '../../lib/api'
 import { applyServerErrors } from '../../lib/forms'
 import { inventoryKeys, useEnvironments, useInvalidate } from '../../lib/queries'
+import { listChanges } from '../../lib/changes'
 import type { Segment } from '../../lib/types'
 import { cidrIssue, inNetwork, ipToInt, optionalInt, optionalIPv4, requiredText, text, toInt } from '../../lib/validation'
 
@@ -22,6 +23,7 @@ const schema = z.object({
   defaultEnvironmentId: z.string(),
   description: text('Description', 500),
   alertPrivateMacs: z.boolean(),
+  checkPorts: z.boolean(),
 }).superRefine((v, ctx) => {
   const ok = !cidrIssue(v.network)
   for (const k of ['gateway', 'dhcpStart', 'dhcpEnd'] as const) {
@@ -37,7 +39,14 @@ const initial = (s?: Segment): Values => ({
   name: s?.name ?? '', kind: s?.kind ?? 'dhcp', floor: s?.floor?.toString() ?? '', vlan: s?.vlan?.toString() ?? '', network: s?.network ?? '',
   gateway: s?.gateway ?? '', dhcpStart: s?.dhcpStart ?? '', dhcpEnd: s?.dhcpEnd ?? '', defaultEnvironmentId: s?.defaultEnvironmentId ?? '', description: s?.description ?? '',
   alertPrivateMacs: s?.alertPrivateMacs ?? false,
+  checkPorts: s?.checkPorts ?? false,
 })
+
+const labels: Partial<Record<keyof Values, string>> = {
+  name: 'Name', kind: 'Type', floor: 'Floor', vlan: 'VLAN', network: 'Network', gateway: 'Gateway', dhcpStart: 'DHCP pool start',
+  dhcpEnd: 'DHCP pool end', defaultEnvironmentId: 'Default environment', description: 'Description',
+  alertPrivateMacs: 'Alert on private-MAC devices', checkPorts: 'Check common ports',
+}
 
 const kindHelp = {
   dhcp: 'A floor network served by DHCP. Addresses outside the pool count as static.',
@@ -50,7 +59,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
   const refresh = useInvalidate(...inventoryKeys)
   const confirmSave = useConfirmSave()
   const [error, setFormError] = useState<unknown>(null)
-  const { register, handleSubmit, reset, watch, setValue, setError, formState: { errors } } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial(segment) })
+  const { register, handleSubmit, reset, watch, setValue, setError, formState: { errors, isDirty } } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial(segment) })
   useEffect(() => { if (open) { reset(initial(segment)); setFormError(null) } }, [open, segment, reset])
   const kind = watch('kind')
   const save = useMutation({
@@ -62,10 +71,13 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
     onSuccess: () => { void refresh(); onClose() },
     onError: (e) => { if (!applyServerErrors(e, setError, fields)) setFormError(e) },
   })
-  const submit = handleSubmit((v) => (segment ? void confirmSave(segment.name, () => save.mutate(v)) : save.mutate(v)))
+  const envName = (id: unknown) => environments.data?.find((e) => e.id === id)?.name ?? 'none'
+  const submit = handleSubmit((v) => (segment
+    ? void confirmSave(segment.name, () => save.mutate(v), undefined, listChanges(initial(segment), v, labels, { defaultEnvironmentId: envName }))
+    : save.mutate(v)))
   return (
     <Modal open={open} onClose={onClose} title={segment ? `Edit ${segment.name}` : 'Add a segment'} size="lg"
-      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => void submit()}>{segment ? 'Save changes' : 'Add segment'}</Button></>}>
+      footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} disabled={Boolean(segment) && !isDirty} title={segment && !isDirty ? 'Nothing has changed yet' : undefined} onClick={() => void submit()}>{segment ? 'Save changes' : 'Add segment'}</Button></>}>
       <form onSubmit={(e) => { e.preventDefault(); void submit() }} noValidate className="space-y-5">
         <FormSection title="Segment">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -95,10 +107,17 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
           </Field>
         )}
         <FormSection title="Alerts">
-          <Switch id="sg-private" checked={watch('alertPrivateMacs')} onChange={(v) => setValue('alertPrivateMacs', v)}
+          <Switch id="sg-private" checked={watch('alertPrivateMacs')} onChange={(v) => setValue('alertPrivateMacs', v, { shouldDirty: true })}
             label="Alert on devices with a private MAC"
             hint="Phones and laptops use random MACs on Wi-Fi, so these are not unknown-device alerts. Turn this on where every device matters: one alert per unregistered address, Medium on floors and High on server and cloud networks." />
         </FormSection>
+        {watch('kind') !== 'cloud' && (
+          <FormSection title="Discovery">
+            <Switch id="sg-ports" checked={watch('checkPorts')} onChange={(v) => setValue('checkPorts', v, { shouldDirty: true })}
+              label="Check common ports on each device"
+              hint="Each scan tries about 25 common TCP ports (SSH, web, RDP, file sharing, databases, printers) on every device that answers, to show what it runs. It connects and closes at once, sending nothing, but security tools may still see it as a port scan: ask before turning it on for company networks." />
+          </FormSection>
+        )}
         <Field label="Description" htmlFor="sg-desc" error={errors.description?.message}><Textarea id="sg-desc" {...register('description')} /></Field>
         <FormError error={error} />
       </form>

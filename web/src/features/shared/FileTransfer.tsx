@@ -37,8 +37,8 @@ export function ExportMenu({ path, params = {}, name, label = 'Export' }: { path
  * Imports rows from a CSV or Excel file. The header row names the columns; rows
  * with problems are skipped and listed, so nothing half-valid gets in.
  */
-export function ImportButton({ path, title, columns, required, refreshKeys }: {
-  path: string; title: string; columns: string[]; required: string; refreshKeys: string[]
+export function ImportButton({ path, title, columns, required, refreshKeys, notes }: {
+  path: string; title: string; columns: string[]; required: string; refreshKeys: string[]; notes?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<File | null>(null)
@@ -73,6 +73,7 @@ export function ImportButton({ path, title, columns, required, refreshKeys }: {
           <div className="space-y-4">
             <p className="text-ink-2">Upload a <strong>CSV</strong> or <strong>Excel (.xlsx)</strong> file, up to 5 MB and 5,000 rows. The first row names the columns; only <code className="font-mono">{required}</code> is required.</p>
             <div className="rounded-md bg-surface-2 px-3 py-2 font-mono text-[12px] text-ink-2">{columns.join(', ')}</div>
+            {notes && <p className="text-[12.5px] text-ink-3">{notes}</p>}
             <button type="button" onClick={() => input.current?.click()}
               className="flex w-full cursor-pointer flex-col items-center gap-1.5 rounded-md border-2 border-dashed border-line-strong px-4 py-8 text-center hover:border-accent hover:bg-accent-soft/30">
               <FileSpreadsheet size={22} className="text-ink-3" aria-hidden />

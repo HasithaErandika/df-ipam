@@ -35,6 +35,17 @@ type findingDTO struct {
 	DeviceID       *string   `db:"device_id" json:"deviceId"`
 	DeviceStatus   *string   `db:"device_status" json:"deviceStatus"`
 	DeviceName     *string   `db:"device_name" json:"deviceName"`
+	Owner          *string   `db:"owner" json:"owner"`
+	NICVendor      string    `db:"nic_vendor" json:"nicVendor"`
+	Maker          string    `db:"maker" json:"maker"`
+	Model          string    `db:"model" json:"model"`
+	DeviceKind     string    `db:"device_kind" json:"deviceKind"`
+	OSHint         string    `db:"os_hint" json:"osHint"`
+	OpenPorts      []int32   `db:"open_ports" json:"openPorts"`
+	Known          bool      `db:"known" json:"known"`
+	HomeIP         *string   `db:"home_ip" json:"homeIp"`
+	HomeSegment    *string   `db:"home_segment" json:"homeSegment"`
+	PortsChecked   bool      `db:"ports_checked" json:"portsChecked"`
 	Platform       string    `db:"platform" json:"platform"`
 	OpenAlerts     int64     `db:"open_alerts" json:"openAlerts"`
 }
@@ -49,6 +60,12 @@ const findingColumns = `SELECT v.id::text AS id, host(v.ip) AS ip, v.mac::text A
 	v.first_seen, v.last_seen, v.segment_id::text AS segment_id, s.name AS segment_name, s.kind AS segment_kind,
 	i.id::text AS register_id, i.status AS register_status, NULLIF(i.assigned_name, '') AS assigned_name,
 	d.id::text AS device_id, d.status AS device_status, NULLIF(d.name, '') AS device_name,
+	COALESCE(NULLIF(i.owner, ''), NULLIF(d.owner, '')) AS owner,
+	v.nic_vendor, v.maker, v.model, v.device_kind, v.os_hint, v.open_ports, COALESCE(s.check_ports, false) AS ports_checked,
+	COALESCE(` + known + `, false) AS known,
+	CASE WHEN i.id IS NULL THEN (SELECT host(r.ip) FROM ip_addresses r WHERE r.ip <> v.ip AND (r.expected_mac = v.mac OR r.device_id = d.id) ORDER BY r.ip LIMIT 1) END AS home_ip,
+	CASE WHEN i.id IS NULL THEN (SELECT rs.name FROM ip_addresses r JOIN segments rs ON rs.id = r.segment_id
+		WHERE r.ip <> v.ip AND (r.expected_mac = v.mac OR r.device_id = d.id) ORDER BY r.ip LIMIT 1) END AS home_segment,
 	COALESCE(NULLIF(i.platform, ''), d.platform, '') AS platform,
 	(SELECT count(*) FROM alerts a WHERE a.ip = v.ip AND a.status <> 'closed') AS open_alerts`
 
@@ -64,12 +81,27 @@ var kinds = map[string]string{
 	"offline":      "v.last_seen <= now() - " + recent,
 	"dhcp":         "v.source = 'dhcp'",
 	"vpn":          "v.source = 'vpn'",
-	"unknown":      "v.mac IS NOT NULL AND NOT v.is_private_mac AND d.status IS DISTINCT FROM 'approved'",
+	"unknown":      undecided,
+	"known":        known,
 	"rejected":     "d.status = 'rejected'",
 	"private":      "v.is_private_mac",
 	"gateway":      "(v.is_gateway OR v.ip IS NOT DISTINCT FROM s.gateway)",
-	"alerting":     "EXISTS (SELECT 1 FROM alerts a WHERE a.ip = v.ip AND a.status <> 'closed')",
+	"alerting":     alerting,
+	"needs":        "(" + alerting + " OR " + undecided + ")",
+	"new":          "v.first_seen > now() - " + newWindow,
 }
+
+// alerting, undecided, known and newWindow are shared with the summary counts.
+// Known: registered here, or an approved device registered at another address,
+// such as a laptop that moved to another Wi-Fi network.
+const (
+	known = "((i.id IS NOT NULL AND (v.mac IS NULL OR d.status = 'approved')) OR (i.id IS NULL AND d.status = 'approved' AND EXISTS (" + homeWhere + ")))"
+	// homeWhere finds the device's own register entry, by its MAC or its device.
+	homeWhere = "SELECT 1 FROM ip_addresses r WHERE r.ip <> v.ip AND (r.expected_mac = v.mac OR r.device_id = d.id)"
+	alerting  = "EXISTS (SELECT 1 FROM alerts a WHERE a.ip = v.ip AND a.status <> 'closed')"
+	undecided = "(v.mac IS NOT NULL AND (NOT v.is_private_mac OR d.id IS NOT NULL) AND d.status IS DISTINCT FROM 'approved')"
+	newWindow = "interval '1 hour'"
+)
 
 var windows = map[string]string{"1h": "1 hour", "24h": "24 hours", "7d": "7 days", "30d": "30 days"}
 
@@ -93,9 +125,20 @@ func findingFilter(c *gin.Context) (db.Where, error) {
 		v.OneOf("source", src, []string{"arp", "ping", "netbios", "snmp", "dns", "dhcp", "vpn"}, "source")
 		w.Add("v.source = ?", src)
 	}
-	// "now" is what is connected: it answered within the last two scans. A device
-	// that leaves drops out of this view; longer windows keep the history.
-	switch seen := c.DefaultQuery("seen", "now"); seen {
+	seenFilter(c.DefaultQuery("seen", "now"), &w, &v)
+	if q := strings.TrimSpace(c.Query("q")); q != "" {
+		w.Add(`(host(v.ip) ILIKE ? ESCAPE '\' OR v.mac::text ILIKE ? ESCAPE '\' OR v.hostname ILIKE ? ESCAPE '\'
+			OR i.assigned_name ILIKE ? ESCAPE '\' OR d.name ILIKE ? ESCAPE '\' OR v.vendor ILIKE ? ESCAPE '\'
+			OR v.model ILIKE ? ESCAPE '\' OR v.maker ILIKE ? ESCAPE '\')`, db.Contains(q))
+	}
+	return w, v.Err()
+}
+
+// seenFilter limits to a time window. "now" is what is connected: it answered
+// within the last two scans. A device that leaves drops out of this view; longer
+// windows keep the history. Problems are added to v.
+func seenFilter(seen string, w *db.Where, v *validate.V) {
+	switch seen {
 	case "all":
 	case "now":
 		w.Raw("v.last_seen > now() - " + recent)
@@ -103,14 +146,10 @@ func findingFilter(c *gin.Context) (db.Where, error) {
 		span, ok := windows[seen]
 		if !ok {
 			v.Add("seen", "Choose a valid time window.")
+			return
 		}
 		w.Add("v.last_seen > now() - ?::interval", span)
 	}
-	if q := strings.TrimSpace(c.Query("q")); q != "" {
-		w.Add(`(host(v.ip) ILIKE ? ESCAPE '\' OR v.mac::text ILIKE ? ESCAPE '\' OR v.hostname ILIKE ? ESCAPE '\'
-			OR i.assigned_name ILIKE ? ESCAPE '\' OR d.name ILIKE ? ESCAPE '\' OR v.vendor ILIKE ? ESCAPE '\')`, db.Contains(q))
-	}
-	return w, v.Err()
 }
 
 func (h *Handler) findings(c *gin.Context) {

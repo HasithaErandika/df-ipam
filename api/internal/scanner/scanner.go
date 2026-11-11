@@ -49,10 +49,32 @@ type Scanner struct {
 	mu         sync.Mutex
 	status     Status
 	lastManual time.Time
+	fullMu     sync.Mutex
+	lastFull   map[string]fullMark // segment and IP → last full identification
+}
+
+type fullMark struct {
+	at    time.Time
+	ports bool // whether that identification checked ports
+}
+
+// dueFull reports whether a host should be identified in full now, and if so
+// records that it was. It is due on a manual scan, after fullEvery, or when its
+// segment has just started checking ports.
+func (s *Scanner) dueFull(seg segment, ip string, manual bool) bool {
+	key := seg.id + "|" + ip
+	s.fullMu.Lock()
+	defer s.fullMu.Unlock()
+	last, seen := s.lastFull[key]
+	if seen && !manual && time.Since(last.at) < fullEvery && (last.ports || !seg.checkPorts) {
+		return false
+	}
+	s.lastFull[key] = fullMark{at: time.Now(), ports: seg.checkPorts}
+	return true
 }
 
 func New(conn db.Conn) *Scanner {
-	return &Scanner{conn: conn, trigger: make(chan request, 1), status: Status{Segments: []SegmentResult{}}}
+	return &Scanner{conn: conn, trigger: make(chan request, 1), status: Status{Segments: []SegmentResult{}}, lastFull: map[string]fullMark{}}
 }
 
 // Run starts discovery and monitored-IP checks. It returns when ctx is cancelled.
@@ -92,6 +114,9 @@ func (s *Scanner) Snapshot() Status {
 
 func (s *Scanner) scanLoop(ctx context.Context) {
 	next := request{by: "startup"}
+	if !s.waitForStartup(ctx, &next) {
+		return
+	}
 	for {
 		if err := s.scanAll(ctx, next); err != nil && ctx.Err() == nil {
 			slog.ErrorContext(ctx, "network scan failed", "error", err)
@@ -112,6 +137,35 @@ func (s *Scanner) scanLoop(ctx context.Context) {
 			timer.Stop()
 		}
 	}
+}
+
+// waitForStartup holds the first scan after a restart until the interval since
+// the last sweep has passed, so restarting the backend doesn't scan the network
+// again straight away. A manual scan still starts at once. It reports false when
+// ctx ends first.
+func (s *Scanner) waitForStartup(ctx context.Context, next *request) bool {
+	var last *time.Time
+	if err := s.conn.QueryRow(ctx, `SELECT max(last_seen) FROM sightings WHERE source IN ('ping', 'arp', 'netbios')`).Scan(&last); err != nil || last == nil {
+		return true
+	}
+	wait := time.Until(last.Add(interval(ctx, s.conn, "scan.interval_minutes", 5*time.Minute)))
+	if wait <= 0 {
+		return true
+	}
+	at := time.Now().Add(wait)
+	s.mu.Lock()
+	s.status.NextScanAt = &at
+	s.mu.Unlock()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		*next = request{by: "schedule"}
+	case *next = <-s.trigger:
+	}
+	return true
 }
 
 func (s *Scanner) checkLoop(ctx context.Context) {

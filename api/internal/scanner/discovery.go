@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,15 +18,19 @@ type segment struct {
 	id, name, network, kind string
 	dhcpStart, dhcpEnd      string
 	gateway                 string
+	checkPorts              bool
 }
 
 type sighting struct {
 	ip, mac, hostname, source, vendor string
-	static, gateway                   bool
+	nicVendor, maker, model, kind, os string
+	static, gateway, portsChecked     bool
+	full                              bool // identified in full this time
+	ports                             []int
 }
 
 func (s *Scanner) loadSegments(ctx context.Context, only string) ([]segment, error) {
-	rows, err := s.conn.Query(ctx, `SELECT id::text, name, network::text, kind, COALESCE(host(dhcp_start), ''), COALESCE(host(dhcp_end), ''), COALESCE(host(gateway), '')
+	rows, err := s.conn.Query(ctx, `SELECT id::text, name, network::text, kind, COALESCE(host(dhcp_start), ''), COALESCE(host(dhcp_end), ''), COALESCE(host(gateway), ''), check_ports
 		FROM segments WHERE kind <> 'cloud' AND ($1 = '' OR id::text = $1) ORDER BY kind, floor NULLS LAST, name`, only)
 	if err != nil {
 		return nil, err
@@ -36,7 +39,7 @@ func (s *Scanner) loadSegments(ctx context.Context, only string) ([]segment, err
 	var out []segment
 	for rows.Next() {
 		var x segment
-		if err := rows.Scan(&x.id, &x.name, &x.network, &x.kind, &x.dhcpStart, &x.dhcpEnd, &x.gateway); err != nil {
+		if err := rows.Scan(&x.id, &x.name, &x.network, &x.kind, &x.dhcpStart, &x.dhcpEnd, &x.gateway, &x.checkPorts); err != nil {
 			return nil, err
 		}
 		out = append(out, x)
@@ -67,7 +70,7 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 			return err
 		}
 		begin := time.Now()
-		found, err := s.scanSegment(ctx, x)
+		found, err := s.scanSegment(ctx, x, req.by == "manual")
 		result := SegmentResult{ID: x.id, Name: x.name, Found: found, DurationMs: time.Since(begin).Milliseconds(), ScannedAt: begin}
 		if err != nil {
 			result.Error = err.Error()
@@ -76,6 +79,11 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 		s.record(result)
 	}
 	if err := monitoring.New(s.conn).Evaluate(ctx); err != nil {
+		scanErrors = append(scanErrors, err)
+	}
+	// Evidence is kept for 90 days after a device was last seen. Phones that
+	// change their private MAC would otherwise leave rows behind forever.
+	if _, err := s.conn.Exec(ctx, `DELETE FROM sightings WHERE last_seen < now() - interval '90 days'`); err != nil {
 		scanErrors = append(scanErrors, err)
 	}
 	return errors.Join(scanErrors...)
@@ -110,12 +118,15 @@ func scanHosts(network string) ([]netip.Addr, error) {
 	return hosts, nil
 }
 
-func (s *Scanner) scanSegment(ctx context.Context, seg segment) (int, error) {
+// scanSegment sweeps one segment. A manual scan identifies every host in full;
+// a scheduled one only those not identified in full lately (see fullEvery).
+func (s *Scanner) scanSegment(ctx context.Context, seg segment, manual bool) (int, error) {
 	hosts, err := scanHosts(seg.network)
 	if err != nil {
 		return 0, err
 	}
-	hostGateway := defaultGateway()
+	plan := probePlan{seg: seg, hostGateway: defaultGateway(), portSlots: make(chan struct{}, portSlots),
+		full: func(ip string) bool { return s.dueFull(seg, ip, manual) }}
 	results := make(chan sighting, 64)
 	jobs := make(chan netip.Addr)
 	ticker := time.NewTicker(10 * time.Millisecond) // At most 100 probes per second.
@@ -131,32 +142,9 @@ func (s *Scanner) scanSegment(ctx context.Context, seg segment) (int, error) {
 					return
 				case <-ticker.C:
 				}
-				alive, err := ping(ctx, ip, 700*time.Millisecond)
-				if err != nil || !alive {
-					continue
+				if found, ok := identify(ctx, plan, ip); ok {
+					results <- found
 				}
-				name, _ := reverseName(ctx, ip)
-				gateway := name == "_gateway" || ip.String() == seg.gateway || ip.String() == hostGateway
-				if strings.HasPrefix(name, "_") || name == "localhost" {
-					name = "" // synthetic names from the local resolver, such as _gateway
-				}
-				mac, nbName, _ := netbiosStatus(ctx, ip)
-				if name == "" {
-					name = nbName
-				}
-				if name == "" {
-					name = mdnsName(ctx, ip)
-				}
-				upnp := ssdpDescribe(ctx, ip)
-				if name == "" {
-					name = upnp.Name
-				}
-				source := "ping"
-				if mac != "" || nbName != "" {
-					source = "netbios"
-				}
-				results <- sighting{ip: ip.String(), mac: mac, hostname: name, source: source,
-					static: isStatic(seg, ip), gateway: gateway, vendor: upnp.Describe()}
 			}
 		}()
 	}
@@ -184,8 +172,11 @@ func (s *Scanner) scanSegment(ctx context.Context, seg segment) (int, error) {
 		} else if mac, ok := own[found[i].ip]; ok && found[i].mac == "" {
 			found[i].mac, found[i].source = mac, "arp"
 		}
-		if found[i].vendor == "" && !isPrivateMAC(found[i].mac) {
-			found[i].vendor = macVendor(found[i].mac) // the maker named by the MAC's first half
+		// The maker named by the MAC's first half made the network card, which
+		// is often not the device's maker (an Intel Wi-Fi card in an ASUS laptop).
+		found[i].nicVendor = macVendor(found[i].mac)
+		if found[i].vendor == "" && found[i].full {
+			found[i].vendor = found[i].nicVendor // only when the device had its say
 		}
 	}
 	if err := ctx.Err(); err != nil {

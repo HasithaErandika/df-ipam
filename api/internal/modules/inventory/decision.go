@@ -98,5 +98,6 @@ func (h *Handler) decideDevice(c *gin.Context) {
 		httpx.Fail(c, db.Friendly(err, "That IP is already in the register."))
 		return
 	}
+	h.recheck(c)
 	c.Status(http.StatusNoContent)
 }

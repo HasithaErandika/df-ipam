@@ -11,6 +11,7 @@ import { inventoryKeys, useInvalidate } from '../../lib/queries'
 import type { Device } from '../../lib/types'
 import { platformOf } from '../../lib/platforms'
 import { isMAC, requiredText, text } from '../../lib/validation'
+import { DepartmentSelect } from '../shared/DepartmentSelect'
 import { PlatformSelect } from '../shared/PlatformFields'
 
 const schema = z.object({
@@ -60,7 +61,7 @@ export function DeviceFormModal({ open, device, onClose }: { open: boolean; devi
         <PlatformSelect id="d-platform" value={watch('platform')} onChange={(v) => setValue('platform', v)}
           guess={device ? platformOf(null, device.vendor, device.hostname)?.platform : undefined} />
         <Field label="Owner" htmlFor="d-owner" error={errors.owner?.message}><Input id="d-owner" {...register('owner')} /></Field>
-        <Field label="Department" htmlFor="d-dept" error={errors.department?.message}><Input id="d-dept" {...register('department')} /></Field>
+        <DepartmentSelect id="d-dept" value={watch('department')} onChange={(v) => setValue('department', v, { shouldDirty: true })} error={errors.department?.message} />
         <div className="sm:col-span-2"><Field label="Notes" htmlFor="d-notes" error={errors.notes?.message}><Textarea id="d-notes" {...register('notes')} /></Field></div>
         <div className="sm:col-span-2"><FormError error={error} /></div>
       </form>

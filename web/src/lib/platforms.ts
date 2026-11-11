@@ -66,5 +66,34 @@ export function platformOf(recorded: string | null | undefined, vendor?: string 
   return null
 }
 
+const byModel: [RegExp, string][] = [[/^(macbook|imac|macmini|macpro|mac\d)/i, 'macos'], [/^(iphone|ipad|ipod)/i, 'ios'], [/^appletv/i, 'ios']]
+
+/** What the device evidence a form can offer as a likely platform. */
+export interface PlatformEvidence { vendor?: string | null; hostname?: string | null; model?: string | null; osHint?: string | null }
+
+/**
+ * A likely platform for a form to offer, never a maker or device kind: those are
+ * not platforms, and a form holding one could not be saved. Only a suggestion;
+ * a person chooses it.
+ */
+export function likelyPlatform(e: PlatformEvidence): string | null {
+  for (const [re, p] of byModel) if (e.model && re.test(e.model)) return p
+  const guess = platformOf(null, e.vendor, e.hostname)?.platform
+  if (guess && guess in platforms) return guess
+  if (e.osHint?.startsWith('Windows')) return 'windows'
+  return null
+}
+
+/** The device's maker read from its own name (ASUS-Q533MJ is an ASUS), as a maker code. */
+export function makerFromName(hostname: string | null | undefined): string | null {
+  if (!hostname) return null
+  const first = hostname.split(/[-_ .]/)[0]
+  for (const [re, m] of byMaker) if (re.test(first) || re.test(hostname)) return m
+  return null
+}
+
+/** A recorded platform the form can show, or "" when it is not one of the listed ones. */
+export const knownPlatform = (p: string | null | undefined) => (p && p in platforms ? p : '')
+
 /** A readable name for any platform, kind or maker code. */
 export const platformName = (code: string) => platforms[code] ?? kinds[code] ?? makers[code] ?? code

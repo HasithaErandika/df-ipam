@@ -431,6 +431,66 @@ ALTER TABLE alerts DROP CONSTRAINT alerts_alert_type_check;
 ALTER TABLE alerts ADD CONSTRAINT alerts_alert_type_check CHECK (alert_type IN ('unknown_device', 'unregistered_static',
   'register_misuse', 'unknown_server_ip', 'ip_conflict', 'server_down', 'server_mac_changed', 'rejected_device', 'private_mac_device'));
 
+-- 000009_lite_device_details.up.sql
+-- What a device says about itself, kept apart from its network card. nic_vendor
+-- is the maker named by the MAC's first half (the card, not the device). maker,
+-- model and device_kind come from UPnP or mDNS, and os_hint from the ping reply's
+-- TTL. All are evidence only: never written to the register or devices.
+ALTER TABLE sightings
+  ADD COLUMN nic_vendor  text NOT NULL DEFAULT '',
+  ADD COLUMN maker       text NOT NULL DEFAULT '',
+  ADD COLUMN model       text NOT NULL DEFAULT '',
+  ADD COLUMN device_kind text NOT NULL DEFAULT '',
+  ADD COLUMN os_hint     text NOT NULL DEFAULT '';
+
+-- 000010_lite_departments.up.sql
+-- Departments people pick from on devices and register entries. Those keep the
+-- name as text, so existing entries stay valid; renaming a department renames
+-- it on them in the same transaction (admin module).
+CREATE TABLE departments (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text NOT NULL CHECK (btrim(name) <> '' AND length(name) <= 120),
+  description text NOT NULL DEFAULT '' CHECK (length(description) <= 300),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX departments_name_key ON departments (lower(name));
+CREATE TRIGGER departments_updated BEFORE UPDATE ON departments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE departments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dfipam_app_all ON departments TO dfipam_app USING (true) WITH CHECK (true);
+GRANT SELECT, INSERT, UPDATE, DELETE ON departments TO dfipam_app;
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON departments FROM %I', r);
+    END IF;
+  END LOOP;
+END $$;
+
+-- Start from the names already in use, so nothing typed before is lost.
+INSERT INTO departments (name)
+SELECT DISTINCT ON (lower(btrim(department))) btrim(department)
+FROM (SELECT department FROM devices UNION ALL SELECT department FROM ip_addresses) d
+WHERE btrim(department) <> '' AND length(btrim(department)) <= 120
+ORDER BY lower(btrim(department)), btrim(department)
+ON CONFLICT DO NOTHING;
+
+-- 000011_lite_port_checks.up.sql
+-- Per segment: during each scan, try a short fixed list of common TCP ports on
+-- every device that answers, and keep which are open. A connect that is closed
+-- at once, with nothing sent; still, security tools may see it as a port scan,
+-- so it is off by default. Evidence only, replaced on every scan.
+ALTER TABLE segments ADD COLUMN check_ports boolean NOT NULL DEFAULT false;
+ALTER TABLE sightings ADD COLUMN open_ports integer[] NOT NULL DEFAULT '{}' CHECK (cardinality(open_ports) <= 64);
+
+-- Discovery looks up where a device is registered when it turns up at another
+-- address (a laptop moving between Wi-Fi networks), by MAC or by device.
+CREATE INDEX ip_addresses_expected_mac_idx ON ip_addresses (expected_mac) WHERE expected_mac IS NOT NULL;
+CREATE INDEX ip_addresses_device_idx ON ip_addresses (device_id) WHERE device_id IS NOT NULL;
+
 -- Seed data
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Production', '#dc2626', 10, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('DR', '#9333ea', 20, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
@@ -448,6 +508,6 @@ INSERT INTO settings (key, value) VALUES ('fortigate.enabled', 'false'::jsonb) O
 INSERT INTO settings (key, value) VALUES ('fortigate.verify_tls', 'true'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('fortigate.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (8, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (11, false);
 
 COMMIT;

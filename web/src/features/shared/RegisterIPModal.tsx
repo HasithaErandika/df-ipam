@@ -12,6 +12,7 @@ import { inventoryKeys, useEnvironments, useInvalidate, useSegments } from '../.
 import type { RegisterEntry } from '../../lib/types'
 import { choose, inNetwork, ipv4, optionalInt, optionalMAC, text, toInt } from '../../lib/validation'
 import { AddressCheck } from './AddressCheck'
+import { DepartmentSelect } from './DepartmentSelect'
 import { PlatformSelect, ServicePicker } from './PlatformFields'
 
 const schema = z.object({
@@ -38,7 +39,7 @@ type Values = z.infer<typeof schema>
 const fields = Object.keys(schema.shape) as (keyof Values)[]
 
 /** What to pre-fill when registering from something seen on the network. */
-export interface RegisterPrefill { segmentId?: string; ip?: string; mac?: string | null; name?: string | null; ipType?: string; platform?: string }
+export interface RegisterPrefill { segmentId?: string; ip?: string; mac?: string | null; name?: string | null; ipType?: string; platform?: string; platformGuess?: string | null }
 
 function initial(entry?: RegisterEntry, prefill?: RegisterPrefill): Values {
   return {
@@ -152,10 +153,10 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
             <Field label="Expected MAC (optional)" htmlFor="reg-mac" error={errors.expectedMac?.message} hint="An alert is raised if another MAC answers.">
               <Input id="reg-mac" className="font-mono" placeholder="00:11:22:33:44:55" {...register('expectedMac')} />
             </Field>
-            <PlatformSelect id="reg-platform" value={watch('platform')} onChange={(v) => setValue('platform', v)} />
+            <PlatformSelect id="reg-platform" value={watch('platform')} onChange={(v) => setValue('platform', v)} guess={entry ? undefined : prefill?.platformGuess} />
             <div className="hidden sm:block" />
             <Field label="Owner" htmlFor="reg-owner" error={errors.owner?.message}><Input id="reg-owner" {...register('owner')} /></Field>
-            <Field label="Department" htmlFor="reg-dept" error={errors.department?.message}><Input id="reg-dept" {...register('department')} /></Field>
+            <DepartmentSelect id="reg-dept" value={watch('department')} onChange={(v) => setValue('department', v, { shouldDirty: true })} error={errors.department?.message} />
           </div>
         </FormSection>
         {(watch('ipType') === 'server' || segment?.kind !== 'dhcp') && (

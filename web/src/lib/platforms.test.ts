@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { platformOf } from './platforms'
+import { likelyPlatform, platformOf } from './platforms'
 
 describe('platformOf', () => {
   it('prefers what a person recorded', () => {
@@ -16,5 +16,19 @@ describe('platformOf', () => {
 
   it('says nothing when there is no evidence', () => {
     expect(platformOf('', '', 'host-17')).toBeNull()
+  })
+})
+
+describe('likelyPlatform', () => {
+  it('never offers a maker or device kind', () => {
+    expect(likelyPlatform({ vendor: 'Intel Corporate', hostname: 'ASUS-Q533MJ' })).toBeNull()
+    expect(likelyPlatform({ vendor: 'Samsung · TV or media player' })).toBeNull()
+  })
+
+  it('reads the model, the evidence, then the TTL hint', () => {
+    expect(likelyPlatform({ model: 'MacBookPro18,1' })).toBe('macos')
+    expect(likelyPlatform({ model: 'iPhone14,2' })).toBe('ios')
+    expect(likelyPlatform({ hostname: 'DESKTOP-7Q2' })).toBe('windows')
+    expect(likelyPlatform({ vendor: 'Intel Corporate', osHint: 'Windows (TTL 128)' })).toBe('windows')
   })
 })

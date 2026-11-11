@@ -5,6 +5,7 @@ import { Button, Card, Details, ErrorState, Field, FormError, Input, Notice, Ske
 import { get, post, put } from '../../lib/api'
 import { formatAgo } from '../../lib/format'
 import { useInvalidate } from '../../lib/queries'
+import { listChanges } from '../../lib/changes'
 
 interface FortiGate {
   config: { enabled: boolean; url: string; vdom: string; verifyTls: boolean; intervalMinutes: number; hasToken: boolean }
@@ -34,6 +35,11 @@ export function FortiGateTab() {
   const interval = Number(form.intervalMinutes)
   const urlIssue = form.url && !form.url.startsWith('https://') ? 'Use an https:// address.' : form.enabled && !form.url ? 'Enter the address to switch the connection on.' : undefined
   const bad = Boolean(urlIssue) || !Number.isInteger(interval) || interval < 5 || interval > 1440
+  const saved = { enabled: config.enabled, url: config.url, vdom: config.vdom, verifyTls: config.verifyTls, intervalMinutes: String(config.intervalMinutes), token: '' }
+  const changes = [
+    ...listChanges(saved, form, { enabled: 'Read on a schedule', url: 'Address', vdom: 'VDOM', intervalMinutes: 'Read every (minutes)', verifyTls: 'Verify certificate' }),
+    ...(form.token ? [config.hasToken ? 'API token: replaced' : 'API token: added'] : []),
+  ]
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
 
   return (
@@ -56,7 +62,7 @@ export function FortiGateTab() {
             hint={form.verifyTls ? 'Recommended.' : 'Off: only for a firewall with a self-signed certificate on a trusted management network.'} />
           <FormError error={save.error} />
           <div className="flex flex-wrap gap-2 border-t border-line pt-4">
-            <Button variant="primary" disabled={bad} busy={save.isPending} onClick={() => void confirmSave('the FortiGate connection', () => save.mutate(), 'Saved settings take effect on the next read and are recorded in the audit log. The token is never logged.')}>Save</Button>
+            <Button variant="primary" disabled={bad || changes.length === 0} busy={save.isPending} onClick={() => void confirmSave('the FortiGate connection', () => save.mutate(), 'Saved settings take effect on the next read and are recorded in the audit log. The token is never logged.', changes)}>Save</Button>
             <Button disabled={!config.hasToken} busy={test.isPending} onClick={() => test.mutate()}><PlugZap size={14} aria-hidden />Test connection</Button>
             <Button disabled={!config.hasToken || status.running} busy={sync.isPending || status.running} onClick={() => sync.mutate()}>{!status.running && <RefreshCw size={14} aria-hidden />}Read now</Button>
           </div>

@@ -20,6 +20,8 @@ export interface Segment {
   environmentName: string | null
   description: string
   alertPrivateMacs: boolean
+  /** Checks a short list of common TCP ports on each device during scans. */
+  checkPorts: boolean
   registered: number
   seen: number
   online: number
@@ -31,6 +33,14 @@ export interface Segment {
   detectedGateway: string | null
   usableSize: number
   updatedAt: string
+}
+
+export interface Department {
+  id: string
+  name: string
+  description: string
+  devices: number
+  addresses: number
 }
 
 export interface Environment {
@@ -117,6 +127,22 @@ export interface Finding {
   deviceId: string | null
   deviceStatus: DeviceStatus | null
   deviceName: string | null
+  owner: string | null
+  /** Maker of the network card, from the MAC: often not the device's maker. */
+  nicVendor: string
+  maker: string
+  model: string
+  deviceKind: string
+  /** Likely system family from the ping reply's TTL. A hint only. */
+  osHint: string
+  /** Common TCP ports found open in the last scan, when the segment checks them. */
+  openPorts: number[]
+  portsChecked: boolean
+  /** Registered here, or an approved device registered at another address. */
+  known: boolean
+  /** Where this device is registered, when it is seen at an address that isn't. */
+  homeIp: string | null
+  homeSegment: string | null
   platform: string
   openAlerts: number
 }

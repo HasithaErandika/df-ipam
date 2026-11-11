@@ -40,6 +40,7 @@ func (h *Handler) createIP(c *gin.Context) {
 		httpx.Fail(c, friendlyIP(err))
 		return
 	}
+	h.recheck(c)
 	httpx.OK(c, http.StatusCreated, gin.H{"id": id})
 }
 
@@ -77,6 +78,7 @@ func (h *Handler) updateIP(c *gin.Context) {
 		httpx.Fail(c, friendlyIP(err))
 		return
 	}
+	h.recheck(c)
 	c.Status(http.StatusNoContent)
 }
 
@@ -101,6 +103,7 @@ func (h *Handler) releaseIP(c *gin.Context) {
 		httpx.Fail(c, friendlyIP(err))
 		return
 	}
+	h.recheck(c)
 	c.Status(http.StatusNoContent)
 }
 

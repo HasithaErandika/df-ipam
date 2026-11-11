@@ -18,36 +18,41 @@ import (
 // the asker, so this works through NAT and sends no multicast. iPhones, Macs,
 // many Android phones, printers and Linux machines with Avahi answer it.
 func mdnsName(parent context.Context, ip netip.Addr) string {
+	b := ip.As4()
+	return parsePTR(mdnsAsk(parent, ip, fmt.Sprintf("%d.%d.%d.%d.in-addr.arpa.", b[3], b[2], b[1], b[0]), dnsmessage.TypePTR))
+}
+
+// mdnsAsk sends one unicast mDNS question to the host and returns its raw answer.
+func mdnsAsk(parent context.Context, ip netip.Addr, question string, typ dnsmessage.Type) []byte {
 	ctx, cancel := context.WithTimeout(parent, 700*time.Millisecond)
 	defer cancel()
+	name, err := dnsmessage.NewName(question)
+	if err != nil {
+		return nil
+	}
+	query, err := (&dnsmessage.Message{
+		Header:    dnsmessage.Header{ID: uint16(time.Now().UnixNano())},
+		Questions: []dnsmessage.Question{{Name: name, Type: typ, Class: dnsmessage.ClassINET}},
+	}).Pack()
+	if err != nil {
+		return nil
+	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "udp4", net.JoinHostPort(ip.String(), "5353"))
 	if err != nil {
-		return ""
+		return nil
 	}
 	defer conn.Close()
 	deadline, _ := ctx.Deadline()
 	_ = conn.SetDeadline(deadline)
-	b := ip.As4()
-	name, err := dnsmessage.NewName(fmt.Sprintf("%d.%d.%d.%d.in-addr.arpa.", b[3], b[2], b[1], b[0]))
-	if err != nil {
-		return ""
-	}
-	query, err := (&dnsmessage.Message{
-		Header:    dnsmessage.Header{ID: uint16(time.Now().UnixNano())},
-		Questions: []dnsmessage.Question{{Name: name, Type: dnsmessage.TypePTR, Class: dnsmessage.ClassINET}},
-	}).Pack()
-	if err != nil {
-		return ""
-	}
 	if _, err := conn.Write(query); err != nil {
-		return ""
+		return nil
 	}
 	buf := make([]byte, 1500)
 	n, err := conn.Read(buf)
 	if err != nil {
-		return ""
+		return nil
 	}
-	return parsePTR(buf[:n])
+	return buf[:n]
 }
 
 // parsePTR returns the first PTR answer, without the trailing dot or ".local".

@@ -3,10 +3,12 @@ package inventory
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/modules/monitoring"
 	"dfipam/api/internal/platform/db"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +43,15 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/ip-addresses/check", h.check, edit, auth.RequestsApprove, auth.IPReserve)
 	g.Handle(http.MethodGet, "/ip-addresses/export", h.exportRegister, read)
 	g.Handle(http.MethodPost, "/ip-addresses/import", h.importRegister, edit)
+}
+
+// recheck re-evaluates alerts after a committed change, before the reply, so an
+// approved or registered device stops warning at once instead of after the next
+// scan. The change already stands, so a failure here is only logged.
+func (h *Handler) recheck(c *gin.Context) {
+	if err := monitoring.New(h.conn).Evaluate(c); err != nil {
+		slog.ErrorContext(c, "alert re-check after a change failed", "error", err)
+	}
 }
 
 func actor(c *gin.Context) string { return auth.Current(c).UserID }

@@ -1,7 +1,7 @@
 import { Badge, Card, DataTable, DeviceBadge, FilterBar, GatewayBadge, none, PrivateMacBadge, RegisterBadge, SearchInput, Segmented, Stack, type Column } from '../../components/ui'
 import { useFilters, usePagedList } from '../../lib/listing'
 import { WithPlatform } from '../../components/PlatformIcon'
-import { platformOf } from '../../lib/platforms'
+import { knownPlatform, likelyPlatform } from '../../lib/platforms'
 import type { SegmentAddress } from '../../lib/types'
 import type { RegisterPrefill } from '../shared/RegisterIPModal'
 import { Presence } from './findingColumns'
@@ -26,7 +26,7 @@ export function SegmentAddresses({ segmentId, onRegister }: { segmentId: string;
     { key: 'approval', header: 'Approval', hideBelow: 'lg', cell: (r) => (r.mac && !r.isPrivateMac ? <DeviceBadge status={r.deviceStatus} /> : none) },
     { key: 'presence', header: 'Presence', cell: (r) => (r.lastSeen ? <Presence online={recent(r.lastSeen)} firstSeen={r.firstSeen} lastSeen={r.lastSeen} /> : <span className="text-[12.5px] text-ink-3">Never seen</span>) },
     { key: 'act', header: '', className: 'text-right', cell: (r) => (onRegister && !r.registerId
-      ? <button type="button" className="cursor-pointer text-[12.5px] font-medium text-accent hover:underline" onClick={() => onRegister({ segmentId, ip: r.ip, mac: r.mac, name: r.hostname ?? r.deviceName, platform: platformOf(r.platform, r.vendor, r.hostname)?.platform })}>Add to register</button>
+      ? <button type="button" className="cursor-pointer text-[12.5px] font-medium text-accent hover:underline" onClick={() => onRegister({ segmentId, ip: r.ip, mac: r.mac, name: r.hostname ?? r.deviceName, platform: knownPlatform(r.platform), platformGuess: likelyPlatform(r) })}>Add to register</button>
       : null) },
   ]
   return (

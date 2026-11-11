@@ -33,6 +33,10 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPost, "/environments", h.createEnvironment, auth.SystemManage)
 	g.Handle(http.MethodPut, "/environments/:id", h.updateEnvironment, auth.SystemManage)
 	g.Handle(http.MethodDelete, "/environments/:id", h.deleteEnvironment, auth.SystemManage)
+	g.Handle(http.MethodGet, "/departments", h.departments, auth.InventoryView, auth.IPRequest)
+	g.Handle(http.MethodPost, "/departments", h.createDepartment, auth.SystemManage)
+	g.Handle(http.MethodPut, "/departments/:id", h.updateDepartment, auth.SystemManage)
+	g.Handle(http.MethodDelete, "/departments/:id", h.deleteDepartment, auth.SystemManage)
 	g.Handle(http.MethodGet, "/settings", h.settings, auth.SystemManage)
 	g.Handle(http.MethodPut, "/settings", h.updateSettings, auth.SystemManage)
 }
