@@ -3,13 +3,15 @@ import { useMutation } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { Button, Field, FormError, FormSection, Input, Modal, Select, Switch, Textarea, useConfirmSave } from '../../components/ui'
+import { Badge, Button, Field, FormError, FormSection, Input, Modal, Select, Switch, Textarea, useConfirmSave } from '../../components/ui'
 import { post, put } from '../../lib/api'
 import { applyServerErrors } from '../../lib/forms'
+import { formatCount } from '../../lib/format'
 import { inventoryKeys, useEnvironments, useInvalidate } from '../../lib/queries'
 import { listChanges } from '../../lib/changes'
 import type { Segment } from '../../lib/types'
-import { cidrIssue, inNetwork, ipToInt, optionalInt, optionalIPv4, requiredText, text, toInt } from '../../lib/validation'
+import { AddressLayout, type NetworkInfo } from '../discovery/SegmentFacts'
+import { cidrIssue, inNetwork, ipToInt, ipv4NetworkInfo, isIPv4, optionalInt, optionalIPv4, requiredText, text, toInt } from '../../lib/validation'
 
 const schema = z.object({
   name: requiredText('Name', 80),
@@ -62,6 +64,23 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
   const { register, handleSubmit, reset, watch, setValue, setError, formState: { errors, isDirty } } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial(segment) })
   useEffect(() => { if (open) { reset(initial(segment)); setFormError(null) } }, [open, segment, reset])
   const kind = watch('kind')
+  const networkValue = watch('network')
+  const subnet = ipv4NetworkInfo(networkValue)
+  const preview: NetworkInfo | null = subnet ? {
+    ...subnet, totalAddresses: String(subnet.totalAddresses), usableAddresses: String(subnet.usableAddresses),
+  } : null
+  const poolStart = watch('dhcpStart')
+  const poolEnd = watch('dhcpEnd')
+  const gateway = watch('gateway')
+  const validPool = Boolean(preview && kind === 'dhcp' && isIPv4(poolStart) && isIPv4(poolEnd)
+    && inNetwork(poolStart, networkValue) && inNetwork(poolEnd, networkValue) && ipToInt(poolEnd) >= ipToInt(poolStart))
+  const validGateway = Boolean(preview && subnet && isIPv4(gateway) && inNetwork(gateway, networkValue)
+    && ipToInt(gateway) >= ipToInt(subnet.firstUsable) && ipToInt(gateway) <= ipToInt(subnet.lastUsable))
+  const poolUsableCount = validPool && subnet
+    ? Math.max(0, Math.min(ipToInt(poolEnd), ipToInt(subnet.lastUsable)) - Math.max(ipToInt(poolStart), ipToInt(subnet.firstUsable)) + 1)
+    : 0
+  const gatewayInPool = validGateway && validPool && ipToInt(gateway) >= ipToInt(poolStart) && ipToInt(gateway) <= ipToInt(poolEnd)
+  const estimatedAvailable = subnet ? Math.max(0, subnet.usableAddresses - poolUsableCount - (validGateway && !gatewayInPool ? 1 : 0)) : 0
   const save = useMutation({
     mutationFn: (v: Values) => {
       const body = { ...v, floor: toInt(v.floor), vlan: toInt(v.vlan), dhcpStart: kind === 'dhcp' ? v.dhcpStart : '', dhcpEnd: kind === 'dhcp' ? v.dhcpEnd : '', defaultEnvironmentId: kind === 'dhcp' ? '' : v.defaultEnvironmentId }
@@ -92,6 +111,23 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
             {kind !== 'cloud' && <Field label="Floor (optional)" htmlFor="sg-floor" error={errors.floor?.message}><Input id="sg-floor" inputMode="numeric" {...register('floor')} /></Field>}
             <Field label="VLAN (optional)" htmlFor="sg-vlan" error={errors.vlan?.message}><Input id="sg-vlan" inputMode="numeric" {...register('vlan')} /></Field>
           </div>
+          {preview && (
+            <div className="mt-4 rounded-md border border-line bg-surface p-3.5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div><h3 className="text-[13px] font-semibold text-ink">Address space preview</h3><p className="text-[11.5px] text-ink-3">Updates as you edit the network, gateway and DHCP pool.</p></div>
+                <Badge tone="ok">Live</Badge>
+              </div>
+              <p className="mb-3 text-[12px] text-ink-2">Subnet mask <span className="font-mono font-medium">{preview.mask}</span><span className="mx-2 text-ink-3">·</span>Broadcast <span className="font-mono font-medium">{preview.broadcast}</span></p>
+              <AddressLayout info={preview} poolStart={validPool ? poolStart : null} poolEnd={validPool ? poolEnd : null} gateway={validGateway ? gateway : null} />
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">Total addresses</div><div className="text-[13px] font-semibold text-ink">{formatCount(Number(preview.totalAddresses))}</div></div>
+                <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">Usable addresses</div><div className="text-[13px] font-semibold text-ink">{formatCount(Number(preview.usableAddresses))}</div><div className="truncate font-mono text-[10.5px] text-ink-3" title={`${preview.firstUsable} – ${preview.lastUsable}`}>{preview.firstUsable} – {preview.lastUsable}</div></div>
+                <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">Potential available</div><div className="text-[13px] font-semibold text-ok">{formatCount(estimatedAvailable)}</div></div>
+                <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">DHCP pool</div><div className="text-[13px] font-semibold text-ink">{validPool ? formatCount(ipToInt(poolEnd) - ipToInt(poolStart) + 1) : kind === 'dhcp' ? 'Not set' : 'None'}</div></div>
+              </div>
+              <p className="mt-2 text-[11.5px] text-ink-3">Potential available subtracts the entered gateway and DHCP pool. After saving, actual Available candidates also account for registered and reserved addresses and recent discovery.</p>
+            </div>
+          )}
         </FormSection>
         {kind === 'dhcp' ? (
           <FormSection title="DHCP pool">

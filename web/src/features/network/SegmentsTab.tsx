@@ -1,83 +1,69 @@
 import { useMutation } from '@tanstack/react-query'
-import { AlertTriangle, CloudOff, ListTree, Pencil, Plus, ScanSearch, Smartphone, Trash2 } from 'lucide-react'
+import { ArrowRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Badge, Button, Card, EmptyState, EnvironmentBadge, ErrorState, FilterBar, FilterSelect, RowMenu, SearchInput, SkeletonRows, useConfirm } from '../../components/ui'
 import { cx } from '../../components/ui/cx'
 import { del } from '../../lib/api'
-import { formatAgo } from '../../lib/format'
+import { formatCount } from '../../lib/format'
+import { label, segmentKinds } from '../../lib/labels'
 import { useFilters } from '../../lib/listing'
 import { inventoryKeys, useInvalidate, useSegments } from '../../lib/queries'
 import type { Segment } from '../../lib/types'
+import { ipv4NetworkInfo } from '../../lib/validation'
+import { ScanButton } from '../shared/ScanButton'
 import { SegmentForm } from './SegmentForm'
 import { SegmentImport } from './SegmentImport'
-import { attention, kindOrder, kindTitle, matches, sorts, use } from './segmentList'
+import { attention, kindOrder, kindTitle, matches, sorts } from './segmentList'
 
 const chips = [
   { key: '', label: 'All' }, { key: 'dhcp', label: 'DHCP' }, { key: 'server', label: 'Server' }, { key: 'cloud', label: 'Cloud' }, { key: 'attention', label: 'Needs attention' },
 ]
 
-function UseBar({ s }: { s: Segment }) {
-  const u = use(s)
-  const tone = u.pct >= 90 ? 'bg-danger' : u.pct >= 75 ? 'bg-[var(--meter-warning)]' : 'bg-accent'
-  return (
-    <div className="w-36" title={u.text}>
-      <div className="h-1.5 overflow-hidden rounded-full bg-track"><div className={cx('h-full rounded-full', tone)} style={{ width: `${Math.min(u.pct, 100)}%` }} /></div>
-      <div className="mt-1 truncate text-[11.5px] text-ink-3">{u.text}</div>
-    </div>
-  )
-}
-
-function Flags({ s }: { s: Segment }) {
-  return (
-    <span className="flex items-center gap-1.5 text-ink-3">
-      {s.kind === 'cloud' && <span title="Never swept from the building"><CloudOff size={14} aria-label="Not swept" /></span>}
-      {s.checkPorts && <span title="Checks common ports"><ScanSearch size={14} aria-label="Port checks on" /></span>}
-      {s.alertPrivateMacs && <span title="Alerts on private-MAC devices"><Smartphone size={14} aria-label="Private-MAC alerts on" /></span>}
-    </span>
-  )
-}
-
-function Row({ s, onEdit, onDelete }: { s: Segment; onEdit: () => void; onDelete: () => void }) {
+function SegmentCard({ s, onEdit, onDelete }: { s: Segment; onEdit: () => void; onDelete: () => void }) {
+  const dhcp = s.kind === 'dhcp'
   const issue = attention(s)
+  const network = ipv4NetworkInfo(s.network)
+
   return (
-    <tr className="group border-b border-line last:border-0 hover:bg-surface-2/70">
-      <td className="px-3 py-2.5 align-top">
-        <Link className="font-medium text-ink hover:text-accent hover:underline" to={`/segments/${s.id}`}>{s.name}</Link>
-        {s.description && <div className="max-w-[28rem] truncate text-[12px] text-ink-3" title={s.description}>{s.description}</div>}
-        {issue && <div className="mt-0.5 flex items-center gap-1 text-[12px] text-warn"><AlertTriangle size={12} aria-hidden />{issue}</div>}
-      </td>
-      <td className="px-3 py-2.5 align-top">
-        <div className="font-mono text-[12.5px] text-ink">{s.network}</div>
-        <div className="font-mono text-[11.5px] text-ink-3">
-          {[s.gateway ? `gw ${s.gateway}` : s.detectedGateway ? `gw ${s.detectedGateway} (seen)` : null, s.vlan !== null ? `VLAN ${s.vlan}` : null, s.floor !== null ? `Floor ${s.floor}` : null].filter(Boolean).join(' · ') || '—'}
+    <article className="flex min-w-0 flex-col rounded-md border border-line bg-surface p-3.5 transition-colors hover:border-line-strong">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <Link to={`/segments/${s.id}`} className="block truncate text-[14px] font-semibold text-ink hover:text-accent">{s.name}</Link>
         </div>
-      </td>
-      <td className="px-3 py-2.5 align-top max-md:hidden">
-        {s.kind === 'dhcp'
-          ? (s.dhcpStart ? <span className="font-mono text-[12px] text-ink-2">{s.dhcpStart} – {s.dhcpEnd}</span> : <span className="text-[12px] text-warn">No pool</span>)
-          : <EnvironmentBadge name={s.environmentName} />}
-      </td>
-      <td className="px-3 py-2.5 align-top max-lg:hidden"><UseBar s={s} /></td>
-      <td className="px-3 py-2.5 align-top text-[12px] text-ink-2 max-xl:hidden">
-        <div className="tabular-nums">{s.online} online</div>
-        <div className="text-ink-3">{s.lastSeen ? `seen ${formatAgo(s.lastSeen)}` : 'nothing seen yet'}</div>
-      </td>
-      <td className="px-3 py-2.5 align-top max-md:hidden"><Flags s={s} /></td>
-      <td className="px-3 py-2.5 text-right align-top whitespace-nowrap">
-        <span className="inline-flex items-center gap-1">
-          <Link to={`/segments/${s.id}`} className="inline-flex h-7 items-center gap-1 rounded-[5px] border border-line-strong px-2 text-[12px] font-medium text-ink hover:bg-surface-2"><ListTree size={13} aria-hidden />Addresses</Link>
+        <div className="flex shrink-0 items-start gap-1">
+          <Badge tone={dhcp ? 'accent' : 'neutral'}>{label(segmentKinds, s.kind)}</Badge>
+          {s.environmentName && <EnvironmentBadge name={s.environmentName} />}
           <RowMenu actions={[
             { label: 'Edit', icon: <Pencil size={14} aria-hidden />, onSelect: onEdit },
             { label: 'Delete', icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: onDelete },
           ]} />
-        </span>
-      </td>
-    </tr>
+        </div>
+      </div>
+      <div className="mt-3 rounded-md bg-surface-2 p-3">
+        <div className="text-[10.5px] font-medium uppercase tracking-wide text-ink-3">Network</div>
+        <div className="mt-0.5 truncate font-mono text-[15px] font-semibold text-ink">{s.network}</div>
+        {network && <>
+          <div className="mt-1 text-[11.5px] text-ink-2">Subnet mask <span className="font-mono">{network.mask}</span><span className="mx-1.5 text-ink-3">·</span>Broadcast <span className="font-mono">{network.broadcast}</span></div>
+          <div className="mt-1 text-[11.5px] text-ink-2">Usable <span className="font-mono">{network.firstUsable} – {network.lastUsable}</span> <span className="text-ink-3">· {formatCount(network.totalAddresses)} total / {formatCount(network.usableAddresses)} usable</span></div>
+        </>}
+        <div className="mt-1 flex flex-wrap gap-x-2 text-[11.5px] text-ink-3">
+          {(s.gateway || s.detectedGateway) && <span>Gateway <span className="font-mono text-ink-2">{s.gateway ?? s.detectedGateway}</span>{!s.gateway && ' (detected)'}</span>}
+          {s.vlan !== null && <span>VLAN {s.vlan}</span>}
+          {s.floor !== null && <span>Floor {s.floor}</span>}
+        </div>
+      </div>
+      {issue && <p className="mt-2 truncate text-[11.5px] text-warn" title={issue}>{issue}</p>}
+      <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-[12px]">
+        <span className="truncate text-ink-3">{s.kind === 'cloud' ? 'Not swept from the building' : 'Ready to scan'}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {s.kind !== 'cloud' && <ScanButton segmentId={s.id} label="Scan" />}
+          <Link to={`/segments/${s.id}`} className="inline-flex h-8 items-center gap-1 rounded-[5px] px-2 font-medium text-accent hover:bg-accent-soft">Open<ArrowRight size={13} aria-hidden /></Link>
+        </div>
+      </div>
+    </article>
   )
 }
-
-const th = 'border-b border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold tracking-[.04em] whitespace-nowrap text-ink-3 uppercase'
 
 export function SegmentsTab() {
   const q = useSegments()
@@ -98,7 +84,7 @@ export function SegmentsTab() {
   }
 
   return (
-    <Card title="Segments" subtitle="DHCP networks (floors and Wi-Fi), server networks and cloud networks. Networks never overlap; open one to see every address."
+    <Card className="w-full min-w-0" title="Segments" subtitle="A visual map of DHCP, server and cloud networks. Open a segment to inspect addresses and discovery evidence."
       action={<div className="flex gap-2"><SegmentImport /><Button variant="primary" onClick={() => setForm({})}><Plus size={14} aria-hidden />Add segment</Button></div>}>
       {q.isPending ? <SkeletonRows rows={6} /> : q.isError ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : all.length === 0 ? (
         <EmptyState title="No segments yet" body="Add one per floor or Wi-Fi (with its DHCP pool) and one per server or cloud network, or paste your firewall's interface list with Import from text." />
@@ -124,23 +110,15 @@ export function SegmentsTab() {
               options={Object.entries(sorts).filter(([k]) => k !== 'name').map(([value, s]) => ({ value, text: s.text }))} />
           </FilterBar>
           {shown.length === 0 ? <EmptyState title="Nothing matches" body="Change the search or the filter." /> : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13px]">
-                <thead><tr>
-                  <th className={th}>Segment</th><th className={th}>Network</th><th className={cx(th, 'max-md:hidden')}>Pool / environment</th>
-                  <th className={cx(th, 'max-lg:hidden')}>Use</th><th className={cx(th, 'max-xl:hidden')}>Activity</th><th className={cx(th, 'max-md:hidden')}>Discovery</th><th className={th} />
-                </tr></thead>
-                {groups.map((g) => (
-                  <tbody key={g.kind || 'all'}>
-                    {g.kind && (
-                      <tr><td colSpan={7} className="border-b border-line bg-bg px-3 py-1.5 text-[12px] font-semibold text-ink-2">
-                        {kindTitle[g.kind]} <Badge>{g.rows.length}</Badge>
-                      </td></tr>
-                    )}
-                    {g.rows.map((s) => <Row key={s.id} s={s} onEdit={() => setForm({ segment: s })} onDelete={() => void ask(s)} />)}
-                  </tbody>
-                ))}
-              </table>
+            <div className="space-y-5 p-3 sm:p-4">
+              {groups.map((g) => (
+                <section key={g.kind || 'all'} aria-label={g.kind ? kindTitle[g.kind] : 'Matching segments'}>
+                  {!f.values.show && g.kind && <h3 className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold text-ink-2">{kindTitle[g.kind]}<Badge>{g.rows.length}</Badge></h3>}
+                  <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-4">
+                    {g.rows.map((s) => <SegmentCard key={s.id} s={s} onEdit={() => setForm({ segment: s })} onDelete={() => void ask(s)} />)}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </>

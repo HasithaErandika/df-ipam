@@ -16,6 +16,33 @@ export function ipToInt(v: string): number {
 
 export const intToIP = (n: number) => [24, 16, 8, 0].map((s) => Math.floor(n / 2 ** s) % 256).join('.')
 
+export interface IPv4NetworkInfo {
+  network: string
+  prefixLength: number
+  mask: string
+  broadcast: string
+  firstUsable: string
+  lastUsable: string
+  totalAddresses: number
+  usableAddresses: number
+}
+
+/** Subnet facts for the /16–/30 networks accepted by segment setup. */
+export function ipv4NetworkInfo(cidr: string): IPv4NetworkInfo | null {
+  if (cidrIssue(cidr)) return null
+  const [address, prefixText] = cidr.trim().split('/')
+  const prefixLength = Number(prefixText)
+  const size = 2 ** (32 - prefixLength)
+  const network = ipToInt(address)
+  const broadcast = network + size - 1
+  return {
+    network: intToIP(network), prefixLength,
+    mask: intToIP(0xffffffff - size + 1), broadcast: intToIP(broadcast),
+    firstUsable: intToIP(network + 1), lastUsable: intToIP(broadcast - 1),
+    totalAddresses: size, usableAddresses: size - 2,
+  }
+}
+
 /** A network written as its network address with a /16 to /30 prefix. */
 export function cidrIssue(v: string): string | undefined {
   const [address, prefix, extra] = v.trim().split('/')

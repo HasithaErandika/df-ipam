@@ -23,7 +23,7 @@ function Tile({ label, value, sub }: { label: string; value: React.ReactNode; su
  * addresses at the ends, the usable range between, the DHCP pool over it and
  * the gateway as a marker.
  */
-function AddressLayout({ info, poolStart, poolEnd, gateway }: { info: NetworkInfo; poolStart: string | null; poolEnd: string | null; gateway: string | null }) {
+export function AddressLayout({ info, poolStart, poolEnd, gateway }: { info: NetworkInfo; poolStart: string | null; poolEnd: string | null; gateway: string | null }) {
   const base = ipToInt(info.network)
   const span = Number(info.totalAddresses) - 1 || 1
   const at = (ip: string) => ((ipToInt(ip) - base) / span) * 100

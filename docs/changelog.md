@@ -4,6 +4,14 @@ What changed, day by day, on branch `lite`. Newest first. The specification is [
 
 ## 2026-11-12
 
+**Devices and servers**
+- The Devices table shows current presence without the first-discovered timestamp; first-seen details remain in the device and Discovery dialogs.
+- Label the device IP as the last-seen address and explain that DHCP can change it, separately from a deliberate IP register entry.
+- The empty Servers view points to reviewed server imports and registering reviewed Discovery findings.
+- Network setup shows full-width segment cards in the compact Discovery style; four cards fit across on wide screens. Cards focus on kind and subnet details, with scan/open actions, without pool utilization or zero-count activity summaries.
+- Add/edit segment shows a live subnet preview: mask, broadcast, usable range, address counts and DHCP pool overlay.
+- Dell is selectable as a device platform; Dell and HP hostname labels are recognized.
+
 **Discovery**
 - Counts above the findings that filter: Needs action, Open alerts, Undecided devices, Known, New in the last hour.
 - A details dialog per address, with the device, its network card and its state in DF-IPAM; the main decision (Approve, Register) as a button on each row.

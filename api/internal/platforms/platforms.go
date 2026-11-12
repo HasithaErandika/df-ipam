@@ -8,7 +8,7 @@ import "slices"
 var Platforms = []string{
 	"windows", "windows_server", "macos", "ios", "android", "linux", "ubuntu", "debian", "redhat", "centos",
 	"rocky", "alma", "fedora", "freebsd", "chromeos", "vmware", "cisco", "fortinet", "mikrotik", "ubiquiti",
-	"huawei", "hp", "epson", "synology", "raspberrypi", "other",
+	"huawei", "dell", "hp", "epson", "synology", "raspberrypi", "other",
 }
 
 // Services are what a server mainly runs.

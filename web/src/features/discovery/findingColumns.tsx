@@ -26,14 +26,14 @@ export function RegisterCell({ r }: { r: Finding }) {
 }
 
 /** First seen, last seen, and how long it has been silent once it stops answering. */
-export function Presence({ online, firstSeen, lastSeen }: { online: boolean; firstSeen: string | null; lastSeen: string | null }) {
+export function Presence({ online, firstSeen, lastSeen, showFirstSeen = true }: { online: boolean; firstSeen: string | null; lastSeen: string | null; showFirstSeen?: boolean }) {
   if (!lastSeen) return none
   return (
     <div className="min-w-0">
       {online
         ? <StateBadge tone="ok" title={`Last answered ${formatDateTime(lastSeen)}`}>Online</StateBadge>
         : <StateBadge tone="neutral" title={`Last answered ${formatDateTime(lastSeen)}`}>Unavailable since {formatAgo(lastSeen)}</StateBadge>}
-      {firstSeen && <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink-3" title={formatDateTime(firstSeen)}>First discovered {formatAgo(firstSeen)}{isNew(firstSeen) && <StateBadge tone="accent">New</StateBadge>}</div>}
+      {showFirstSeen && firstSeen && <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink-3" title={formatDateTime(firstSeen)}>First discovered {formatAgo(firstSeen)}{isNew(firstSeen) && <StateBadge tone="accent">New</StateBadge>}</div>}
     </div>
   )
 }

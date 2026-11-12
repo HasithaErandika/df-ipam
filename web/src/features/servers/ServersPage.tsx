@@ -80,7 +80,7 @@ export function ServersPage() {
         <DataTable columns={servers ? serverColumns(actions) : registerColumns(actions)} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
           rowClassName={(r) => (r.monitor && r.health === 'down' ? 'bg-danger-soft/40' : undefined)}
           empty={servers
-            ? { title: 'No servers yet', body: 'Add a server with a suggested Available candidate IP, or register entries in a server or cloud segment.' }
+            ? { title: 'No servers yet', body: 'Import your verified server list, add a server with an Available candidate IP, or register a server found in Discovery. Discovery findings stay separate until you review and register them.' }
             : { title: 'The register is empty', body: 'Add addresses by hand, import a CSV or Excel file, or register what Discovery finds.' }} />
       </Card>
       <RegisterIPModal open={adding} serverOnly={servers} prefill={servers ? { ipType: 'server' } : undefined} onClose={() => setAdding(false)} />
