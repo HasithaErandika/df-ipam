@@ -46,6 +46,17 @@ What changed, day by day, on branch `lite`. Newest first. The specification is [
 - Apache can replace the web container: `deploy/apache/df-ipam.conf`, `make apache-up`, `make apache-web`.
 - Documentation rewritten to describe Lite as built; enterprise-only documents removed.
 
+**Commits**
+- `56b0a21` richer discovery, departments, server import and steady scanning
+- `4de9a6c` docs describe Lite as built; enterprise-only documents removed
+- `f26fcec` roles, Microsoft sign-in, separated admin pages, reviewed imports, Apache
+- `dfb6808` dashboard, details dialogs, DHCP network naming, Microsoft-first sign-in
+
+**Still to do**
+- Fill in `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` and `ENTRA_CLIENT_SECRET` from the Entra ID app registration, then sign in with Microsoft and give that account the Administrator role.
+- `make docker-up` to apply migrations 000012 and 000013 to the local database.
+- Remove Supabase sign-in when Microsoft sign-in is confirmed on the real tenant.
+
 ## 2026-11-11
 
 - DF-IPAM Lite planned and founded: one building, IPv4 only, 13 tables, three containers.
