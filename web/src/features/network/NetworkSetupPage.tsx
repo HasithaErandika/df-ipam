@@ -16,7 +16,7 @@ export function NetworkSetupPage() {
   const Current = tabs.find((t) => t.key === key)?.view ?? SegmentsTab
   return (
     <>
-      <PageHeader title="Network setup" description="Segments (floors, server and cloud networks), the environments servers belong to, and departments." />
+      <PageHeader title="Network setup" description="Segments (DHCP, server and cloud networks), the environments servers belong to, and departments." />
       <PathTabs base="/network-setup" tabs={tabs.map(({ key: k, label }) => ({ key: k, label }))} />
       <Current />
     </>

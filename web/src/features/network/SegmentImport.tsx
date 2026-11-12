@@ -12,7 +12,7 @@ interface Result { dryRun: boolean; added: number; skipped: number; rows: Row[] 
 const kinds = [
   { value: 'server', text: 'Server networks (static, swept)' },
   { value: 'cloud', text: 'Cloud networks (static, never swept)' },
-  { value: 'dhcp', text: 'Floors (DHCP; set each pool afterwards)' },
+  { value: 'dhcp', text: 'DHCP networks (set each pool afterwards)' },
 ]
 
 const th = 'sticky top-0 z-[1] bg-surface-2 px-2.5 py-1.5 text-left text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase'

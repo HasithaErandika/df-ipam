@@ -20,7 +20,7 @@ const kinds = [
   { value: 'needs', text: 'Needs action' }, { value: 'new', text: 'New in the last hour' },
   { value: 'known', text: 'Known (registered and approved)' }, { value: 'offline', text: 'Left (not answering)' },
   { value: 'unregistered', text: 'Not in the register' }, { value: 'registered', text: 'In the register' },
-  { value: 'static', text: 'Static on a floor' }, { value: 'unknown', text: 'Unknown device' },
+  { value: 'static', text: 'Static in a DHCP network' }, { value: 'unknown', text: 'Unknown device' },
   { value: 'rejected', text: 'Rejected device' }, { value: 'private', text: 'Private MAC' },
   { value: 'gateway', text: 'Gateways' }, { value: 'dhcp', text: 'DHCP lease' }, { value: 'vpn', text: 'VPN client' }, { value: 'alerting', text: 'Has open alerts' },
 ]

@@ -44,17 +44,36 @@ type ipDTO struct {
 	LastSeen         *time.Time `db:"last_seen" json:"lastSeen"`
 	SeenMAC          *string    `db:"seen_mac" json:"seenMac"`
 	UpdatedAt        time.Time  `db:"updated_at" json:"updatedAt"`
+	CreatedAt        time.Time  `db:"created_at" json:"createdAt"`
+	CheckFailures    int        `db:"server_check_failures" json:"checkFailures"`
+	DeviceName       *string    `db:"device_name" json:"deviceName"`
+	// What the scanner last learned at this address (evidence only).
+	Hostname   string  `db:"hostname" json:"hostname"`
+	NICVendor  string  `db:"nic_vendor" json:"nicVendor"`
+	Maker      string  `db:"maker" json:"maker"`
+	Model      string  `db:"model" json:"model"`
+	DeviceKind string  `db:"device_kind" json:"deviceKind"`
+	OSHint     string  `db:"os_hint" json:"osHint"`
+	Vendor     string  `db:"vendor" json:"vendor"`
+	Source     string  `db:"source" json:"source"`
+	OpenPorts  []int32 `db:"open_ports" json:"openPorts"`
+	OpenAlerts int64   `db:"open_alerts" json:"openAlerts"`
 }
 
 const ipFrom = ` FROM ip_addresses i JOIN segments s ON s.id = i.segment_id
 	LEFT JOIN environments e ON e.id = i.environment_id
-	LEFT JOIN LATERAL (SELECT last_seen, mac FROM sightings WHERE ip = i.ip ORDER BY last_seen DESC LIMIT 1) v ON true`
+	LEFT JOIN devices dv ON dv.id = i.device_id
+	LEFT JOIN LATERAL (SELECT last_seen, mac, hostname, nic_vendor, maker, model, device_kind, os_hint, vendor, source, open_ports
+		FROM sightings WHERE ip = i.ip ORDER BY last_seen DESC LIMIT 1) v ON true`
 
 const ipColumns = `SELECT i.id::text AS id, i.segment_id::text AS segment_id, s.name AS segment_name, s.kind AS segment_kind,
 	host(i.ip) AS ip, i.status, i.ip_type, i.environment_id::text AS environment_id, e.name AS environment_name, i.platform, i.services,
 	e.colour AS environment_colour, i.device_id::text AS device_id, i.assigned_name, i.expected_mac::text AS expected_mac,
 	i.owner, i.department, i.monitor, i.critical, i.check_port, i.notes, i.health, i.health_changed_at,
-	v.last_seen, v.mac::text AS seen_mac, i.updated_at`
+	v.last_seen, v.mac::text AS seen_mac, i.updated_at, i.created_at, i.server_check_failures, NULLIF(dv.name, '') AS device_name,
+	COALESCE(v.hostname, '') AS hostname, COALESCE(v.nic_vendor, '') AS nic_vendor, COALESCE(v.maker, '') AS maker, COALESCE(v.model, '') AS model,
+	COALESCE(v.device_kind, '') AS device_kind, COALESCE(v.os_hint, '') AS os_hint, COALESCE(v.vendor, '') AS vendor, COALESCE(v.source, '') AS source,
+	COALESCE(v.open_ports, '{}') AS open_ports, (SELECT count(*) FROM alerts a WHERE a.ip = i.ip AND a.status <> 'closed') AS open_alerts`
 
 var ipSorts = map[string]string{"ip": "i.ip", "name": "lower(i.assigned_name)", "health": "i.health", "segment": "lower(s.name)", "updated": "i.updated_at"}
 

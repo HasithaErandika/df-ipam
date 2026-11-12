@@ -10,6 +10,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 - `docs/database.md` before changing the schema
 - `docs/new.md` for scope, what is built, what isn't, and open questions
 - `docs/development_phase.md` for what is done: update it when a feature changes status
+- `docs/changelog.md`: add to today's entry when you finish a change
 
 ## Hard rules
 

@@ -9,7 +9,7 @@ export function attention(s: Segment): string | null {
   return null
 }
 
-/** How full it is: the DHCP pool on floors, the register elsewhere. */
+/** How full it is: the DHCP pool on DHCP networks, the register elsewhere. */
 export function use(s: Segment): { pct: number; text: string } {
   if (s.kind === 'dhcp' && s.poolSize > 0) return { pct: (s.poolUsed * 100) / s.poolSize, text: `${s.poolUsed} of ${s.poolSize} in the pool` }
   const used = Math.max(s.registered, s.seen)
@@ -33,4 +33,4 @@ export function matches(s: Segment, q: string): boolean {
 }
 
 export const kindOrder = ['dhcp', 'server', 'cloud'] as const
-export const kindTitle: Record<string, string> = { dhcp: 'Floors (DHCP)', server: 'Server networks', cloud: 'Cloud networks' }
+export const kindTitle: Record<string, string> = { dhcp: 'DHCP networks (floors and Wi-Fi)', server: 'Server networks', cloud: 'Cloud networks' }

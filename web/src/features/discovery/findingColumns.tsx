@@ -58,7 +58,9 @@ export function findingColumns({ canEdit, onOpen, onRegister, onApprove, onRejec
     { key: 'device', header: 'Device', cell: (r) => (
       <WithPlatform platform={r.platform} vendor={deviceLine(r)} hostname={r.hostname || r.deviceName} gateway={r.isGateway}>
         <div className="flex items-center gap-2 truncate text-ink">
-          <span className={r.deviceStatus === 'approved' && r.deviceName ? 'truncate font-medium' : 'truncate'}>{r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}</span>
+          <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
+            {r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}
+          </button>
           {r.isGateway && <GatewayBadge />}
         </div>
         {(r.deviceName || r.assignedName) && r.hostname && r.hostname !== (r.deviceName || r.assignedName) && <div className="truncate text-[11.5px] text-ink-3" title="Hostname the device reported">{r.hostname}</div>}

@@ -11,6 +11,8 @@ import { useRouteTab } from '../../lib/tabs'
 import type { RegisterEntry } from '../../lib/types'
 import { ExportMenu, ImportButton } from '../shared/FileTransfer'
 import { RegisterIPModal } from '../shared/RegisterIPModal'
+import { useDialogParam } from '../../lib/dialogParam'
+import { EntryDetails } from './EntryDetails'
 import { registerColumns, serverColumns } from './registerColumns'
 
 const keys = ['segmentId', 'environmentId', 'status', 'health', 'ipType', 'q', 'sort'] as const
@@ -43,7 +45,8 @@ export function ServersPage() {
   const [editing, setEditing] = useState<RegisterEntry | null>(null)
   const [adding, setAdding] = useState(false)
   const release = useRelease()
-  const actions = { canEdit, onEdit: setEditing, onRelease: (r: RegisterEntry) => void release(r) }
+  const [openId, setOpen] = useDialogParam('entry')
+  const actions = { canEdit, onOpen: (r: RegisterEntry) => setOpen(r.id), onEdit: setEditing, onRelease: (r: RegisterEntry) => void release(r) }
   const envOptions = [{ value: '', text: 'All' }, ...(environments.data ?? []).map((e) => ({ value: e.id, text: e.name }))]
 
   return (
@@ -82,6 +85,7 @@ export function ServersPage() {
       </Card>
       <RegisterIPModal open={adding} serverOnly={servers} prefill={servers ? { ipType: 'server' } : undefined} onClose={() => setAdding(false)} />
       <RegisterIPModal open={editing !== null} entry={editing ?? undefined} onClose={() => setEditing(null)} />
+      <EntryDetails entry={rows.find((r) => r.id === openId) ?? null} canEdit={canEdit} onClose={() => setOpen(null)} onEdit={setEditing} onRelease={(r) => void release(r)} />
     </>
   )
 }

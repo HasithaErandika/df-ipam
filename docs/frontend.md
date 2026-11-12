@@ -32,7 +32,8 @@ One folder per screen in `web/src/features/`: `dashboard`, `discovery`, `servers
 - **The header** shows the notification bell, who is signed in with their role (click for details), and Sign out.
 - **Drill-down pages** (a segment) link back to the menu page they were opened from (`lib/backTo.ts`), with its filters.
 - **Imports** are reviewed before they run: a dry run shows every row to be added and every skipped row with its reason (`ImportPreview`, `SegmentImport`).
-- **The query string** holds filters, sorting, paging and open dialogs (`?finding=<id>`).
+- **The query string** holds filters, sorting, paging and open dialogs (`?finding=`, `?device=`, `?entry=`, through `useDialogParam`).
+- **Details dialogs** open from a row's name: a one-line verdict first, then sections (`features/shared/DetailParts.tsx`), then the row's actions.
 - **Every data view** has loading, empty and error states (`DataTable` does this).
 - **Tables** page on the server: 25 rows by default, up to 200. Each row shows its one main action as a button, and the rest in a menu.
 - **Long forms** keep the essentials visible and the rest under `MoreOptions`, which opens by itself if a hidden field has an error.

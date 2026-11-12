@@ -14,7 +14,7 @@ import { SegmentImport } from './SegmentImport'
 import { attention, kindOrder, kindTitle, matches, sorts, use } from './segmentList'
 
 const chips = [
-  { key: '', label: 'All' }, { key: 'dhcp', label: 'Floors' }, { key: 'server', label: 'Server' }, { key: 'cloud', label: 'Cloud' }, { key: 'attention', label: 'Needs attention' },
+  { key: '', label: 'All' }, { key: 'dhcp', label: 'DHCP' }, { key: 'server', label: 'Server' }, { key: 'cloud', label: 'Cloud' }, { key: 'attention', label: 'Needs attention' },
 ]
 
 function UseBar({ s }: { s: Segment }) {
@@ -98,10 +98,10 @@ export function SegmentsTab() {
   }
 
   return (
-    <Card title="Segments" subtitle="Floors, server networks and cloud networks. Networks never overlap; open one to see every address."
+    <Card title="Segments" subtitle="DHCP networks (floors and Wi-Fi), server networks and cloud networks. Networks never overlap; open one to see every address."
       action={<div className="flex gap-2"><SegmentImport /><Button variant="primary" onClick={() => setForm({})}><Plus size={14} aria-hidden />Add segment</Button></div>}>
       {q.isPending ? <SkeletonRows rows={6} /> : q.isError ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : all.length === 0 ? (
-        <EmptyState title="No segments yet" body="Add one per floor (with its DHCP pool) and one per server or cloud network, or paste your firewall's interface list with Import from text." />
+        <EmptyState title="No segments yet" body="Add one per floor or Wi-Fi (with its DHCP pool) and one per server or cloud network, or paste your firewall's interface list with Import from text." />
       ) : (
         <>
           <div className="flex flex-wrap gap-2 border-b border-line p-3">

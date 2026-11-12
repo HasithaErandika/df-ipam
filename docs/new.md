@@ -23,7 +23,7 @@ A segment is one network: name, type, floor, VLAN, CIDR, gateway and description
 
 | Type | Has | Discovery |
 | --- | --- | --- |
-| `dhcp` (floor) | A DHCP pool. An address outside the pool is static | Swept |
+| `dhcp` (DHCP network: a floor or Wi-Fi) | A DHCP pool, and optionally a floor number. An address outside the pool is static | Swept |
 | `server` | A default environment for new entries | Swept |
 | `cloud` | A default environment | Never swept |
 
@@ -125,8 +125,8 @@ The rules run after every scan, server check and FortiGate read, and after every
 | Unknown device | A real (not private) MAC that isn't approved | Medium on floors, High on server and cloud |
 | Private-MAC device | A private MAC that isn't approved, on a segment that watches them (never the gateway) | Medium on floors, High elsewhere |
 | Rejected device | A rejected MAC is active | High |
-| Unregistered static IP | An address outside the DHCP pool is in use and not registered | Medium |
-| Unknown server IP | An unregistered address answers in a server or cloud segment | High, Critical where the environment is |
+| Unregistered static IP | An address outside the DHCP pool is in use and not registered (never the gateway) | Medium |
+| Unknown server IP | An unregistered address answers in a server or cloud segment (never the gateway) | High, Critical where the environment is |
 | Registered IP misused | A Reserved or Blocked entry, or a reservation, is in use; or a floor entry is used by another MAC than expected | High |
 | IP conflict | One IP seen with more than one MAC | High |
 | Server MAC changed | A server answers with another MAC than expected | From its environment, Critical if critical |
@@ -154,10 +154,10 @@ On demand, as CSV, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segm
 
 | Screen | Holds |
 | --- | --- |
-| Dashboard | Floor DHCP use, open alerts by severity, servers down by environment |
+| Dashboard | Headline figures; every network by type with the most active ones; latest alerts; DHCP pool use; servers by environment, the register and devices |
 | Discovery | Findings with counts that filter (Needs action, Open alerts, Undecided devices, Known, New in the last hour), a details dialog per address, Segments overview and Scan status. Each segment has a page with an address map and free ranges |
-| Servers | Servers by environment with live status, and the full IP register |
-| Devices | Approved, pending and rejected devices |
+| Servers | Servers by environment with live status, and the full IP register, with what answers at each address; click one for every detail |
+| Devices | Approved, pending and rejected devices, with what the scanner knows about each; click one for every detail and its decisions |
 | Alerts | Open and recent alerts, acknowledge |
 | IP Requests | Raise, and for Admins the approval queue |
 | Reservations | Active and expiring holds |

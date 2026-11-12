@@ -20,7 +20,7 @@ const view = ['inventory:view']
 export const nav: { group: string; items: NavItem[] }[] = [
   {
     group: 'Overview',
-    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, summary: 'Floors, alerts and server health at a glance.' }],
+    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, summary: 'Networks, alerts, devices and server health at a glance.' }],
   },
   {
     group: 'Network',

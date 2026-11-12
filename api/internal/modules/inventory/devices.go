@@ -36,10 +36,23 @@ type deviceDTO struct {
 	Registered  bool       `db:"registered" json:"registered"`
 	Vendor      string     `db:"vendor" json:"vendor"`
 	Online      bool       `db:"online" json:"online"`
+	// What the scanner last learned about it (evidence, never edited here).
+	Source       string  `db:"source" json:"source"`
+	NICVendor    string  `db:"nic_vendor" json:"nicVendor"`
+	Maker        string  `db:"maker" json:"maker"`
+	Model        string  `db:"model" json:"model"`
+	DeviceKind   string  `db:"device_kind" json:"deviceKind"`
+	OSHint       string  `db:"os_hint" json:"osHint"`
+	OpenPorts    []int32 `db:"open_ports" json:"openPorts"`
+	IsPrivateMAC bool    `db:"is_private_mac" json:"isPrivateMac"`
+	Addresses    int64   `db:"addresses" json:"addresses"`
+	RegisteredIP *string `db:"registered_ip" json:"registeredIp"`
+	OpenAlerts   int64   `db:"open_alerts" json:"openAlerts"`
 }
 
 const deviceFrom = ` FROM devices d
-	LEFT JOIN LATERAL (SELECT ip, segment_id, hostname, vendor FROM sightings WHERE mac = d.mac ORDER BY last_seen DESC LIMIT 1) v ON true
+	LEFT JOIN LATERAL (SELECT ip, segment_id, hostname, vendor, source, nic_vendor, maker, model, device_kind, os_hint, open_ports, is_private_mac
+		FROM sightings WHERE mac = d.mac ORDER BY last_seen DESC LIMIT 1) v ON true
 	LEFT JOIN segments s ON s.id = v.segment_id`
 
 var deviceSorts = map[string]string{"name": "lower(d.name)", "mac": "d.mac", "lastSeen": "d.last_seen", "status": "d.status"}
@@ -68,7 +81,13 @@ func (h *Handler) devices(c *gin.Context) {
 	query := `SELECT d.id::text AS id, d.mac::text AS mac, d.name, d.owner, d.department, d.device_type, d.platform, d.status, d.notes,
 		d.first_seen, d.last_seen, d.decided_at, host(v.ip) AS last_ip, v.segment_id::text AS segment_id, s.name AS segment_name,
 		NULLIF(v.hostname, '') AS hostname, EXISTS (SELECT 1 FROM ip_addresses i WHERE i.ip = v.ip) AS registered, COALESCE(v.vendor, '') AS vendor,
-		COALESCE(d.last_seen > now() - interval '30 minutes', false) AS online` + deviceFrom + w.SQL() + " ORDER BY " + order + ", d.id"
+		COALESCE(d.last_seen > now() - interval '30 minutes', false) AS online,
+		COALESCE(v.source, '') AS source, COALESCE(v.nic_vendor, '') AS nic_vendor, COALESCE(v.maker, '') AS maker, COALESCE(v.model, '') AS model,
+		COALESCE(v.device_kind, '') AS device_kind, COALESCE(v.os_hint, '') AS os_hint, COALESCE(v.open_ports, '{}') AS open_ports,
+		COALESCE(v.is_private_mac, false) AS is_private_mac,
+		(SELECT count(DISTINCT x.ip) FROM sightings x WHERE x.mac = d.mac) AS addresses,
+		(SELECT host(r.ip) FROM ip_addresses r WHERE r.expected_mac = d.mac OR r.device_id = d.id ORDER BY r.ip LIMIT 1) AS registered_ip,
+		(SELECT count(*) FROM alerts a WHERE a.mac = d.mac AND a.status <> 'closed') AS open_alerts` + deviceFrom + w.SQL() + " ORDER BY " + order + ", d.id"
 	items, total, err := db.ListPage[deviceDTO](c, h.conn, query, "SELECT count(*)"+deviceFrom+w.SQL(), w.Args, page)
 	if err != nil {
 		httpx.Fail(c, err)

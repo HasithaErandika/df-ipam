@@ -2,12 +2,15 @@ package monitoring
 
 // candidatesSQL lists every alert cause that is true right now (docs/new.md, section 5).
 // "Recent" follows the scan interval, so alerts don't close between two slow scans.
-// Private (randomised) MACs never count as unknown devices.
+// Private (randomised) MACs never count as unknown devices. A segment's gateway
+// (set on the segment, or detected) is infrastructure: it never counts as an
+// unregistered static or unknown server address.
 const candidatesSQL = `
 WITH win AS (
  SELECT make_interval(mins => GREATEST(10, 2 * COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 5))) AS w
 ), recent AS (
- SELECT si.*, sg.kind, sg.name AS segment_name, sg.alert_private_macs, COALESCE(env.name, '') AS environment_name,
+ SELECT si.*, sg.kind, sg.name AS segment_name, sg.alert_private_macs,
+        (si.is_gateway OR si.ip IS NOT DISTINCT FROM sg.gateway) AS gateway_ip, COALESCE(env.name, '') AS environment_name,
         COALESCE(env.default_severity, 'medium') AS environment_severity, dev.id AS device_id, dev.status AS device_status,
         ipr.id AS register_id, ipr.status AS register_status, ipr.expected_mac, ipr.critical, ipr.assigned_name
  FROM sightings si JOIN segments sg ON sg.id = si.segment_id
@@ -29,11 +32,11 @@ WITH win AS (
  UNION ALL
  SELECT 'unregistered_static', 'medium', r.segment_id, NULL::uuid, NULL::uuid, host(r.ip), r.mac::text,
         'Static IP ' || host(r.ip) || ' is in use on ' || r.segment_name || ' but is not in the register'
- FROM recent r WHERE r.kind = 'dhcp' AND r.is_static AND r.register_id IS NULL
+ FROM recent r WHERE r.kind = 'dhcp' AND r.is_static AND r.register_id IS NULL AND NOT r.gateway_ip
  UNION ALL
  SELECT 'unknown_server_ip', CASE WHEN r.environment_severity = 'critical' THEN 'critical' ELSE 'high' END, r.segment_id, NULL::uuid, NULL::uuid,
         host(r.ip), r.mac::text, 'Unregistered IP ' || host(r.ip) || ' answers in server segment ' || r.segment_name
- FROM recent r WHERE r.kind IN ('server', 'cloud') AND r.register_id IS NULL
+ FROM recent r WHERE r.kind IN ('server', 'cloud') AND r.register_id IS NULL AND NOT r.gateway_ip
  UNION ALL
  SELECT 'register_misuse', 'high', r.segment_id, r.register_id, r.device_id, host(r.ip), r.mac::text,
         CASE WHEN r.register_status = 'assigned' THEN host(r.ip) || ' is used by a different MAC than registered'

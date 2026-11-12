@@ -15,7 +15,7 @@ type Report struct {
 
 // $1 from, $2 to (exclusive end, as dates), $3 environment ID or ”.
 var catalogue = []Report{
-	{Key: "segment-usage", Title: "Segment usage", Description: "Per floor and server segment: registered, reserved, seen in use and DHCP pool use.",
+	{Key: "segment-usage", Title: "Segment usage", Description: "Per DHCP, server and cloud network: registered, reserved, seen in use and DHCP pool use.",
 		Columns: []string{"Segment", "Type", "Network", "VLAN", "Assigned", "Reserved", "Blocked", "Held by reservations", "Seen (24h)", "Pool size", "Pool in use"},
 		sql: `SELECT s.name, s.kind, s.network::text, COALESCE(s.vlan::text, ''),
 			(SELECT count(*) FROM ip_addresses i WHERE i.segment_id = s.id AND i.status = 'assigned')::text,
@@ -46,7 +46,7 @@ var catalogue = []Report{
 			FROM devices d LEFT JOIN LATERAL (SELECT ip, segment_id, hostname FROM sightings WHERE mac = d.mac ORDER BY last_seen DESC LIMIT 1) v ON true
 			LEFT JOIN segments s ON s.id = v.segment_id
 			WHERE d.status <> 'approved' AND $1::date IS NOT NULL AND $2::date IS NOT NULL AND $3::text IS NOT NULL ORDER BY d.last_seen DESC NULLS LAST`},
-	{Key: "static-on-floors", Title: "Static IPs on floors", Description: "Addresses in use outside the DHCP pool on floor segments, registered or not.",
+	{Key: "static-on-floors", Title: "Static IPs in DHCP networks", Description: "Addresses in use outside the DHCP pool in DHCP networks (floors and Wi-Fi), registered or not.",
 		Columns: []string{"IP", "Segment", "MAC", "Hostname", "Registered", "Assigned to", "First seen", "Last seen"},
 		sql: `SELECT DISTINCT ON (v.ip) host(v.ip), s.name, COALESCE(v.mac::text, ''), v.hostname, CASE WHEN i.id IS NULL THEN 'No' ELSE 'Yes' END,
 			COALESCE(i.assigned_name, ''), to_char(v.first_seen, 'YYYY-MM-DD HH24:MI'), to_char(v.last_seen, 'YYYY-MM-DD HH24:MI')

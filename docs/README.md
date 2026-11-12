@@ -14,6 +14,7 @@
 | [security.md](security.md) | Threat model and release checklist |
 | [runbooks.md](runbooks.md) | Recovery procedures |
 | [development_phase.md](development_phase.md) | What is done, what isn't, and what waits on others |
+| [changelog.md](changelog.md) | What changed, day by day |
 | [plan.md](plan.md) | Plan, not built: company sign-in in place of Supabase |
 
 ## Rules that always hold

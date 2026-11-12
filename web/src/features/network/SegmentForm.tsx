@@ -49,7 +49,7 @@ const labels: Partial<Record<keyof Values, string>> = {
 }
 
 const kindHelp = {
-  dhcp: 'A floor network served by DHCP. Addresses outside the pool count as static.',
+  dhcp: 'A user network served by DHCP, such as a floor or Wi-Fi. Addresses outside the pool count as static.',
   server: 'Static server addresses. Entries take the default environment.',
   cloud: 'A network hosted in a cloud. Static, like servers, and never ping-swept from the building.',
 }
@@ -83,7 +83,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name" htmlFor="sg-name" error={errors.name?.message}><Input id="sg-name" placeholder="Floor 4" {...register('name')} /></Field>
             <Field label="Type" htmlFor="sg-kind" hint={kindHelp[kind]}>
-              <Select id="sg-kind" {...register('kind')}><option value="dhcp">Floor (DHCP)</option><option value="server">Server</option><option value="cloud">Cloud</option></Select>
+              <Select id="sg-kind" {...register('kind')}><option value="dhcp">DHCP network (floor, Wi-Fi)</option><option value="server">Server</option><option value="cloud">Cloud</option></Select>
             </Field>
             <Field label="Network" htmlFor="sg-net" error={errors.network?.message} hint="IPv4, /16 to /30. Networks can't overlap.">
               <Input id="sg-net" className="font-mono" placeholder="192.168.4.0/24" {...register('network')} />

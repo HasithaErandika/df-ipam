@@ -1,7 +1,10 @@
 import { makerFromName, makers } from '../../lib/platforms'
-import type { Finding } from '../../lib/types'
 
-type Evidence = Pick<Finding, 'vendor' | 'nicVendor' | 'maker' | 'model' | 'deviceKind' | 'osHint' | 'hostname' | 'source'> & { openPorts?: number[] }
+/** What the scanner knows about a device: from a finding, a device or a register entry. */
+export interface Evidence {
+  vendor: string; nicVendor: string; maker: string; model: string; deviceKind: string; osHint: string
+  hostname: string | null; source: string; openPorts?: number[]
+}
 
 /** The service usually behind each port the scanner checks (api/internal/scanner/ports.go). */
 export const portServices: Record<number, string> = {

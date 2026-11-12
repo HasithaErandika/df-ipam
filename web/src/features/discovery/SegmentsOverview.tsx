@@ -8,7 +8,7 @@ import { useSegments } from '../../lib/queries'
 import type { Segment } from '../../lib/types'
 import { ScanButton } from '../shared/ScanButton'
 
-const groups = [{ kind: 'dhcp', title: 'Floors' }, { kind: 'server', title: 'Server networks' }, { kind: 'cloud', title: 'Cloud networks' }] as const
+const groups = [{ kind: 'dhcp', title: 'DHCP networks (floors and Wi-Fi)' }, { kind: 'server', title: 'Server networks' }, { kind: 'cloud', title: 'Cloud networks' }] as const
 
 function Figure({ label: text, value, tone, to }: { label: string; value: number; tone?: 'warn' | 'danger'; to?: string }) {
   const colour = value > 0 && tone === 'danger' ? 'text-danger' : value > 0 && tone === 'warn' ? 'text-warn' : 'text-ink'
@@ -82,7 +82,7 @@ export function SegmentsOverview() {
           options={[{ value: '', text: `All ${q.data.length}` }, ...groups.map((g) => ({ value: g.kind, text: g.title.replace(' networks', '') }))]} />
         {alerts > 0 && <Link to="/alerts" className="ml-auto inline-flex items-center gap-1.5 text-[12.5px] font-medium text-danger hover:underline"><AlertTriangle size={14} aria-hidden />{alerts} open alerts across segments</Link>}
       </div>
-      {q.data.length === 0 ? <Card><EmptyState title="No segments yet" body="Add each floor, server and cloud network in Network setup > Segments, then scan them here." /></Card>
+      {q.data.length === 0 ? <Card><EmptyState title="No segments yet" body="Add each DHCP network (floor or Wi-Fi), server and cloud network in Network setup > Segments, then scan them here." /></Card>
         : shown.length === 0 ? <Card><EmptyState title="No segments match" body="Change the search or the type." /></Card>
         : groups.map((g) => {
           const list = shown.filter((s) => s.kind === g.kind)

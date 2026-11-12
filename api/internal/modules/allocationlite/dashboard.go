@@ -3,6 +3,7 @@ package allocationlite
 import (
 	"net/http"
 	"net/netip"
+	"time"
 
 	"dfipam/api/internal/ipam"
 	"dfipam/api/internal/platform/db"
@@ -34,6 +35,21 @@ type environmentHealth struct {
 	Down        int64  `db:"down" json:"down"`
 	Unknown     int64  `db:"unknown" json:"unknown"`
 }
+
+// recentAlert is one open alert for the dashboard's short list.
+type recentAlert struct {
+	ID       string    `db:"id" json:"id"`
+	Type     string    `db:"alert_type" json:"type"`
+	Severity string    `db:"severity" json:"severity"`
+	Message  string    `db:"message" json:"message"`
+	IP       *string   `db:"ip" json:"ip"`
+	Segment  *string   `db:"segment" json:"segment"`
+	Opened   time.Time `db:"opened_at" json:"openedAt"`
+}
+
+const recentAlertsSQL = `SELECT a.id::text AS id, a.alert_type, a.severity, a.message, host(a.ip) AS ip, s.name AS segment, a.opened_at
+	FROM alerts a LEFT JOIN segments s ON s.id = a.segment_id WHERE a.status <> 'closed'
+	ORDER BY array_position(ARRAY['critical','high','medium','low'], a.severity), a.opened_at DESC LIMIT 6`
 
 type severityCount struct {
 	Severity string `db:"severity" json:"severity"`
@@ -83,6 +99,11 @@ func (h *Handler) dashboard(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	recent, err := db.All[recentAlert](c, h.conn, recentAlertsSQL)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
 	var totals struct {
 		PendingDevices  int64 `json:"pendingDevices"`
 		PendingRequests int64 `json:"pendingRequests"`
@@ -94,6 +115,9 @@ func (h *Handler) dashboard(c *gin.Context) {
 		Held            int64 `json:"held"`
 		OnlineDevices   int64 `json:"online"`
 		UnknownDevices  int64 `json:"unknownDevices"`
+		Approved        int64 `json:"approvedDevices"`
+		Rejected        int64 `json:"rejectedDevices"`
+		NewLastHour     int64 `json:"newLastHour"`
 	}
 	if err := h.conn.QueryRow(c, `SELECT (SELECT count(*) FROM devices WHERE status = 'pending'),
 		(SELECT count(*) FROM ip_requests WHERE status = 'pending'),
@@ -103,10 +127,13 @@ func (h *Handler) dashboard(c *gin.Context) {
 		(SELECT count(*) FROM ip_addresses WHERE status = 'blocked'),
 		(SELECT COALESCE(sum(end_ip - start_ip + 1), 0) FROM reservations WHERE status = 'active'),
 		(SELECT count(DISTINCT ip) FROM sightings WHERE last_seen > now() - `+recentSeen+`),
-		(SELECT count(*) FROM devices WHERE status <> 'approved')`).Scan(&totals.PendingDevices, &totals.PendingRequests, &totals.ExpiringHolds,
-		&totals.Registered, &totals.Assigned, &totals.Reserved, &totals.Blocked, &totals.Held, &totals.OnlineDevices, &totals.UnknownDevices); err != nil {
+		(SELECT count(*) FROM devices WHERE status <> 'approved'),
+		(SELECT count(*) FROM devices WHERE status = 'approved'), (SELECT count(*) FROM devices WHERE status = 'rejected'),
+		(SELECT count(DISTINCT ip) FROM sightings WHERE first_seen > now() - interval '1 hour')`).Scan(&totals.PendingDevices, &totals.PendingRequests, &totals.ExpiringHolds,
+		&totals.Registered, &totals.Assigned, &totals.Reserved, &totals.Blocked, &totals.Held, &totals.OnlineDevices, &totals.UnknownDevices,
+		&totals.Approved, &totals.Rejected, &totals.NewLastHour); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.OK(c, http.StatusOK, gin.H{"floors": floors, "alerts": alerts, "servers": servers, "totals": totals})
+	httpx.OK(c, http.StatusOK, gin.H{"floors": floors, "alerts": alerts, "servers": servers, "totals": totals, "recentAlerts": recent})
 }

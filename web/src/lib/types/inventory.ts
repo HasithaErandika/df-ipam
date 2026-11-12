@@ -81,6 +81,20 @@ export interface RegisterEntry {
   lastSeen: string | null
   seenMac: string | null
   updatedAt: string
+  createdAt: string
+  checkFailures: number
+  deviceName: string | null
+  /** The scanner's latest evidence at this address. */
+  hostname: string
+  nicVendor: string
+  maker: string
+  model: string
+  deviceKind: string
+  osHint: string
+  vendor: string
+  source: string
+  openPorts: number[]
+  openAlerts: number
 }
 
 export interface Device {
@@ -103,6 +117,20 @@ export interface Device {
   registered: boolean
   vendor: string
   online: boolean
+  /** The scanner's latest evidence about it. */
+  source: string
+  nicVendor: string
+  maker: string
+  model: string
+  deviceKind: string
+  osHint: string
+  openPorts: number[]
+  isPrivateMac: boolean
+  /** How many addresses it has been seen on. */
+  addresses: number
+  /** Its own register entry, by MAC or device. */
+  registeredIp: string | null
+  openAlerts: number
 }
 
 export interface Finding {

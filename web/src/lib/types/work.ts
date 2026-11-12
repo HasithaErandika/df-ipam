@@ -114,5 +114,9 @@ export interface Dashboard {
   floors: { id: string; name: string; floor: number | null; vlan: number | null; network: string; registered: number; seen: number; poolUsed: number; static: number; poolSize: number }[]
   alerts: { severity: Severity; count: number }[]
   servers: { environment: string; colour: string; total: number; up: number; down: number; unknown: number }[]
-  totals: { pendingDevices: number; pendingRequests: number; expiringReservations: number; registered: number; assigned: number; reserved: number; blocked: number; held: number; online: number; unknownDevices: number }
+  totals: {
+    pendingDevices: number; pendingRequests: number; expiringReservations: number; registered: number; assigned: number; reserved: number
+    blocked: number; held: number; online: number; unknownDevices: number; approvedDevices: number; rejectedDevices: number; newLastHour: number
+  }
+  recentAlerts: { id: string; type: string; severity: Severity; message: string; ip: string | null; segment: string | null; openedAt: string }[]
 }

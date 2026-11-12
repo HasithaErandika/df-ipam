@@ -8,7 +8,7 @@ import type { SystemSettings } from '../../lib/types'
 interface NumberField { key: string; label: string; unit: string; min: number; max: number; hint: string }
 
 const scanning: NumberField[] = [
-  { key: 'scanIntervalMinutes', label: 'Discover devices every', unit: 'minutes', min: 5, max: 1440, hint: 'Ping sweep of every floor and server segment. 10 minutes is a gentle default; 5 is the least, so scans never run back to back.' },
+  { key: 'scanIntervalMinutes', label: 'Discover devices every', unit: 'minutes', min: 5, max: 1440, hint: 'Sweep of every DHCP and server network. 10 minutes is a gentle default; 5 is the least, so scans never run back to back.' },
   { key: 'serverCheckSeconds', label: 'Check monitored servers every', unit: 'seconds', min: 60, max: 86400, hint: '86400 is once a day. Shorter intervals find outages sooner.' },
   { key: 'downAfterFailures', label: 'Mark a server Down after', unit: 'failed checks', min: 1, max: 20, hint: 'In a row. With daily checks, 1 reports an outage on the first failed check.' },
 ]
