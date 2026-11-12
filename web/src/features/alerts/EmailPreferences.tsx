@@ -28,7 +28,7 @@ export function EmailPreferences() {
         {q.isPending ? <SkeletonRows rows={4} /> : q.isError ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : (
           <div className="space-y-4">
             {!q.data.emailEnabled && (
-              <Notice tone="warn">Email is switched off for everyone{isAdmin ? ' in Settings > System' : ' by an Admin'}. Your choices are kept and apply when it is switched on.</Notice>
+              <Notice tone="warn">Email is switched off for everyone{isAdmin ? ' in System > Settings' : ' by an administrator'}. Your choices are kept and apply when it is switched on.</Notice>
             )}
             {q.data.items.filter((p) => isAdmin || !['request', 'alert', 'server_up'].includes(p.kind)).map((p) => (
               <Switch key={p.kind} id={`pref-${p.kind}`} checked={p.email} disabled={save.isPending} label={label(notificationKinds, p.kind)}

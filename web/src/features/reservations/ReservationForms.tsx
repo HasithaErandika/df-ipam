@@ -25,7 +25,7 @@ const blank: Values = { segmentId: '', startIp: '', endIp: '', reason: '', owner
 
 export function NewReservation({ open, onClose }: { open: boolean; onClose: () => void }) {
   const segments = useSegments()
-  const isAdmin = useCan('system:manage')
+  const isAdmin = useCan('inventory:edit')
   const users = useQuery({ queryKey: ['/users/options'], queryFn: () => get<User[]>('/users/options'), enabled: open && isAdmin })
   const refresh = useInvalidate(...inventoryKeys)
   const [error, setFormError] = useState<unknown>(null)

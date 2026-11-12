@@ -32,7 +32,7 @@ type apiEnv struct {
 type adminResolver struct{ id string }
 
 func (a adminResolver) Resolve(context.Context, auth.Identity) (*auth.Principal, error) {
-	return auth.NewPrincipal(a.id, "admin@example.com", auth.RoleAdmin), nil
+	return auth.NewPrincipal(a.id, "admin@example.com", "admin", nil, true), nil
 }
 
 func newAPI(t *testing.T) *apiEnv {

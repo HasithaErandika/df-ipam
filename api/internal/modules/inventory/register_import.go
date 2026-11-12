@@ -37,8 +37,8 @@ func (h *Handler) importRegister(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	asServer := c.Query("as") == "server"
-	result := importResult{Issues: []rowIssue{}}
+	asServer, dry := c.Query("as") == "server", isDryRun(c)
+	result := importResult{DryRun: dry, Issues: []rowIssue{}, Preview: []previewRow{}}
 	var valid []importRow
 	line := map[string]int{}
 	for i, row := range rows {
@@ -53,9 +53,17 @@ func (h *Handler) importRegister(c *gin.Context) {
 		line[x.in.IP] = i + 2
 		valid = append(valid, x)
 	}
-	err = db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		n, err := insertImported(c, tx, valid, asServer, line)
-		result.Imported = n
+	err = importTx(c, h.conn, dry, func(tx pgx.Tx) error {
+		names := map[string]string{}
+		for _, x := range valid {
+			names[x.in.IP] = x.in.Name
+		}
+		ips, err := insertImported(c, tx, valid, asServer)
+		for _, ip := range ips {
+			result.Preview = append(result.Preview, previewRow{Row: line[ip], Key: ip, Label: names[ip]})
+			delete(line, ip)
+		}
+		result.Imported = len(ips)
 		return err
 	})
 	if err != nil {
@@ -67,7 +75,10 @@ func (h *Handler) importRegister(c *gin.Context) {
 	}
 	result.Skipped = len(rows) - result.Imported
 	slices.SortFunc(result.Issues, func(a, b rowIssue) int { return a.Row - b.Row })
-	h.recheck(c)
+	slices.SortFunc(result.Preview, func(a, b previewRow) int { return a.Row - b.Row })
+	if !dry {
+		h.recheck(c)
+	}
 	httpx.OK(c, http.StatusOK, result)
 }
 
@@ -144,8 +155,8 @@ func splitList(cell string) []string {
 }
 
 // insertImported inserts the valid rows in one statement, audits each, and
-// removes inserted IPs from line so only the skipped ones are left.
-func insertImported(c *gin.Context, tx pgx.Tx, valid []importRow, asServer bool, line map[string]int) (int, error) {
+// returns the IPs that went in.
+func insertImported(c *gin.Context, tx pgx.Tx, valid []importRow, asServer bool) ([]string, error) {
 	var cols [14][]string
 	for _, x := range valid {
 		for j, v := range []string{x.in.IP, x.in.Status, x.in.Type, x.in.Name, x.in.MAC, x.in.Owner, x.in.Department, x.in.Notes,
@@ -171,21 +182,22 @@ func insertImported(c *gin.Context, tx pgx.Tx, valid []importRow, asServer bool,
 		ON CONFLICT (ip) DO NOTHING RETURNING id::text, host(ip)`,
 		cols[0], cols[1], cols[2], cols[3], cols[4], cols[5], cols[6], cols[7], cols[8], cols[9], cols[10], cols[11], cols[12], cols[13], uid, asServer)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	var entries []audit.Entry
+	var ips []string
 	for inserted.Next() {
 		var id, ip string
 		if err := inserted.Scan(&id, &ip); err != nil {
 			inserted.Close()
-			return 0, err
+			return nil, err
 		}
-		delete(line, ip)
+		ips = append(ips, ip)
 		entries = append(entries, audit.Entry{ActorID: uid, Action: "import", ObjectType: "ip_address", ObjectID: id, New: map[string]string{"ip": ip}})
 	}
 	inserted.Close()
 	if err := inserted.Err(); err != nil {
-		return 0, err
+		return nil, err
 	}
-	return len(entries), audit.WriteMany(c, tx, entries)
+	return ips, audit.WriteMany(c, tx, entries)
 }

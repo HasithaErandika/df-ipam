@@ -22,9 +22,10 @@ func NewHandler(conn db.Conn) *Handler { return &Handler{conn: conn} }
 func (h *Handler) Register(g *auth.Guard) {
 	read, edit := auth.InventoryView, auth.InventoryEdit
 	g.Handle(http.MethodGet, "/segments", h.segments, read)
-	g.Handle(http.MethodPost, "/segments", h.createSegment, edit)
-	g.Handle(http.MethodPut, "/segments/:id", h.updateSegment, edit)
-	g.Handle(http.MethodDelete, "/segments/:id", h.deleteSegment, edit)
+	g.Handle(http.MethodPost, "/segments", h.createSegment, auth.NetworkManage)
+	g.Handle(http.MethodPut, "/segments/:id", h.updateSegment, auth.NetworkManage)
+	g.Handle(http.MethodDelete, "/segments/:id", h.deleteSegment, auth.NetworkManage)
+	g.Handle(http.MethodPost, "/segments/import", h.importSegments, auth.NetworkManage)
 	g.Handle(http.MethodGet, "/segments/:id/addresses", h.addresses, read)
 	g.Handle(http.MethodGet, "/segments/:id/map", h.addressMap, read)
 

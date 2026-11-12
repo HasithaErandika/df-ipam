@@ -74,6 +74,7 @@ export interface User {
   email: string
   displayName: string
   role: Role | null
+  roleName: string | null
   isActive: boolean
   lastLoginAt: string | null
   createdAt: string

@@ -31,7 +31,8 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Sup
 
 | Table | Holds |
 | --- | --- |
-| `users` | Email, display name, role (`admin`, `requester`, `viewer` or none), active flag, auth subject |
+| `users` | Email, display name, role (a `roles` key, or none), active flag, auth subject |
+| `roles` | Key, name, description, permissions, full access, system flag, order. Users refer to it by key |
 | `segments` | Name, type (`dhcp`, `server`, `cloud`), floor, VLAN, network, gateway, DHCP pool start and end, default environment, description, alert-on-private-MACs and check-ports switches |
 | `environments` | Name, colour, order, default severity, default monitor and critical for new servers |
 | `departments` | Name and description. Devices and register entries hold the name as text |
@@ -44,6 +45,7 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Sup
 | `notifications` | Per person: kind, message, link, read, email status. Also the email outbox |
 | `notification_preferences` | Per person and kind: email on or off |
 | `settings` | Key and JSON value: scan and check intervals, failures before Down, reminder days, session timeout, email switch, FortiGate connection (token encrypted) |
+| `sessions` | Microsoft sign-in sessions: user, SHA-256 hash of the cookie token, created, last seen, expires, revoked, address, browser |
 | `audit_logs` | Append-only: actor, action, object type and ID, old and new values, time, source IP, correlation ID |
 
 ## Enforced by the schema
@@ -75,5 +77,7 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Sup
 | 000009 | Device details on sightings: card maker, maker, model, kind, TTL hint |
 | 000010 | Departments |
 | 000011 | Per-segment port checks, open ports, register lookup by MAC and device |
+| 000012 | Roles that administrators set up, with six starting roles; `users.role` refers to them |
+| 000013 | Sessions for Microsoft Entra ID sign-in |
 
 `api/sql/supabase-setup.sql` is every migration and the seed as one file, for the Supabase SQL editor. Regenerate it with `make sql`. The seed (`make seed`, safe to repeat) loads the five environments and default settings.

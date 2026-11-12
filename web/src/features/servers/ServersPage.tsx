@@ -52,9 +52,9 @@ export function ServersPage() {
         actions={<>
           <ExportMenu path="/ip-addresses/export" params={Object.fromEntries(Object.entries(params).filter(([, v]) => v)) as Record<string, string>} name={servers ? 'servers' : 'ip-register'} />
           {canEdit && (servers
-            ? <ImportButton path="/ip-addresses/import?as=server" title="Import servers" columns={importColumns} required="ip" refreshKeys={inventoryKeys}
+            ? <ImportButton path="/ip-addresses/import?as=server" title="Import servers" keyLabel="IP" columns={importColumns} required="ip" refreshKeys={inventoryKeys}
                 notes={<>A blank <code className="font-mono">ipType</code> means Server. A blank <code className="font-mono">monitor</code> or <code className="font-mono">critical</code> takes the environment's default; <code className="font-mono">environment</code> is a name from Settings, or the segment's default. Services are codes separated by spaces, such as <code className="font-mono">nginx docker</code>. An export from this page imports back as it is.</>} />
-            : <ImportButton path="/ip-addresses/import" title="Import IP register" columns={importColumns} required="ip" refreshKeys={inventoryKeys} />)}
+            : <ImportButton path="/ip-addresses/import" title="Import IP register" keyLabel="IP" columns={importColumns} required="ip" refreshKeys={inventoryKeys} />)}
           {canEdit && <Button variant="primary" onClick={() => setAdding(true)}><Plus size={14} aria-hidden />{servers ? 'Add server' : 'Add address'}</Button>}
         </>} />
       <PathTabs base="/servers" tabs={[{ key: 'servers', label: 'Servers' }, { key: 'register', label: 'IP register' }]} />

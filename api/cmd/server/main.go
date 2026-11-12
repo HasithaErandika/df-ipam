@@ -15,6 +15,7 @@ import (
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/integrations/fortigate"
 	"dfipam/api/internal/modules/notifications"
+	"dfipam/api/internal/modules/signin"
 	"dfipam/api/internal/platform/config"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/mail"
@@ -80,7 +81,14 @@ func run() error {
 	}
 	verifier := auth.NewSupabaseVerifier(cfg.SupabaseURL+"/auth/v1", cfg.AuthAudience, cfg.SupabaseURL+"/auth/v1/.well-known/jwks.json")
 	resolver := &auth.Resolver{Pool: pool, Provider: verifier.Provider()}
-	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
+	sessions := &auth.Sessions{Conn: pool}
+	var microsoft signin.Microsoft
+	if entra := (auth.EntraConfig{Authority: cfg.EntraAuthority, TenantID: cfg.EntraTenantID, ClientID: cfg.EntraClientID,
+		ClientSecret: cfg.EntraClientSecret, RedirectURL: cfg.EntraRedirectURL, Domains: cfg.AllowedEmailDomains}); entra.Enabled() {
+		microsoft = auth.NewEntra(entra)
+		slog.Info("microsoft sign-in is on", "tenant", cfg.EntraTenantID, "domains", cfg.AllowedEmailDomains, "redirect", cfg.EntraRedirectURL)
+	}
+	deps := server.Deps{Sessions: sessions, SignIn: signin.New(pool, microsoft, sessions, cfg.AppBaseURL), Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
 		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 

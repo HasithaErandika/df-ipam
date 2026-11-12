@@ -24,6 +24,12 @@ x-backend-env: &backend-env
   SUPABASE_SERVICE_ROLE_KEY:
   AUTH_AUDIENCE:
   APP_BASE_URL:
+  ENTRA_TENANT_ID:
+  ENTRA_CLIENT_ID:
+  ENTRA_CLIENT_SECRET:
+  ENTRA_AUTHORITY:
+  ENTRA_REDIRECT_URL:
+  AUTH_ALLOWED_EMAIL_DOMAINS:
   SMTP_HOST:
   SMTP_PORT:
   SMTP_USERNAME:
@@ -98,6 +104,7 @@ services:
       args:
         VITE_SUPABASE_URL:
         VITE_SUPABASE_ANON_KEY:
+        APP_COMMIT:
     restart: unless-stopped
     read_only: true
     tmpfs:

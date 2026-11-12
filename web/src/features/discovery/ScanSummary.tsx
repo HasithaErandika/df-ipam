@@ -50,7 +50,7 @@ export function ScanStatusPanel() {
       </Card>
       <Card title="Last result per segment" subtitle="Cloud segments are not swept from the building. Segments larger than 4,096 addresses are skipped; split them to scan.">
         <DataTable columns={columns} rows={s?.segments ?? []} query={q} rowKey={(r) => r.id}
-          empty={{ title: 'No segments scanned yet', body: 'Results appear here as each segment finishes. Add segments in Settings first.' }} />
+          empty={{ title: 'No segments scanned yet', body: 'Results appear here as each segment finishes. Add segments in Network setup first.' }} />
       </Card>
       <DiscoveryMethods />
     </div>

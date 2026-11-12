@@ -1,35 +1,44 @@
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useQueryClient } from '@tanstack/react-query'
-import { IdCard, LogOut, UserRound } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { signOut } from '../../lib/auth'
+import { useMe } from '../../lib/session'
 import { ProfileModal } from './ProfileModal'
 
-const menuItem = 'flex h-8 cursor-pointer items-center gap-2 rounded-[4px] px-2.5 text-[13px] text-ink-2 outline-none data-[highlighted]:bg-bg data-[highlighted]:text-ink'
+function initials(email: string) {
+  const parts = email.split('@')[0].split(/[._-]/).filter(Boolean)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
+}
 
+/** Who is signed in, opening their details, and a button to sign out. */
 export function UserMenu() {
+  const me = useMe()
   const queryClient = useQueryClient()
   const [details, setDetails] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const leave = async () => {
+    setLeaving(true)
+    try {
+      await signOut()
+      queryClient.clear()
+    } finally {
+      setLeaving(false)
+    }
+  }
   return (
     <>
-      {/* Not modal: a modal menu would fight the details dialog for focus as it closes. */}
-      <DropdownMenu.Root modal={false}>
-        <DropdownMenu.Trigger aria-label="Account menu" title="Account"
-          className="grid size-8 cursor-pointer place-items-center rounded-full bg-accent-soft text-accent hover:bg-accent hover:text-white data-[state=open]:bg-accent data-[state=open]:text-white">
-          <UserRound size={17} strokeWidth={1.75} aria-hidden />
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content align="end" sideOffset={6}
-            className="z-30 w-44 rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
-            <DropdownMenu.Item onSelect={() => setDetails(true)} className={menuItem}>
-              <IdCard size={14} aria-hidden /> Details
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={async () => { await signOut(); queryClient.clear() }} className={menuItem}>
-              <LogOut size={14} aria-hidden /> Sign out
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      <button type="button" onClick={() => setDetails(true)} title="Your details" aria-label={`Your details: ${me.email}`}
+        className="flex cursor-pointer items-center gap-2.5 rounded-full py-1 pr-3 pl-1 hover:bg-surface-2 max-md:pr-1">
+        <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-[12px] font-semibold text-white">{initials(me.email)}</span>
+        <span className="min-w-0 text-left leading-tight max-md:hidden">
+          <span className="block max-w-[220px] truncate text-[12.5px] font-medium text-ink">{me.email}</span>
+          <span className="block max-w-[220px] truncate text-[11.5px] text-ink-3">{me.roleName || 'No role yet'}</span>
+        </span>
+      </button>
+      <button type="button" onClick={() => void leave()} disabled={leaving} title="Sign out" aria-label="Sign out"
+        className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-[13px] font-medium text-ink-2 hover:border-danger/40 hover:bg-danger-soft hover:text-danger disabled:opacity-55 max-sm:px-2">
+        <LogOut size={15} aria-hidden /><span className="max-sm:hidden">Sign out</span>
+      </button>
       <ProfileModal open={details} onClose={() => setDetails(false)} />
     </>
   )

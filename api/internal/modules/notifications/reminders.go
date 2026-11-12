@@ -31,7 +31,7 @@ func queueReservationReminders(ctx context.Context, conn db.Conn) error {
 		RETURNING owner_id,owner_name,start_ip,end_ip,reason
 	), recipients AS (
 		SELECT d.owner_id AS user_id,d.reason,d.start_ip,d.end_ip FROM due d WHERE d.owner_id IS NOT NULL
-		UNION ALL SELECT u.id,d.reason,d.start_ip,d.end_ip FROM due d JOIN users u ON u.role='admin' AND u.is_active WHERE d.owner_id IS NULL
+		UNION ALL SELECT u.id,d.reason,d.start_ip,d.end_ip FROM due d JOIN users u ON u.is_active AND EXISTS (SELECT 1 FROM roles r WHERE r.key=u.role AND (r.full_access OR 'inventory:edit'=ANY(r.permissions))) WHERE d.owner_id IS NULL
 	)
 	INSERT INTO notifications(user_id,kind,message,link,email_status)
 	SELECT r.user_id,'reservation_expiry','Reservation expires soon: '||r.reason||' ('||host(r.start_ip)||CASE WHEN r.start_ip<>r.end_ip THEN ' – '||host(r.end_ip) ELSE '' END||')','/reservations',

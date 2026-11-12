@@ -12,7 +12,7 @@ import type { Segment } from '../../lib/types'
  * segment by itself: a person confirms, and the change is audited.
  */
 export function GatewayHint({ segment: s }: { segment: Segment }) {
-  const canEdit = useCan('inventory:edit')
+  const canEdit = useCan('network:manage')
   const confirm = useConfirm()
   const refresh = useInvalidate('/segments', '/discovery')
   const save = useMutation({

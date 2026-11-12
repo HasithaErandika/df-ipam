@@ -491,6 +491,86 @@ ALTER TABLE sightings ADD COLUMN open_ports integer[] NOT NULL DEFAULT '{}' CHEC
 CREATE INDEX ip_addresses_expected_mac_idx ON ip_addresses (expected_mac) WHERE expected_mac IS NOT NULL;
 CREATE INDEX ip_addresses_device_idx ON ip_addresses (device_id) WHERE device_id IS NOT NULL;
 
+-- 000012_lite_roles.up.sql
+-- Roles that Admins set up: a name and the permissions it grants. A role with
+-- full_access holds every permission, including ones added later; it is a
+-- system role and can't be changed or deleted. users.role names a role by key.
+CREATE TABLE roles (
+  key         text PRIMARY KEY CHECK (key ~ '^[a-z][a-z0-9_]{1,39}$'),
+  name        text NOT NULL CHECK (btrim(name) <> '' AND length(name) <= 60),
+  description text NOT NULL DEFAULT '' CHECK (length(description) <= 300),
+  permissions text[] NOT NULL DEFAULT '{}' CHECK (cardinality(permissions) <= 64),
+  full_access boolean NOT NULL DEFAULT false,
+  is_system   boolean NOT NULL DEFAULT false,
+  sort_order  integer NOT NULL DEFAULT 100,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX roles_name_key ON roles (lower(name));
+CREATE TRIGGER roles_updated BEFORE UPDATE ON roles FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dfipam_app_all ON roles TO dfipam_app USING (true) WITH CHECK (true);
+GRANT SELECT, INSERT, UPDATE, DELETE ON roles TO dfipam_app;
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON roles FROM %I', r);
+    END IF;
+  END LOOP;
+END $$;
+
+-- Starting roles. Admins change or add to them in Access > Roles.
+INSERT INTO roles (key, name, description, permissions, full_access, is_system, sort_order) VALUES
+  ('admin', 'Administrator', 'Everything, including people, roles and system settings.', '{}', true, true, 10),
+  ('network_engineer', 'Network engineer', 'Runs the network: segments, discovery, the register and devices, approves IP requests and handles alerts.',
+   '{inventory:view,inventory:edit,network:manage,discovery:scan,ip:request,ip:reserve,requests:approve,alerts:manage,reports:export}', false, false, 20),
+  ('it_officer', 'IT officer', 'Day-to-day: registers addresses and devices, raises requests and reservations, handles alerts.',
+   '{inventory:view,inventory:edit,ip:request,ip:reserve,alerts:manage,reports:export}', false, false, 30),
+  ('security_auditor', 'Security auditor', 'Reads everything, the audit log included, and exports reports. Changes nothing.',
+   '{inventory:view,audit:view,reports:export}', false, false, 40),
+  ('requester', 'Requester', 'Reads, and asks for IP addresses and reservations.',
+   '{inventory:view,ip:request,ip:reserve,reports:export}', false, false, 50),
+  ('viewer', 'Viewer', 'Reads and exports reports.', '{inventory:view,reports:export}', false, false, 60);
+
+ALTER TABLE users DROP CONSTRAINT users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_fkey FOREIGN KEY (role) REFERENCES roles (key) ON UPDATE CASCADE ON DELETE RESTRICT;
+CREATE INDEX users_role_idx ON users (role);
+
+-- 000013_lite_sessions.up.sql
+-- Sign-in sessions for Microsoft Entra ID. The browser holds a random token in
+-- a cookie scripts can't read; only its SHA-256 hash is stored here. A session
+-- ends at expires_at, after the idle timeout, when revoked at sign-out, or as
+-- soon as its user is deactivated.
+CREATE TABLE sessions (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      uuid NOT NULL REFERENCES users (id),
+  token_hash   bytea NOT NULL UNIQUE CHECK (length(token_hash) = 32),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
+  expires_at   timestamptz NOT NULL,
+  revoked_at   timestamptz,
+  ip           inet,
+  user_agent   text NOT NULL DEFAULT '' CHECK (length(user_agent) <= 300)
+);
+CREATE INDEX sessions_user_idx ON sessions (user_id);
+CREATE INDEX sessions_expires_idx ON sessions (expires_at);
+
+ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dfipam_app_all ON sessions TO dfipam_app USING (true) WITH CHECK (true);
+GRANT SELECT, INSERT, UPDATE, DELETE ON sessions TO dfipam_app;
+DO $$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON sessions FROM %I', r);
+    END IF;
+  END LOOP;
+END $$;
+
 -- Seed data
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Production', '#dc2626', 10, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('DR', '#9333ea', 20, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
@@ -508,6 +588,6 @@ INSERT INTO settings (key, value) VALUES ('fortigate.enabled', 'false'::jsonb) O
 INSERT INTO settings (key, value) VALUES ('fortigate.verify_tls', 'true'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('fortigate.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (11, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (13, false);
 
 COMMIT;

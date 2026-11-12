@@ -119,7 +119,7 @@ func (h *Handler) createReservation(c *gin.Context) {
 		return
 	}
 	p := auth.Current(c)
-	if err := in.validate(p.Has(auth.SystemManage)); err != nil {
+	if err := in.validate(p.Has(auth.InventoryEdit)); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

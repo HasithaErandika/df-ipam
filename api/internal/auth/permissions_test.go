@@ -1,39 +1,25 @@
 package auth
 
-import (
-	"slices"
-	"testing"
-)
+import "testing"
 
-func TestRolesUseKnownPermissions(t *testing.T) {
-	for role, perms := range RolePermissions {
-		for _, p := range perms {
-			if !slices.Contains(AllPermissions, p) {
-				t.Errorf("%s has unknown permission %s", role, p)
-			}
-		}
+func TestPrincipalTakesOnlyKnownPermissions(t *testing.T) {
+	p := NewPrincipal("u", "u@example.com", "viewer", []string{InventoryView, "made:up"}, false)
+	if !p.Has(InventoryView) || p.Has("made:up") || p.Has(InventoryEdit) {
+		t.Fatalf("got %v", p.Permissions)
 	}
 }
 
-func TestLeastPrivilege(t *testing.T) {
-	for role, denied := range map[string][]string{
-		RoleViewer:    {InventoryEdit, IPRequest, IPReserve, RequestsApprove, AlertsManage, AuditView, UsersManage, SystemManage},
-		RoleRequester: {InventoryEdit, RequestsApprove, AlertsManage, AuditView, UsersManage, SystemManage},
-	} {
-		p := NewPrincipal("u", "u@example.com", role)
-		for _, name := range denied {
-			if p.Has(name) {
-				t.Errorf("%s must not have %s", role, name)
-			}
+func TestFullAccessHoldsEveryPermission(t *testing.T) {
+	p := NewPrincipal("u", "u@example.com", "admin", nil, true)
+	for _, name := range AllPermissions {
+		if !p.Has(name) {
+			t.Errorf("full access lacks %s", name)
 		}
 	}
 }
 
 func TestNoRoleHasNothing(t *testing.T) {
-	if p := NewPrincipal("u", "u@example.com", ""); len(p.Permissions) != 0 {
+	if p := NewPrincipal("u", "u@example.com", "", nil, false); len(p.Permissions) != 0 {
 		t.Fatalf("got %v", p.Permissions)
-	}
-	if ValidRole("Super Administrator") || !ValidRole(RoleAdmin) {
-		t.Fatal("ValidRole")
 	}
 }

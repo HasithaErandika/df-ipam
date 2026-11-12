@@ -2,6 +2,7 @@ package tabular
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +40,19 @@ func TestRefusesOtherFiles(t *testing.T) {
 	}
 	if _, err := Read("fake.xlsx", bytes.NewReader([]byte("not a zip")), 100); err == nil {
 		t.Fatal("accepted a broken workbook")
+	}
+}
+
+func TestReadTextPicksTheDelimiter(t *testing.T) {
+	for name, text := range map[string]string{
+		"tabs.txt":  "ip\tname\n10.0.0.5\tweb 1\n",
+		"semi.csv":  "ip;name\n10.0.0.5;web 1\n",
+		"pipes.tsv": "ip|name\n10.0.0.5|web 1\n",
+		"comma.txt": "ip,name\n10.0.0.5,web 1\n",
+	} {
+		rows, err := Read(name, strings.NewReader(text), 1<<20)
+		if err != nil || len(rows) != 2 || len(rows[1]) != 2 || rows[1][1] != "web 1" {
+			t.Errorf("%s: %v %q", name, err, rows)
+		}
 	}
 }

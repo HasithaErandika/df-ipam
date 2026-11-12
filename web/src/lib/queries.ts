@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { get } from './api'
-import type { Department, Environment, Segment } from './types'
+import type { Department, Environment, RoleDef, Segment } from './types'
 
 /** Returns a function that marks out of date every query whose path starts with one of these. */
 export function useInvalidate(...keys: string[]) {
@@ -20,3 +20,6 @@ export const inventoryKeys = ['/ip-addresses', '/devices', '/discovery', '/segme
 
 /** Departments to pick from on devices and register entries. */
 export const useDepartments = () => useQuery({ queryKey: ['/departments'], queryFn: () => get<Department[]>('/departments'), staleTime: 60_000 })
+
+/** Roles and their permissions, for Users & roles. */
+export const useRoles = () => useQuery({ queryKey: ['/roles'], queryFn: () => get<RoleDef[]>('/roles'), staleTime: 60_000 })

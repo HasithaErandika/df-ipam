@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
+import { backTo } from '../../lib/backTo'
 import { addressStates, AddressMap, StackedBar, type Run } from '../../components/charts'
 import { Button, Card, EmptyState, EnvironmentBadge, ErrorState, PageHeader, SkeletonRows } from '../../components/ui'
 import { get } from '../../lib/api'
@@ -30,7 +31,8 @@ export function SegmentPage() {
 
   if (segments.isPending) return <SkeletonRows rows={8} />
   if (segments.isError) return <Card><ErrorState error={segments.error} onRetry={() => void segments.refetch()} /></Card>
-  if (!segment) return <Card><EmptyState title="This segment no longer exists" body="It may have been removed." action={<Link className="text-accent hover:underline" to="/discovery">Back to Discovery</Link>} /></Card>
+  const back = backTo()
+  if (!segment) return <Card><EmptyState title="This segment no longer exists" body="It may have been removed." action={<Link className="text-accent hover:underline" to={back.path}>Back to {back.label}</Link>} /></Card>
 
   const pick = (ip: string, state: string) => {
     if (canEdit && (state === 'available' || state === 'seen')) setPrefill({ segmentId: id, ip })
@@ -40,7 +42,7 @@ export function SegmentPage() {
 
   return (
     <>
-      <Link to="/discovery" className="mb-2 inline-flex items-center gap-1 text-[12.5px] text-ink-3 hover:text-accent"><ArrowLeft size={13} aria-hidden />Discovery</Link>
+      <Link to={back.path} className="mb-2 inline-flex items-center gap-1 text-[12.5px] text-ink-3 hover:text-accent"><ArrowLeft size={13} aria-hidden />{back.label}</Link>
       <PageHeader title={segment.name}
         description={[label(segmentKinds, segment.kind), segmentCaption(segment), segment.gateway ? `gateway ${segment.gateway}` : null, segment.dhcpStart ? `DHCP ${segment.dhcpStart} – ${segment.dhcpEnd}` : null].filter(Boolean).join(' · ')}
         actions={<>

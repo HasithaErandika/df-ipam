@@ -25,7 +25,7 @@ function useScan() {
  * spaces manual scans a minute apart, so this can't flood the network.
  */
 export function ScanButton({ segmentId, running, label: text = 'Scan now' }: { segmentId?: string; running?: boolean; label?: string }) {
-  const can = useCan('system:manage')
+  const can = useCan('discovery:scan')
   const segments = useSegments()
   const scan = useScan()
   if (!can) return null
@@ -52,7 +52,7 @@ export function ScanButton({ segmentId, running, label: text = 'Scan now' }: { s
           <DropdownMenu.Item className={item} disabled={sweepable === 0} onSelect={() => scan.mutate(undefined)}>
             <span className="font-medium text-ink">All segments</span><span className="text-[12px] text-ink-3">{sweepable}</span>
           </DropdownMenu.Item>
-          {sweepable === 0 && <p className="px-2.5 py-1.5 text-[12px] text-ink-3">Add segments in Settings to scan them.</p>}
+          {sweepable === 0 && <p className="px-2.5 py-1.5 text-[12px] text-ink-3">Add segments in Network setup to scan them.</p>}
           {groups.map(([kind, list]) => (
             <DropdownMenu.Group key={kind}>
               <DropdownMenu.Separator className="my-1 h-px bg-line" />

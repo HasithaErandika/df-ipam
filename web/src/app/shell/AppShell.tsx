@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { Link, Outlet, useLocation } from 'react-router'
 import { Button, Card, EmptyState, ErrorBoundary, Modal, SkeletonRows } from '../../components/ui'
 import { signOut } from '../../lib/auth'
+import { rememberPage } from '../../lib/backTo'
 import { useIdleTimeout } from '../../lib/idle'
 import { useCan, useMe } from '../../lib/session'
 import { useScanStatus } from '../../lib/scan'
@@ -33,7 +34,7 @@ function ScanWatcher() {
   return null
 }
 
-/** Signs out after the idle time set in Settings, with a minute's warning. */
+/** Signs out after the idle time set in System, with a minute's warning. */
 function SessionGuard() {
   const { sessionTimeoutMinutes } = useMe()
   const queryClient = useQueryClient()
@@ -60,7 +61,9 @@ export function AppShell() {
     return !c
   })
   const current = pageFor(pathname)
+  const { search } = useLocation()
   useEffect(() => { document.title = current ? `${current.label} · DF-IPAM` : 'DF-IPAM' }, [current])
+  useEffect(() => { if (current && !current.hidden) rememberPage(pathname + search, current.label) }, [current, pathname, search])
   return (
     <div className="flex h-full">
       <Sidebar collapsed={collapsed} onToggle={toggle} />
@@ -71,8 +74,9 @@ export function AppShell() {
             <ChevronRight size={13} className="shrink-0 max-md:hidden" aria-hidden />
             <span aria-current="page" className="truncate font-medium text-ink">{current?.label}</span>
           </nav>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <NotificationBell />
+            <span aria-hidden className="mx-1 h-6 w-px bg-line max-sm:hidden" />
             <UserMenu />
           </div>
         </header>

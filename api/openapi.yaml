@@ -67,17 +67,23 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     post:
       summary: "Create a floor (dhcp) or server segment"
-      description: "Permission: inventory:edit."
+      description: "Permission: network:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /segments/import:
+    post:
+      summary: "Add segments from pasted text: FortiGate 'show system interface' output, or lines with a CIDR and a name. ?dryRun=true only previews"
+      description: "Permission: network:manage."
+      parameters: [{ name: dryRun, in: query, schema: { type: boolean } }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /segments/{id}:
     put:
       summary: "Update a segment"
-      description: "Permission: inventory:edit."
+      description: "Permission: network:manage."
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     delete:
       summary: "Delete a segment that holds no register entries, reservations or requests"
-      description: "Permission: inventory:edit."
+      description: "Permission: network:manage."
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /segments/{id}/map:
@@ -100,13 +106,49 @@ paths:
   /discovery/scan:
     post:
       summary: "Start a scan now, of one segment or all. Refused while a scan runs and within a minute of the last manual scan"
-      description: "Permission: system:manage."
+      description: "Permission: discovery:scan."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /discovery/findings:
     get:
       summary: "Everything the scanner has seen, with register and device state, filtered and paged"
       description: "Permission: inventory:view."
       parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: kind, in: query, schema: { type: string } }, { name: source, in: query, schema: { type: string } }, { name: seen, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /auth/status:
+    get:
+      summary: "Public. Which ways to sign in are on (microsoft, password), and whether this browser holds a Microsoft session"
+      responses: { '2XX': { description: OK } }
+  /auth/microsoft/login:
+    get:
+      summary: "Public. Redirects to Microsoft Entra ID (authorization code with PKCE and a nonce). ?returnTo= a path in the app"
+      responses: { '302': { description: To Microsoft }, default: { $ref: '#/components/responses/Error' } }
+  /auth/microsoft/callback:
+    get:
+      summary: "Public. Microsoft returns here. Checks the ID token, the tenant and the email domain, starts a session cookie, and redirects to the app (or to /?signin_error=domain|tenant|disabled|expired|cancelled|failed)"
+      responses: { '302': { description: To the app } }
+  /auth/logout:
+    post:
+      summary: "Public. Ends the Microsoft session in this browser. Needs X-Requested-With: DF-IPAM"
+      responses: { '204': { description: Signed out }, default: { $ref: '#/components/responses/Error' } }
+  /roles:
+    get:
+      summary: "Roles with their permissions and how many people hold each"
+      description: "Permission: users:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Add a role: a name, a description and the permissions it grants"
+      description: "Permission: users:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /roles/{key}:
+    put:
+      summary: "Rename, describe or change a role's permissions (a system role keeps its permissions)"
+      description: "Permission: users:manage."
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: "Delete a role nobody holds"
+      description: "Permission: users:manage."
+      parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /departments:
     get:
@@ -115,17 +157,17 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     post:
       summary: "Add a department"
-      description: "Permission: system:manage."
+      description: "Permission: network:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /departments/{id}:
     put:
       summary: "Rename or describe a department; a rename carries over to the devices and register entries using it"
-      description: "Permission: system:manage."
+      description: "Permission: network:manage."
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     delete:
       summary: "Delete a department nobody uses"
-      description: "Permission: system:manage."
+      description: "Permission: network:manage."
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /discovery/summary:
@@ -323,7 +365,7 @@ paths:
   /users/options:
     get:
       summary: "Active people with a role, for pickers"
-      description: "Permission: users:manage or system:manage."
+      description: "Permission: users:manage, system:manage or inventory:edit."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /environments:
     get:
@@ -332,17 +374,17 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     post:
       summary: "Add an environment"
-      description: "Permission: system:manage."
+      description: "Permission: network:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /environments/{id}:
     put:
       summary: "Update an environment"
-      description: "Permission: system:manage."
+      description: "Permission: network:manage."
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     delete:
       summary: "Delete an environment no register entry or request uses"
-      description: "Permission: system:manage."
+      description: "Permission: network:manage."
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /settings:

@@ -34,6 +34,8 @@ Per segment, off by default:
 
 Networks never overlap, and a segment can't be moved away from the register entries and reservations inside it.
 
+**Import from text.** Network setup > Segments > Import from text takes FortiGate `show system interface` output (from either firewall prompt, `$` or `#`), or one network per line such as `Floor 3 192.168.3.0/24`. Each interface address becomes the segment's gateway, `vlan_60`-style names give the VLAN, and the firewall's name goes in the description. Tunnels, loopbacks, /31 and /32 addresses, networks that already exist or overlap one, and repeats are skipped with the reason. A name already used gets the firewall's name added. People review every row, untick any to leave out, then add; nothing is saved before that.
+
 ## Discovery
 
 The backend scans every swept segment every `scan.interval_minutes` (default 10, at least 5). What it asks each address:
@@ -70,7 +72,7 @@ A MAC is only visible from the devices' own network. NetBIOS gives MACs for many
 
 ### FortiGate (optional, read-only)
 
-Settings > FortiGate stores the address (`https://` only), VDOM, TLS verification, read interval and a REST API token, encrypted with `SECRET_ENCRYPTION_KEY` and never returned or logged. DF-IPAM sends only GET requests, reading the ARP table, DHCP leases (with the DHCP vendor class, which hints at the OS) and SSL and IPsec VPN sessions. Off by default. "Test connection" and "Read now" work before the schedule is on.
+System > FortiGate stores the address (`https://` only), VDOM, TLS verification, read interval and a REST API token, encrypted with `SECRET_ENCRYPTION_KEY` and never returned or logged. DF-IPAM sends only GET requests, reading the ARP table, DHCP leases (with the DHCP vendor class, which hints at the OS) and SSL and IPsec VPN sessions. Off by default. "Test connection" and "Read now" work before the schedule is on.
 
 ## The IP register
 
@@ -86,7 +88,9 @@ Ways in:
 
 - **From Discovery:** an address seen but not registered has **Register**, pre-filled from what was seen. Approving a device can register its address in the same step.
 - **By hand:** the form suggests the next **Available candidate**: not registered, not reserved, outside the DHCP pool, not the gateway, and not seen recently. The API rejects an IP already registered and warns if it was seen in use.
-- **Import** a CSV or Excel file (5 MB, 5,000 rows) with the same columns as the export, so an export can be edited and imported back. On the Servers tab a blank type means Server, and blank Monitor and Critical take the environment's defaults.
+- **Import** a CSV, text (`.txt`, `.tsv`: comma, tab, semicolon or pipe) or Excel file (5 MB, 5,000 rows) with the same columns as the export, so an export can be edited and imported back. On the Servers tab a blank type means Server, and blank Monitor and Critical take the environment's defaults.
+
+**Every import is reviewed first.** Choosing a file runs a dry run, which does the whole import in a transaction that is rolled back, and shows exactly which rows would be added and which skipped and why. Only Import, after that review, saves anything.
 - **Release** an entry, after a confirmation. Audited.
 
 Platform and services are set by people. Forms offer "Use likely platform" from the evidence but never fill it in by themselves.
@@ -102,7 +106,7 @@ The Servers tab is the register's server and cloud entries plus anything monitor
 | UAT | High | Monitored |
 | Development, Test | Medium | Not monitored |
 
-Admins add or change environments in Settings. A server can be marked critical by hand.
+Environments are added or changed in Network setup. A server can be marked critical by hand.
 
 Monitored entries are checked every `server_check.interval_seconds` (default once a day): ping, then the check port when ping is blocked. A server is **Down** after `server_check.down_after_failures` failures in a row (default 3).
 
@@ -110,7 +114,7 @@ Monitored entries are checked every `server_check.interval_seconds` (default onc
 
 Known MAC addresses: name, owner, department, type, platform and status (`pending`, `approved`, `rejected`). A MAC seen for the first time becomes **pending**; private MACs do so only on segments that watch them. Approving can register the address it was seen on. Devices import and export as CSV or Excel.
 
-**Departments** come from a list in Settings. A rename carries over to devices and register entries in the same audited change; a department in use can't be deleted.
+**Departments** come from a list in Network setup. A rename carries over to devices and register entries in the same audited change; a department in use can't be deleted.
 
 ## Alerts
 
@@ -140,7 +144,7 @@ Alerts can be acknowledged, and close when the cause is gone. One open alert per
 
 ## Notifications
 
-A bell in the top bar, and email when switched on in Settings (off by default, and needs `SMTP_HOST`). Sent for High and Critical alerts, new requests (to Admins), request decisions, servers back up and expiring reservations. Each person can switch email off per type. At most 20 emails an hour per person; the rest stay in the app. Read notifications are removed after 90 days.
+A bell in the top bar shows each person's notifications and, for those who see the network, how many alerts are open. Every new alert is a notification in the app; High and Critical ones also go by email when switched on in System (off by default, and needs `SMTP_HOST`). Sent for High and Critical alerts, new requests (to those who approve them), request decisions, servers back up and expiring reservations. Each person can switch email off per type. At most 20 emails an hour per person; the rest stay in the app. Read notifications are removed after 90 days.
 
 ## Reports
 
@@ -158,27 +162,35 @@ On demand, as CSV, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segm
 | IP Requests | Raise, and for Admins the approval queue |
 | Reservations | Active and expiring holds |
 | Reports | Pick a report, range and format |
-| Settings | Segments, environments, departments, users, audit log, System, FortiGate |
+| Audit log | Every change, with filters and export |
+| Network setup | Segments (with import from text), environments, departments |
+| Users and roles | People and their roles; roles and their permissions |
+| System | Intervals, email, sessions, and the FortiGate connection |
 
-## Settings
+## System settings
 
-Admins change these in Settings > System: scan interval (5 to 1,440 minutes), server check interval, failed checks before Down, reservation reminder days, idle sign-out (default 30 minutes, with a warning one minute before), and the email switch. Every edit in Settings asks first, lists exactly what changes, and confirms when saved.
+People who may manage the system change these in System > Settings: scan interval (5 to 1,440 minutes), server check interval, failed checks before Down, reservation reminder days, idle sign-out (default 30 minutes, with a warning one minute before), and the email switch. Every edit on the administration pages asks first, lists exactly what changes, and confirms when saved.
 
 ## Roles
 
-| Role | Can |
-| --- | --- |
-| Admin | Everything: register, devices, approvals, alerts, settings, users, audit |
-| Requester | Read, raise IP requests and reservations, export reports |
-| Viewer | Read and export reports |
+A role is a job and the permissions it grants; each person holds one. People who may manage users set roles up in **Users and roles > Roles**: add a role (optionally copying another's permissions), rename it, change its permissions, or delete one nobody holds. Changes apply on each holder's next request.
 
-A signed-in person with no role sees nothing. The code checks permissions, never role names. See [authentication.md](authentication.md).
+| Starting role | Grants |
+| --- | --- |
+| Administrator | Every permission, including ones added later. A system role: it can be renamed but not limited or deleted |
+| Network engineer | See and change the register and devices, set up the network, start scans, request and reserve, approve requests, handle alerts, export reports |
+| IT officer | See and change the register and devices, request and reserve, handle alerts, export reports |
+| Security auditor | See the network, read the audit log, export reports |
+| Requester | See the network, request and reserve, export reports |
+| Viewer | See the network, export reports |
+
+People sign in with their **Microsoft** `@dialogfinance.lk` account (Entra ID), or, until it is removed, Supabase email and password. A signed-in person with no role sees nothing. Nobody changes their own role or access, and no change may leave nobody active who can manage users. Notifications go by permission: alerts and servers back up to those who handle alerts, new requests to those who approve them. The code checks permissions, never role names. See [authentication.md](authentication.md).
 
 ## Data model
 
-Fourteen tables. See [database.md](database.md).
+Sixteen tables. See [database.md](database.md).
 
-`users`, `segments`, `environments`, `departments`, `devices`, `ip_addresses`, `reservations`, `ip_requests`, `sightings`, `alerts`, `notifications`, `notification_preferences`, `settings`, `audit_logs`.
+`users`, `roles`, `sessions`, `segments`, `environments`, `departments`, `devices`, `ip_addresses`, `reservations`, `ip_requests`, `sightings`, `alerts`, `notifications`, `notification_preferences`, `settings`, `audit_logs`.
 
 ## Not built
 
@@ -187,7 +199,7 @@ Fourteen tables. See [database.md](database.md).
 | ARP sweep on each floor VLAN from a trunk port | Every MAC, even with firewalls on | A trunk port with the floor VLANs for the DF-IPAM server |
 | SNMP read of the core switches (ARP, MAC tables, LLDP and CDP neighbours) | MACs across routed networks, and the switch port of each device | Read-only SNMP v2c or v3 on the switches |
 | Reading the floor DHCP server directly | Exact DHCP or static, without relying on the pool range | Read access to the DHCP server. The FortiGate leases cover it if it serves DHCP |
-| Company sign-in in place of Supabase | One identity, no external sign-in service | See [plan.md](plan.md) |
+| Removing Supabase sign-in | One way in; no external sign-in service | Your go-ahead. See [plan.md](plan.md) |
 
 ## Questions to answer first
 

@@ -3,7 +3,7 @@ import { Field, Input, Select } from '../../components/ui'
 import { useDepartments } from '../../lib/queries'
 
 /**
- * The department, picked from the list set up in Settings. A name saved before
+ * The department, picked from the list set up in Network setup. A name saved before
  * the list existed stays selectable. With no list yet, it is typed, and the hint
  * says where to set one up.
  */
@@ -12,7 +12,7 @@ export function DepartmentSelect({ id, value, onChange, error }: { id: string; v
   const list = q.data ?? []
   if (q.isSuccess && list.length === 0) {
     return (
-      <Field label="Department" htmlFor={id} error={error} hint={<>Set up a list in <Link className="text-accent hover:underline" to="/settings/departments">Settings → Departments</Link> to pick from.</>}>
+      <Field label="Department" htmlFor={id} error={error} hint={<>Set up a list in <Link className="text-accent hover:underline" to="/network-setup/departments">Network setup → Departments</Link> to pick from.</>}>
         <Input id={id} value={value} maxLength={120} onChange={(e) => onChange(e.target.value)} />
       </Field>
     )

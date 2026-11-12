@@ -6,12 +6,12 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # Sourcing in the shell, not `include`, keeps `$` and `#` in passwords intact.
-LOAD_ENV := set -a; [ -f api/.env ] && . api/.env; [ -f web/.env ] && . web/.env; COMPOSE_FILE=$${COMPOSE_FILE:-docker-compose.yml:docker-compose.dev.yml$$([ "$${HOST_NETWORK:-}" = true ] && echo :docker-compose.hostnet.yml)}; set +a;
+LOAD_ENV := set -a; APP_COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || true); [ -f api/.env ] && . api/.env; [ -f web/.env ] && . web/.env; COMPOSE_FILE=$${COMPOSE_FILE:-docker-compose.yml:docker-compose.dev.yml$$([ "$${HOST_NETWORK:-}" = true ] && echo :docker-compose.hostnet.yml)}; set +a;
 BIN := api/bin
 
 COMPOSE := docker compose
 
-.PHONY: help setup env-check dev backend web \
+.PHONY: help setup env-check dev backend web apache-up apache-web \
         docker-build docker-up docker-down docker-restart docker-logs docker-ps docker-migrate \
         db-up db-down db-shell db-reset db-backup test-db-supabase migrate-supabase \
         migrate-up migrate-down migrate-version seed db-setup \
@@ -39,6 +39,13 @@ docker-build: ## Build the backend image
 
 docker-up: ## Start PostgreSQL, migrate, seed, then start the backend and web app
 	@$(LOAD_ENV) $(COMPOSE) up -d --build --wait --remove-orphans db backend web
+
+apache-up: ## Start PostgreSQL and the backend for Apache (no web container): API on 127.0.0.1:8080
+	@$(LOAD_ENV) COMPOSE_FILE=docker-compose.yml:docker-compose.apache.yml$$([ "$${HOST_NETWORK:-}" = true ] && echo :docker-compose.hostnet.yml) \
+		$(COMPOSE) up -d --build --wait --remove-orphans db backend
+
+apache-web: ## Build the web app for Apache into web/dist (copy it to /var/www/df-ipam)
+	@$(LOAD_ENV) cd web && VITE_API_URL= pnpm build && echo "Built web/dist. Copy it with: sudo rsync -a --delete web/dist/ /var/www/df-ipam/"
 
 docker-down: ## Stop the containers. Data stays in the volume
 	@$(LOAD_ENV) $(COMPOSE) down

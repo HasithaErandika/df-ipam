@@ -19,6 +19,7 @@ type Profile struct {
 	Email        string     `json:"email"`
 	DisplayName  string     `json:"displayName"`
 	Role         *string    `json:"role"`
+	RoleName     *string    `json:"roleName"`
 	AuthProvider string     `json:"authProvider"`
 	IsActive     bool       `json:"isActive"`
 	LastLoginAt  *time.Time `json:"lastLoginAt"`
@@ -28,8 +29,8 @@ type Profile struct {
 
 func (r repository) profile(ctx context.Context, userID string) (Profile, error) {
 	var p Profile
-	err := r.conn.QueryRow(ctx, `SELECT id, email, display_name, role, auth_provider, is_active, last_login_at, created_at, updated_at
-		FROM users WHERE id = $1::uuid`, userID).Scan(&p.ID, &p.Email, &p.DisplayName, &p.Role, &p.AuthProvider,
+	err := r.conn.QueryRow(ctx, `SELECT u.id, u.email, u.display_name, u.role, r.name, u.auth_provider, u.is_active, u.last_login_at, u.created_at, u.updated_at
+		FROM users u LEFT JOIN roles r ON r.key = u.role WHERE u.id = $1::uuid`, userID).Scan(&p.ID, &p.Email, &p.DisplayName, &p.Role, &p.RoleName, &p.AuthProvider,
 		&p.IsActive, &p.LastLoginAt, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, httpx.ErrNotFound

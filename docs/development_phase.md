@@ -6,7 +6,7 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 
 | Area | Status |
 | --- | --- |
-| Foundation | 14 tables with RLS, policies and grants; fixed roles and permissions; route guard; audit in the same transaction; Docker (`db`, `migrate`, `backend`, `web`) |
+| Foundation | 16 tables with RLS, policies and grants; roles and permissions; route guard; audit in the same transaction; Docker (`db`, `migrate`, `backend`, `web`) |
 | Segments | Floor, server and cloud segments; DHCP pools; gateways (set or detected); private-MAC alerts and port checks per segment |
 | IP register | Create, edit, release; Available candidate; range reservations; CSV and Excel import and export, including servers |
 | Devices | Pending, approve, reject; register on approval; departments; import and export |
@@ -17,8 +17,12 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 | Requests and reservations | One-step approval; holds with reminders, extend, convert, release |
 | Notifications | Bell, email outbox (off by default), per-type preferences, hourly limit |
 | Reports and audit | Nine reports in CSV, Excel and PDF; audit screen with filters and export |
-| Settings | Segments, environments, departments, users, System, FortiGate; every edit confirmed with its list of changes |
+| Roles and users | Roles set up by administrators from twelve permissions, six starting roles, never locked out; users given roles |
+| Administration | Network setup (segments with import from text, environments, departments), Users and roles, Audit log, System (settings, FortiGate) as separate pages; every edit confirmed with its list of changes |
+| Imports | Devices, register and servers from CSV, text or Excel, and segments from FortiGate output; every import reviewed in a dry run first |
+| Apache | Optional host Apache in place of the web container: site file, compose override, `make apache-up` and `make apache-web`; syntax and a live proxy test passed |
 | FortiGate | Optional read-only ARP, DHCP leases and VPN sessions |
+| Microsoft sign-in | Entra ID authorization code flow with PKCE and a nonce, pinned tenant, `@dialogfinance.lk` only, HttpOnly session cookie with idle and 10-hour limits, CSRF header, audited; alongside Supabase |
 
 ## Not built
 
@@ -26,9 +30,7 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 | --- | --- |
 | ARP sweep on each floor VLAN from a trunk port | A trunk port from the network team |
 | SNMP read of the core switches (MAC tables, LLDP and CDP neighbours) | Read-only SNMP access |
-| Company sign-in in place of Supabase | [plan.md](plan.md) and the company identity provider |
-| Password set or reset screen | Company sign-in (Supabase dashboard until then) |
-| Multi-factor authentication | Company sign-in |
+| Removing Supabase sign-in | Your go-ahead; Microsoft sign-in tested on the real tenant first |
 
 ## Waiting on others
 
@@ -39,6 +41,7 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 | Agreement to run port checks on company segments | Security team |
 | Alert email recipients, and who approves requests | IT management |
 | An existing device list to import | Asset owners |
+| The Entra ID app registration (tenant ID, client ID, secret, redirect URIs) | IT / identity team |
 | A rehearsed deployment, backup restore and key rotation | Operations, see [runbooks.md](runbooks.md) |
 
 ## Security to-do

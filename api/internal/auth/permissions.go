@@ -1,9 +1,14 @@
 package auth
 
-// Permissions are checked by name. The three fixed roles only group them.
+import "slices"
+
+// Permissions are checked by name; roles, set up by Admins in the roles table,
+// only group them. Add a permission here and in web/src/lib/permissions.ts.
 const (
 	InventoryView   = "inventory:view"
 	InventoryEdit   = "inventory:edit"
+	NetworkManage   = "network:manage"
+	DiscoveryScan   = "discovery:scan"
 	IPRequest       = "ip:request"
 	IPReserve       = "ip:reserve"
 	RequestsApprove = "requests:approve"
@@ -14,29 +19,18 @@ const (
 	SystemManage    = "system:manage"
 )
 
-// Roles a user can hold. A user with no role is signed in but sees nothing.
-const (
-	RoleAdmin     = "admin"
-	RoleRequester = "requester"
-	RoleViewer    = "viewer"
-)
-
 // AllPermissions lists every permission, in a stable order.
 var AllPermissions = []string{
-	InventoryView, InventoryEdit, IPRequest, IPReserve, RequestsApprove,
+	InventoryView, InventoryEdit, NetworkManage, DiscoveryScan, IPRequest, IPReserve, RequestsApprove,
 	AlertsManage, ReportsExport, AuditView, UsersManage, SystemManage,
 }
 
-// RolePermissions follows docs/new.md: Admin changes things, Requester reads and asks
-// for IPs and reservations, Viewer only reads.
-var RolePermissions = map[string][]string{
-	RoleAdmin:     AllPermissions,
-	RoleRequester: {InventoryView, IPRequest, IPReserve, ReportsExport},
-	RoleViewer:    {InventoryView, ReportsExport},
-}
+// KnownPermission reports whether name is a permission the API checks.
+func KnownPermission(name string) bool { return slices.Contains(AllPermissions, name) }
 
-// ValidRole reports whether name is one of the fixed roles.
-func ValidRole(name string) bool {
-	_, ok := RolePermissions[name]
-	return ok
+// HolderSQL is a condition on users u that holds when the user's role grants
+// the permission in parameter $n. Use it to reach "everyone who may do X"
+// instead of naming a role.
+func HolderSQL(n string) string {
+	return `EXISTS (SELECT 1 FROM roles hr WHERE hr.key = u.role AND (hr.full_access OR ` + n + ` = ANY(hr.permissions)))`
 }

@@ -6,7 +6,6 @@ import { getBody } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
 import { useMe } from '../../lib/session'
 import type { Profile } from '../../lib/types'
-import { roleLabels } from '../../lib/types/core'
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -58,7 +57,7 @@ function Details({ profile, permissions }: { profile: Profile; permissions: stri
         </dl>
       </Section>
       <Section title="Role">
-        <p className="text-[13px] text-ink">{profile.role ? roleLabels[profile.role] : 'No role assigned yet.'}</p>
+        <p className="text-[13px] text-ink">{profile.roleName ?? 'No role assigned yet.'}</p>
       </Section>
       <Section title={`Permissions (${permissions.length})`}>
         {permissions.length === 0 ? <p className="text-[13px] text-ink-2">No permissions yet.</p> : (

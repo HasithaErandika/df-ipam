@@ -1,6 +1,6 @@
 import * as Popover from '@radix-ui/react-dropdown-menu'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Bell, CheckCheck } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCheck, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Badge, ErrorState, SkeletonRows } from '../../components/ui'
@@ -8,6 +8,7 @@ import { get, list, post } from '../../lib/api'
 import { formatAgo } from '../../lib/format'
 import { label, notificationKinds } from '../../lib/labels'
 import { useInvalidate } from '../../lib/queries'
+import { useCan } from '../../lib/session'
 import type { Notice } from '../../lib/types'
 
 /**
@@ -23,6 +24,10 @@ export function NotificationBell() {
   const read = useMutation({ mutationFn: (id: string) => post(`/notifications/${id}/read`), onSuccess: refresh })
   const readAll = useMutation({ mutationFn: () => post('/notifications/read-all'), onSuccess: refresh, meta: { success: 'All notifications marked read.' } })
   const unread = count.data?.count ?? 0
+  const canView = useCan('inventory:view')
+  const alerts = useQuery({ queryKey: ['/alerts/summary'], queryFn: () => get<{ open: number; critical: number; high: number }>('/alerts/summary'), enabled: canView, refetchInterval: 60_000 })
+  const openAlerts = alerts.data?.open ?? 0
+  const urgent = (alerts.data?.critical ?? 0) + (alerts.data?.high ?? 0)
 
   const openItem = (n: Notice) => {
     if (!n.isRead) read.mutate(n.id)
@@ -35,6 +40,7 @@ export function NotificationBell() {
       <Popover.Trigger aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'} title="Notifications"
         className="relative grid size-8 cursor-pointer place-items-center rounded-full text-ink-2 hover:bg-surface-2 hover:text-ink data-[state=open]:bg-surface-2">
         <Bell size={17} strokeWidth={1.75} aria-hidden />
+        {unread === 0 && openAlerts > 0 && <span aria-hidden className={`absolute top-1 right-1 size-2 rounded-full ${urgent ? 'bg-danger' : 'bg-warn'}`} />}
         {unread > 0 && (
           <span aria-hidden className="absolute -top-0.5 -right-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[10px] font-semibold text-white tabular-nums">
             {unread > 99 ? '99+' : unread}
@@ -51,10 +57,18 @@ export function NotificationBell() {
               </button>
             )}
           </div>
+          {openAlerts > 0 && (
+            <Popover.Item onSelect={() => { setOpen(false); navigate('/alerts') }}
+              className={`flex cursor-pointer items-center gap-2.5 border-b border-line px-3.5 py-2.5 outline-none data-[highlighted]:brightness-[.98] ${urgent ? 'bg-danger-soft' : 'bg-warn-soft'}`}>
+              <AlertTriangle size={16} className={urgent ? 'text-danger' : 'text-warn'} aria-hidden />
+              <span className="min-w-0 flex-1 text-[13px] text-ink"><strong>{openAlerts}</strong> open alert{openAlerts === 1 ? '' : 's'}{urgent ? `, ${urgent} High or Critical` : ''}</span>
+              <ChevronRight size={15} className="text-ink-3" aria-hidden />
+            </Popover.Item>
+          )}
           <div className="max-h-[22rem] overflow-y-auto">
             {items.isPending ? <SkeletonRows rows={4} />
               : items.isError ? <ErrorState error={items.error} onRetry={() => void items.refetch()} />
-              : items.data.data.length === 0 ? <p className="px-4 py-10 text-center text-[13px] text-ink-3">You're all caught up. Notifications appear here.</p>
+              : items.data.data.length === 0 ? <p className="px-4 py-10 text-center text-[13px] text-ink-3">No notifications yet. New alerts, request decisions, servers back up and expiring reservations appear here.</p>
               : items.data.data.map((n) => (
                 <Popover.Item key={n.id} onSelect={() => openItem(n)}
                   className="flex cursor-pointer gap-2.5 border-b border-line px-3.5 py-2.5 outline-none last:border-0 data-[highlighted]:bg-surface-2">

@@ -64,14 +64,14 @@ The key protects only the FortiGate token. Rotate on a schedule, and at once if 
 1. Generate a new key: `openssl rand -base64 32`.
 2. In `api/.env`, move the current key to `SECRET_ENCRYPTION_KEY_PREVIOUS`, set the new one as `SECRET_ENCRYPTION_KEY`, and add 1 to `SECRET_ENCRYPTION_KEY_VERSION`.
 3. `sudo make docker-up`. The stored token is still read with the previous key.
-4. In Settings > FortiGate, paste the token again and save, so it is encrypted with the new key. Press **Test connection**.
+4. In System > FortiGate, paste the token again and save, so it is encrypted with the new key. Press **Test connection**.
 5. Empty `SECRET_ENCRYPTION_KEY_PREVIOUS`, `sudo make docker-up` again, and store the new key in your vault.
 
 **If the key leaked,** also create a new token on the FortiGate and revoke the old one. If the key is lost, set a new one and enter the token again; nothing else is affected.
 
 ## Stop discovery at once
 
-Stop the backend: `sudo bash -c 'set -a; . api/.env; set +a; docker compose stop backend'`. This stops the scanner, server checks and the API together. Before starting it again, raise the scan interval or remove the segment in Settings. Turning off **Check common ports** on a segment stops port checks from its next scan.
+Stop the backend: `sudo bash -c 'set -a; . api/.env; set +a; docker compose stop backend'`. This stops the scanner, server checks and the API together. Before starting it again, raise the scan interval in System, or remove the segment in Network setup. Turning off **Check common ports** on a segment stops port checks from its next scan.
 
 ## Supabase or the internet is down
 

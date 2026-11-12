@@ -195,7 +195,11 @@ export interface ScanStatus {
 }
 
 export interface ImportResult {
+  /** True when nothing was kept: a preview of what the import would do. */
+  dryRun: boolean
   imported: number
   skipped: number
   issues: { row: number; issue: string }[]
+  /** The rows that go in: line in the file, key (IP or MAC) and a name. */
+  preview: { row: number; key: string; label: string }[]
 }

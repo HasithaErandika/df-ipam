@@ -1,75 +1,94 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Link, NavLink } from 'react-router'
-import { navFor } from '../nav'
+import { cx } from '../../components/ui/cx'
 import { useMe } from '../../lib/session'
+import { navFor } from '../nav'
+import { useNavBadges } from './navBadges'
 
 function LogoMark() {
   return (
-    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden className="shrink-0">
-      <rect width="32" height="32" rx="7" fill="#17305f" />
-      <rect x="7" y="7" width="8" height="8" rx="1.5" fill="#6c9bf2" />
-      <rect x="17" y="17" width="8" height="8" rx="1.5" fill="#6c9bf2" />
-      <rect x="17" y="7" width="8" height="8" rx="1.5" fill="#fff" opacity=".55" />
-      <rect x="7" y="17" width="8" height="8" rx="1.5" fill="#fff" opacity=".55" />
+    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden className="shrink-0">
+      <defs>
+        <linearGradient id="dfipam-logo" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#1f4fae" />
+          <stop offset="1" stopColor="#17305f" />
+        </linearGradient>
+      </defs>
+      <rect width="32" height="32" rx="8" fill="url(#dfipam-logo)" />
+      <rect x="7" y="7" width="8" height="8" rx="1.5" fill="#8fb3f7" />
+      <rect x="17" y="17" width="8" height="8" rx="1.5" fill="#8fb3f7" />
+      <rect x="17" y="7" width="8" height="8" rx="1.5" fill="#fff" opacity=".6" />
+      <rect x="7" y="17" width="8" height="8" rx="1.5" fill="#fff" opacity=".6" />
     </svg>
   )
 }
 
+const badgeTone = { alerts: 'bg-danger text-white', devices: 'bg-warn text-white', requests: 'bg-accent text-white' }
+
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  const { permissions } = useMe()
-  const groups = navFor(permissions)
+  const me = useMe()
+  const groups = navFor(me.permissions)
+  const counts = useNavBadges()
   return (
-    <aside className={`flex shrink-0 flex-col border-r border-side-border bg-side transition-[width] duration-150 ${collapsed ? 'w-[60px]' : 'w-[248px]'}`}>
-      <div className={`flex h-[60px] shrink-0 items-center border-b border-side-border ${collapsed ? 'justify-center' : 'justify-between pr-2 pl-4'}`}>
-        <Link to="/" aria-label="DF-IPAM home" className="flex min-w-0 items-center gap-2.5">
-          <LogoMark />
-          {!collapsed && (
+    <aside className={cx('flex shrink-0 flex-col border-r border-side-border bg-side transition-[width] duration-150', collapsed ? 'w-[64px]' : 'w-[252px]')}>
+      <div className={cx('flex h-[60px] shrink-0 items-center border-b border-side-border', collapsed ? 'justify-center' : 'justify-between gap-2 pr-2 pl-4')}>
+        {!collapsed && (
+          <Link to="/" aria-label="DF-IPAM home" className="flex min-w-0 items-center gap-2.5">
+            <LogoMark />
             <span className="min-w-0 leading-[1.15]">
               <span className="block text-[15px] font-semibold tracking-tight text-side-ink">DF-IPAM</span>
-              <span className="block truncate text-[11px] text-side-ink-3">Dialog Finance</span>
+              <span className="block truncate text-[11px] text-side-ink-3">Dialog Finance · IP management</span>
             </span>
-          )}
-        </Link>
-        {!collapsed && (
-          <button type="button" onClick={onToggle} aria-label="Collapse sidebar" className="grid size-7 cursor-pointer place-items-center rounded text-side-ink-3 hover:bg-side-hover hover:text-side-ink">
-            <PanelLeftClose size={16} />
-          </button>
+          </Link>
         )}
+        <button type="button" onClick={onToggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-side-ink-3 hover:bg-side-hover hover:text-side-ink">
+          {collapsed ? <PanelLeftOpen size={17} aria-hidden /> : <PanelLeftClose size={17} aria-hidden />}
+        </button>
       </div>
 
-      <nav aria-label="Main" className="flex-1 overflow-y-auto py-2">
-        {collapsed && (
-          <button type="button" onClick={onToggle} aria-label="Expand sidebar" className="mx-auto mb-1 grid size-8 cursor-pointer place-items-center rounded text-side-ink-3 hover:bg-side-hover hover:text-side-ink">
-            <PanelLeftOpen size={16} />
-          </button>
-        )}
-        {groups.map(({ group, items }) => (
-          <div key={group} className="mb-2.5">
-            {collapsed ? <div className="mx-4 my-2 h-px bg-side-border" />
-              : group && <div className="px-4 pt-1.5 pb-1 text-[10.5px] font-semibold tracking-[.08em] text-side-ink-3 uppercase">{group}</div>}
-            {items.map(({ to, label, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={to === '/'}
-                title={collapsed ? label : undefined}
-                aria-label={label}
-                className={({ isActive }) =>
-                  `relative flex h-[30px] items-center gap-2.5 text-[13px] transition-colors ${collapsed ? 'justify-center' : 'pr-3 pl-4'} ${
-                    isActive
-                      ? 'bg-side-active font-medium text-side-active-ink before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-accent'
-                      : 'text-side-ink-2 hover:bg-side-hover hover:text-side-ink'
-                  }`
-                }
-              >
-                <Icon size={15} strokeWidth={1.75} className="shrink-0" aria-hidden />
-                {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
-              </NavLink>
-            ))}
+      <nav aria-label="Main" className="flex-1 overflow-y-auto px-2.5 py-3">
+        {groups.map(({ group, items }, gi) => (
+          <div key={group} className={gi > 0 ? 'mt-4' : undefined}>
+            {collapsed ? (gi > 0 && <div className="mx-2 mb-2 h-px bg-side-border" />)
+              : <div className="px-2.5 pb-1.5 text-[10.5px] font-semibold tracking-[.09em] text-side-ink-3 uppercase">{group}</div>}
+            <ul className="space-y-0.5">
+              {items.map(({ to, label, icon: Icon, badge }) => {
+                const count = badge ? counts[badge] : 0
+                return (
+                  <li key={to}>
+                    <NavLink to={to} end={to === '/'} title={collapsed ? (count ? `${label} (${count})` : label) : undefined} aria-label={count ? `${label}, ${count}` : label}
+                      className={({ isActive }) => cx('group relative flex h-9 items-center gap-3 rounded-md text-[13.5px] transition-colors',
+                        collapsed ? 'justify-center' : 'px-2.5',
+                        isActive ? 'bg-side-active font-semibold text-side-active-ink shadow-[inset_0_0_0_1px_rgba(27,71,166,.12)]' : 'text-side-ink-2 hover:bg-side-hover hover:text-side-ink')}>
+                      {({ isActive }) => (
+                        <>
+                          {isActive && !collapsed && <span aria-hidden className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-accent" />}
+                          <Icon size={17} strokeWidth={isActive ? 2.1 : 1.75} className={cx('shrink-0', isActive ? 'text-accent' : 'text-side-ink-3 group-hover:text-side-ink-2')} aria-hidden />
+                          {!collapsed && <span className="min-w-0 flex-1 truncate">{label}</span>}
+                          {badge && count > 0 && (collapsed
+                            ? <span aria-hidden className={cx('absolute top-1.5 right-2 size-2 rounded-full', badgeTone[badge].split(' ')[0])} />
+                            : <span className={cx('min-w-5 rounded-full px-1.5 text-center text-[11px] leading-[18px] font-semibold tabular-nums', badgeTone[badge])}>{count > 99 ? '99+' : count}</span>)}
+                        </>
+                      )}
+                    </NavLink>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
         ))}
       </nav>
 
+      <div className={cx('shrink-0 border-t border-side-border py-2.5 text-[11px] leading-snug text-side-ink-3', collapsed ? 'text-center' : 'px-4')}
+        title={`DF-IPAM ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}, built ${__APP_BUILT__}`}>
+        {collapsed ? <span className="tabular-nums">v{__APP_VERSION__}</span> : (
+          <>
+            <div><span className="font-medium text-side-ink-2">DF-IPAM Lite</span> <span className="tabular-nums">v{__APP_VERSION__}</span></div>
+            <div className="tabular-nums">{__APP_COMMIT__ ? `Build ${__APP_COMMIT__} · ` : ''}{__APP_BUILT__}</div>
+          </>
+        )}
+      </div>
     </aside>
   )
 }

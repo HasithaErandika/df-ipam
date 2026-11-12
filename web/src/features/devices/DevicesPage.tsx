@@ -63,7 +63,7 @@ export function DevicesPage() {
       <PageHeader title="Devices" description="Known MAC addresses. New ones found on the network wait in Pending until someone approves or rejects them."
         actions={<>
           <ExportMenu path="/devices/export" name="devices" />
-          {canEdit && <ImportButton path="/devices/import" title="Import devices" required="mac" columns={['mac', 'name', 'owner', 'department', 'deviceType', 'notes']} refreshKeys={inventoryKeys} />}
+          {canEdit && <ImportButton path="/devices/import" title="Import devices" keyLabel="MAC" required="mac" columns={['mac', 'name', 'owner', 'department', 'deviceType', 'notes']} refreshKeys={inventoryKeys} />}
           {canEdit && <Button variant="primary" onClick={() => setForm({})}><Plus size={14} aria-hidden />Add device</Button>}
         </>} />
       <PathTabs base="/devices" tabs={[{ key: 'devices', label: 'Pending', count: pending.data?.meta.total }, { key: 'approved', label: 'Approved' }, { key: 'rejected', label: 'Rejected' }, { key: 'all', label: 'All' }]} />

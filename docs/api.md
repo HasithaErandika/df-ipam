@@ -43,6 +43,7 @@ Unknown errors are logged with the correlation ID and answered as `INTERNAL_ERRO
 | Limit | Value |
 | --- | --- |
 | Request body | 1 MB; imports 5 MB and 5,000 rows |
+| Imports | `?dryRun=true` does the whole import in a transaction that is rolled back, and returns what would be added and skipped |
 | Per client address | 50 requests a second, bursts of 100 |
 | Per signed-in person | 30 requests a second, bursts of 60 |
 | Requests running at once | 200 (`API_MAX_IN_FLIGHT`); more are refused, not queued |
@@ -54,14 +55,14 @@ Nginx in the `web` container adds its own per-address limits.
 | Group | Paths |
 | --- | --- |
 | Account | `/auth/me`, `/auth/me/profile` |
-| Segments | `/segments`, `/segments/{id}`, `/segments/{id}/addresses`, `/segments/{id}/map` |
+| Segments | `/segments`, `/segments/{id}`, `/segments/import` (text), `/segments/{id}/addresses`, `/segments/{id}/map` |
 | Devices | `/devices`, `/devices/{id}`, `/devices/{id}/decision`, `/devices/import`, `/devices/export` |
 | IP register | `/ip-addresses`, `/ip-addresses/{id}`, `/ip-addresses/available-candidate`, `/ip-addresses/check`, `/ip-addresses/import` (`?as=server`), `/ip-addresses/export` |
 | Discovery | `/discovery/status`, `/discovery/scan`, `/discovery/findings`, `/discovery/summary` |
 | Requests and reservations | `/ip-requests…`, `/reservations…` |
 | Alerts and notifications | `/alerts…`, `/notifications…`, `/notification-preferences` |
 | Reports and audit | `/reports…`, `/audit-logs`, `/audit-logs/export` |
-| Administration | `/users…`, `/environments…`, `/departments…`, `/settings` |
+| Administration | `/users…`, `/roles`, `/roles/{key}`, `/environments…`, `/departments…`, `/settings` |
 | FortiGate | `/integrations/fortigate`, `…/test`, `…/sync` |
 
 Every change to devices, the register or segments re-checks the alert rules before replying, so the reply already reflects closed alerts.

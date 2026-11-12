@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { allPermissions } from '../lib/permissions'
 import { canOpen, navFor } from './nav'
 
-// The fixed roles, from api/internal/auth/permissions.go.
+// The starting roles, from api/migrations/000012_lite_roles.up.sql.
 const roles: Record<string, string[]> = {
-  admin: ['inventory:view', 'inventory:edit', 'ip:request', 'ip:reserve', 'requests:approve', 'alerts:manage', 'reports:export', 'audit:view', 'users:manage', 'system:manage'],
+  admin: allPermissions.map((p) => p.key),
+  network_engineer: ['inventory:view', 'inventory:edit', 'network:manage', 'discovery:scan', 'ip:request', 'ip:reserve', 'requests:approve', 'alerts:manage', 'reports:export'],
+  security_auditor: ['inventory:view', 'audit:view', 'reports:export'],
   requester: ['inventory:view', 'ip:request', 'ip:reserve', 'reports:export'],
   viewer: ['inventory:view', 'reports:export'],
 }
@@ -12,15 +15,19 @@ const labels = (role: string) => navFor(roles[role]).flatMap((g) => g.items.map(
 const network = ['Discovery', 'Servers', 'Devices', 'Alerts']
 
 describe('the menu follows the role', () => {
-  it('gives Admins every screen', () => {
-    expect(labels('admin')).toEqual(['Dashboard', ...network, 'IP Requests', 'Reservations', 'Reports', 'Settings'])
+  it('gives administrators every screen, with administration split in three', () => {
+    expect(labels('admin')).toEqual(['Dashboard', ...network, 'IP Requests', 'Reservations', 'Reports', 'Audit log', 'Network setup', 'Users and roles', 'System'])
   })
 
-  it('lets Requesters ask for IPs but not change settings', () => {
-    expect(labels('requester')).toEqual(['Dashboard', ...network, 'IP Requests', 'Reservations', 'Reports'])
+  it('gives network engineers network setup, but not people or system settings', () => {
+    expect(labels('network_engineer')).toEqual(['Dashboard', ...network, 'IP Requests', 'Reservations', 'Reports', 'Network setup'])
   })
 
-  it('keeps Viewers to reading', () => {
+  it('gives auditors the audit log', () => {
+    expect(labels('security_auditor')).toEqual(['Dashboard', ...network, 'Reservations', 'Reports', 'Audit log'])
+  })
+
+  it('keeps viewers to reading', () => {
     expect(labels('viewer')).toEqual(['Dashboard', ...network, 'Reservations', 'Reports'])
   })
 
@@ -31,10 +38,11 @@ describe('the menu follows the role', () => {
 
 describe('canOpen', () => {
   it('guards pages by address, tabs included', () => {
-    expect(canOpen('/settings/users', roles.requester)).toBe(false)
-    expect(canOpen('/settings/users', roles.admin)).toBe(true)
+    expect(canOpen('/access/roles', roles.network_engineer)).toBe(false)
+    expect(canOpen('/access/roles', roles.admin)).toBe(true)
+    expect(canOpen('/network-setup/departments', roles.network_engineer)).toBe(true)
+    expect(canOpen('/system/fortigate', roles.network_engineer)).toBe(false)
     expect(canOpen('/requests', roles.viewer)).toBe(false)
-    expect(canOpen('/servers/register', roles.viewer)).toBe(true)
     expect(canOpen('/segments/abc', roles.viewer)).toBe(true)
   })
 

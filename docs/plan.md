@@ -1,6 +1,6 @@
 # Plan: company sign-in, no Supabase
 
-**Status:** proposed, nothing built. It waits for the answers in Phase 0.
+**Status:** Phases 1 and 2 are built: Microsoft Entra ID sign-in runs alongside Supabase (see [authentication.md](authentication.md#microsoft-entra-id)), for `@dialogfinance.lk` only. Phases 3 and 4 (moving accounts over, removing Supabase) wait for your go-ahead.
 
 ## Goal
 
@@ -71,7 +71,7 @@ sequenceDiagram
 2. One **Sign in with company account** button, and a clear message when a domain is refused.
 3. Send cookies and the CSRF header instead of `Authorization` in `web/src/lib/api.ts`.
 4. Remove `@supabase/supabase-js`.
-5. Add **Add person** in Settings > Users: a company email and role before their first sign-in. This removes `supabase_admin.go` and the `service_role` key.
+5. Add **Add person** in Users and roles: a company email and role before their first sign-in. This removes `supabase_admin.go` and the `service_role` key.
 
 ## Phase 3: Existing accounts
 

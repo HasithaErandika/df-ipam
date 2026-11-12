@@ -136,7 +136,7 @@ func (h *Handler) createRequest(c *gin.Context) {
 		if err := auditChange(c, tx, "create", "ip_request", id, nil, in); err != nil {
 			return err
 		}
-		return notify.Admins(c, tx, "request", "New IP request from "+auth.Current(c).Email+": "+in.Name, "/requests")
+		return notify.Holders(c, tx, auth.RequestsApprove, "request", "New IP request from "+auth.Current(c).Email+": "+in.Name, "/requests", true)
 	})
 	if err != nil {
 		httpx.Fail(c, friendly(err))

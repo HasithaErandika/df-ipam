@@ -16,7 +16,10 @@ DF-IPAM holds a map of the company network, so read access is itself sensitive.
 
 | Threat | Example | Mitigation |
 | --- | --- | --- |
-| Spoofing | Forged token | JWKS signature, algorithm allowlist, `iss`, `aud`, `exp` checks; active `users` row required |
+| Spoofing | Forged Microsoft sign-in | Pinned tenant and issuer, client ID audience, nonce, state tied to a cookie, PKCE, exact email domain; guests refused |
+| | Stolen session cookie | `HttpOnly`, `SameSite=Lax`, `__Host-` over HTTPS, hash stored only, idle and 10-hour limits, ends at deactivation |
+| | Cross-site request with the cookie | Changes need `X-Requested-With: DF-IPAM`; CORS allows only listed origins |
+| | Forged token | JWKS signature, algorithm allowlist, `iss`, `aud`, `exp` checks; active `users` row required |
 | Tampering | Audit rows altered | `dfipam_app` has only `SELECT` and `INSERT` on `audit_logs`, and a trigger blocks changes |
 | | SQL injection | Parameterised queries; allowlisted sort and filter fields |
 | | Evidence used to change the register | Discovery and the FortiGate write only sightings and alerts |
@@ -54,6 +57,8 @@ DF-IPAM holds a map of the company network, so read access is itself sensitive.
 
 **Auth**
 - [ ] Supabase public sign-ups are off
+- [ ] The Entra app is single-tenant, its redirect URIs are only DF-IPAM's, and the client secret is in `api/.env` only, with its expiry noted
+- [ ] Sign-in with a non-`dialogfinance.lk` account and a guest account is refused
 - [ ] `service_role` key is only in `api/.env`
 - [ ] Supabase Data API can't read any table with the anon key (`make test-db-supabase`)
 - [ ] The unprotected-route test passes

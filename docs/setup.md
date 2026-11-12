@@ -24,9 +24,10 @@ Fill in `api/.env`:
 | `POSTGRES_PASSWORD`, `DFIPAM_APP_PASSWORD` | `openssl rand -hex 24` each. They take effect when the database is first created |
 | `DATABASE_URL`, `MIGRATION_DATABASE_URL` | As in the example, with those passwords |
 | `SECRET_ENCRYPTION_KEY` | `openssl rand -base64 32`. Needed to store a FortiGate token |
+| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | From the Entra ID app registration, for Microsoft sign-in. See [authentication.md](authentication.md#setting-it-up-in-entra-id) |
 | `HOST_NETWORK` | `true` on Linux to let the scanner read MAC addresses (see below) |
 
-Fill in `web/.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. **The `service_role` key never goes in `web/.env`.**
+Fill in `web/.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, and leave `VITE_API_URL` empty. **The `service_role` key never goes in `web/.env`.**
 
 ```bash
 make env-check   # lists anything missing
@@ -51,11 +52,11 @@ Everything is published on localhost only.
    UPDATE users SET role = 'admin' WHERE lower(email) = lower('<your email>');
    ```
 
-4. Press **Check again**. Give others roles in Settings > Users.
+4. Press **Check again**. Give others roles in Users and roles.
 
 ### First data
 
-In Settings: add the segments (with each floor's DHCP pool, and each server segment's environment), departments, and check the environments. Discovery starts on the next scan, or press **Scan now** in Discovery. Import existing devices and register entries from CSV or Excel to avoid a flood of unknown devices.
+In Network setup: add the segments (by hand, or paste FortiGate `show system interface` output into Import from text; set each floor's DHCP pool and each server segment's environment), departments, and check the environments. Give people roles in Users and roles. Discovery starts on the next scan, or press **Scan now** in Discovery. Import existing devices and register entries from CSV, text or Excel to avoid a flood of unknown devices.
 
 ### MAC addresses and host networking
 
@@ -150,7 +151,7 @@ Add `include "/opt/df-ipam/deploy/nftables/df-ipam-flood.nft"` to `/etc/nftables
 | Open the site from the office or VPN, sign in | Works |
 | Open it from outside | Times out, or 403 |
 | `nc -zv <server> 5432` and `8080` from another machine | Refused or times out |
-| Make a small change, read Settings > Audit log | The source address is your machine, not `172.30.0.1` |
+| Make a small change, read the Audit log | The source address is your machine, not `172.30.0.1` |
 
 ### 6. Backups
 
@@ -167,6 +168,51 @@ It runs `make db-backup` daily at 01:00 into `/var/backups/df-ipam`, checks the 
 ### 7. Go-live
 
 Run the checklist in [security.md](security.md), and make a second Admin straight away.
+
+## Run it behind Apache
+
+Use this when the server already runs Apache, or Apache is the standard. Apache takes the place of the `web` container: it serves the built web app and passes `/api/` to the backend container, which is published on `127.0.0.1:8080` only. Steps 1, 2, 4 and 6 above still apply.
+
+1. **Install Apache and its modules.**
+
+   ```bash
+   sudo apt install -y apache2
+   sudo a2enmod ssl headers proxy proxy_http rewrite reqtimeout
+   ```
+
+2. **Configure `api/.env`** as in step 3, but **don't** set `COMPOSE_FILE`: `make apache-up` chooses the files. Set `APP_BASE_URL` and `CORS_ALLOWED_ORIGINS` to `https://<host name>`. In `web/.env`, leave `VITE_API_URL` empty.
+
+3. **Start the database and backend** (no web container):
+
+   ```bash
+   sudo make apache-up        # db and backend; the API answers on 127.0.0.1:8080 only
+   curl -s http://127.0.0.1:8080/ready
+   ```
+
+4. **Build the web app and put it where Apache serves it:**
+
+   ```bash
+   make apache-web                                  # builds web/dist
+   sudo mkdir -p /var/www/df-ipam
+   sudo rsync -a --delete web/dist/ /var/www/df-ipam/
+   ```
+
+5. **Add the site.** Copy the site file, then edit the host name, the certificate paths, your office and VPN ranges (both `Require ip` lines; don't leave `10.0.0.0/8`), and `<project-ref>` in the Content Security Policy while Supabase sign-in runs.
+
+   ```bash
+   sudo cp deploy/apache/df-ipam.conf /etc/apache2/sites-available/
+   sudo nano /etc/apache2/sites-available/df-ipam.conf
+   sudo a2ensite df-ipam && sudo a2dissite 000-default
+   sudo apache2ctl configtest && sudo systemctl reload apache2
+   ```
+
+6. **Check it** as in step 5 above. The audit log must show each person's own address; the backend trusts `X-Forwarded-For` only from Apache.
+
+The site file matches the web container: HTTPS only with HSTS, the same Content Security Policy and headers, the app's own links working on reload, long caching for `/assets`, 2 MB request bodies (8 MB on the three import routes), slow-client timeouts, and `/health` and `/ready` not exposed. The API keeps its own per-address and per-person rate limits; Apache has no per-request limiter built in, so add `mod_evasive` or rely on the FortiGate if you need one in front.
+
+**Upgrade with Apache:** `git pull`, then `sudo make apache-up`, `make apache-web` and the `rsync` line again. Migrations run on `apache-up`.
+
+For Microsoft sign-in, register `https://<host name>/api/v1/auth/microsoft/callback` in Entra ID (see [authentication.md](authentication.md#setting-it-up-in-entra-id)).
 
 ## Upgrade
 

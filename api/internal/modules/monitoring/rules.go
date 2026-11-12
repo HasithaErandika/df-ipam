@@ -91,4 +91,5 @@ SELECT u.id, 'server_up', 'Server ' || COALESCE(NULLIF(i.assigned_name, ''), hos
 	CASE WHEN COALESCE(p.email, true) THEN 'pending' ELSE 'none' END
 FROM closed LEFT JOIN ip_addresses i ON i.ip = closed.ip CROSS JOIN users u
 LEFT JOIN notification_preferences p ON p.user_id = u.id AND p.kind = 'server_up'
-WHERE closed.alert_type = 'server_down' AND u.role = 'admin' AND u.is_active`
+WHERE closed.alert_type = 'server_down' AND u.is_active
+	AND EXISTS (SELECT 1 FROM roles r WHERE r.key = u.role AND (r.full_access OR 'alerts:manage' = ANY(r.permissions)))`

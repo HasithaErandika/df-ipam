@@ -3,6 +3,7 @@ package inventory
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"dfipam/api/internal/audit"
 	"dfipam/api/internal/platform/db"
@@ -53,9 +54,11 @@ func (h *Handler) importDevices(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result := importResult{Issues: []rowIssue{}}
+	dry := isDryRun(c)
+	result := importResult{DryRun: dry, Issues: []rowIssue{}, Preview: []previewRow{}}
 	var batch [6][]string // mac, name, owner, department, type, platform
 	seen := map[string]bool{}
+	rowOf, nameOf := map[string]int{}, map[string]string{}
 	for i, row := range rows {
 		in := deviceInput{MAC: row["mac"], Name: row["name"], Owner: row["owner"], Department: row["department"], Type: row["devicetype"], Platform: row["platform"], Notes: row["notes"]}
 		if in.Name == "" {
@@ -70,12 +73,13 @@ func (h *Handler) importDevices(c *gin.Context) {
 			continue
 		}
 		seen[in.MAC] = true
+		rowOf[strings.ToLower(in.MAC)], nameOf[strings.ToLower(in.MAC)] = i+2, in.Name
 		for j, v := range []string{in.MAC, in.Name, in.Owner, in.Department, in.Type, in.Platform} {
 			batch[j] = append(batch[j], v)
 		}
 	}
 	uid := actor(c)
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
+	err := importTx(c, h.conn, dry, func(tx pgx.Tx) error {
 		inserted, err := tx.Query(c, `INSERT INTO devices (mac, name, owner, department, device_type, platform, status, decided_by, decided_at)
 			SELECT m::macaddr, n, o, d, t, p, 'approved', $7::uuid, now() FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS x(m, n, o, d, t, p)
 			ON CONFLICT (mac) DO NOTHING RETURNING id::text, mac::text`, batch[0], batch[1], batch[2], batch[3], batch[4], batch[5], uid)
@@ -89,6 +93,7 @@ func (h *Handler) importDevices(c *gin.Context) {
 				inserted.Close()
 				return err
 			}
+			result.Preview = append(result.Preview, previewRow{Row: rowOf[mac], Key: mac, Label: nameOf[mac]})
 			entries = append(entries, audit.Entry{ActorID: uid, Action: "import", ObjectType: "device", ObjectID: id, New: map[string]string{"mac": mac}})
 		}
 		inserted.Close()
@@ -106,7 +111,9 @@ func (h *Handler) importDevices(c *gin.Context) {
 	if already := len(batch[0]) - result.Imported; already > 0 {
 		result.Issues = append(result.Issues, rowIssue{0, fmt.Sprintf("%d MAC addresses were already known and were left unchanged.", already)})
 	}
-	h.recheck(c)
+	if !dry {
+		h.recheck(c)
+	}
 	httpx.OK(c, http.StatusOK, result)
 }
 

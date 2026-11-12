@@ -136,9 +136,12 @@ func Read(name string, r io.Reader, limit int64) ([][]string, error) {
 		return nil, fmt.Errorf("the file is larger than %d MB", limit>>20)
 	}
 	switch strings.ToLower(name[strings.LastIndex(name, ".")+1:]) {
-	case "csv", "txt":
-		cr := csv.NewReader(bytes.NewReader(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))))
+	case "csv", "txt", "tsv":
+		data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+		cr := csv.NewReader(bytes.NewReader(data))
+		cr.Comma = delimiter(data)
 		cr.FieldsPerRecord = -1
+		cr.LazyQuotes = true
 		return cr.ReadAll()
 	case "xlsx":
 		f, err := excelize.OpenReader(bytes.NewReader(data))
@@ -152,5 +155,18 @@ func Read(name string, r io.Reader, limit int64) ([][]string, error) {
 		}
 		return f.GetRows(sheets[0])
 	}
-	return nil, errors.New("upload a .csv or .xlsx file")
+	return nil, errors.New("upload a .csv, .txt or .xlsx file")
+}
+
+// delimiter picks the separator a text file uses from its header line: a tab,
+// semicolon or pipe when one is clearly there, otherwise a comma.
+func delimiter(data []byte) rune {
+	header, _, _ := bytes.Cut(data, []byte("\n"))
+	best, count := ',', bytes.Count(header, []byte(","))
+	for _, r := range []rune{'\t', ';', '|'} {
+		if n := bytes.Count(header, []byte(string(r))); n > count {
+			best, count = r, n
+		}
+	}
+	return best
 }

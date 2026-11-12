@@ -62,7 +62,7 @@ export function DashboardPage() {
 
       <Card title="Floors" subtitle="DHCP pool use and addresses seen in the last two scans" className="mt-4">
         {d.floors.length === 0
-          ? <EmptyState title="No floor segments yet" body="Add each floor's DHCP segment in Settings > Segments to see its usage here." />
+          ? <EmptyState title="No floor segments yet" body="Add each floor's DHCP segment in Network setup > Segments to see its usage here." />
           : <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">{d.floors.map((f) => <FloorCard key={f.id} floor={f} />)}</div>}
       </Card>
 

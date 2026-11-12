@@ -18,6 +18,7 @@ import (
 	"dfipam/api/internal/modules/inventory"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/reports"
+	"dfipam/api/internal/modules/signin"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
@@ -25,6 +26,14 @@ import (
 )
 
 const defaultMaxInFlight = 200
+
+// importPaths take files of up to 5 MB; every other route takes 1 MB. Room is
+// left for the multipart framing around the file.
+var importPaths = map[string]int64{
+	"/api/v1/devices/import":      6 << 20,
+	"/api/v1/ip-addresses/import": 6 << 20,
+	"/api/v1/segments/import":     6 << 20,
+}
 
 type Deps struct {
 	Conn     db.Conn
@@ -43,6 +52,10 @@ type Deps struct {
 	FortiGate *fortigate.Syncer
 	// SMTPConfigured says whether api/.env has a mail server, shown in Settings.
 	SMTPConfigured bool
+	// Sessions resolves Microsoft sign-in cookies. Nil leaves bearer tokens only.
+	Sessions auth.SessionResolver
+	// SignIn serves the public sign-in routes. Nil in tests that don't need them.
+	SignIn *signin.Handler
 }
 
 // New returns the router and the guard holding every protected route.
@@ -58,7 +71,7 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 		inFlight = defaultMaxInFlight
 	}
 	r.Use(httpx.Correlation(), httpx.Logger(), httpx.Recovery(), httpx.CORS(d.Origins), httpx.SecurityHeaders(),
-		httpx.BodyLimit(1<<20, nil), httpx.RateLimit(50, 100), httpx.MaxInFlight(inFlight))
+		httpx.BodyLimit(1<<20, importPaths), httpx.RateLimit(50, 100), httpx.MaxInFlight(inFlight))
 	r.NoRoute(func(c *gin.Context) { httpx.Fail(c, httpx.ErrNotFound) })
 
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
@@ -74,7 +87,10 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 
 	// A stolen token used from many addresses still counts as one person.
 	perUser := httpx.RateLimitBy(func(c *gin.Context) string { return auth.Current(c).UserID }, 30, 60)
-	v1 := r.Group("/api/v1", auth.Authenticate(d.Verifier, d.Resolver), perUser)
+	if d.SignIn != nil {
+		d.SignIn.Register(r)
+	}
+	v1 := r.Group("/api/v1", auth.Authenticate(d.Verifier, d.Resolver, d.Sessions), perUser)
 	guard := auth.NewGuard(v1)
 	account.NewHandler(d.Conn).Register(guard)
 	inventory.NewHandler(d.Conn).Register(guard)

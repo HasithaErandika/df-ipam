@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { createBrowserRouter, Navigate } from 'react-router'
+import { createBrowserRouter, Navigate, useParams } from 'react-router'
 import { AppShell } from './shell/AppShell'
 
 // Each screen loads on first visit, so signing in doesn't download the whole app.
@@ -15,7 +15,21 @@ const Alerts = page(() => import('../features/alerts/AlertsPage'), 'AlertsPage')
 const Requests = page(() => import('../features/requests/RequestsPage'), 'RequestsPage')
 const Reservations = page(() => import('../features/reservations/ReservationsPage'), 'ReservationsPage')
 const Reports = page(() => import('../features/reports/ReportsPage'), 'ReportsPage')
-const Settings = page(() => import('../features/settings/SettingsPage'), 'SettingsPage')
+const NetworkSetup = page(() => import('../features/network/NetworkSetupPage'), 'NetworkSetupPage')
+const Access = page(() => import('../features/access/AccessPage'), 'AccessPage')
+const Audit = page(() => import('../features/audit/AuditPage'), 'AuditPage')
+const System = page(() => import('../features/system/SystemPage'), 'SystemPage')
+
+// Settings was split into separate pages; old links land on the right one.
+const moved: Record<string, string> = {
+  settings: '/network-setup', environments: '/network-setup/environments', departments: '/network-setup/departments',
+  users: '/access', audit: '/audit', system: '/system', integrations: '/system/fortigate',
+}
+
+function OldSettings() {
+  const { tab } = useParams()
+  return <Navigate to={moved[tab ?? 'settings'] ?? '/'} replace />
+}
 
 export const router = createBrowserRouter([
   {
@@ -31,7 +45,11 @@ export const router = createBrowserRouter([
       { path: 'requests/:tab?', element: <Requests /> },
       { path: 'reservations/:tab?', element: <Reservations /> },
       { path: 'reports', element: <Reports /> },
-      { path: 'settings/:tab?', element: <Settings /> },
+      { path: 'network-setup/:tab?', element: <NetworkSetup /> },
+      { path: 'access/:tab?', element: <Access /> },
+      { path: 'audit', element: <Audit /> },
+      { path: 'system/:tab?', element: <System /> },
+      { path: 'settings/:tab?', element: <OldSettings /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

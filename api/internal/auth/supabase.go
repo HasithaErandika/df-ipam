@@ -6,60 +6,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 	"github.com/lestrrat-go/jwx/v3/jwt"
 )
 
-const (
-	jwksTTL          = 10 * time.Minute // Supabase advises against caching longer
-	jwksMinRefetch   = 30 * time.Second // limits refetches caused by unknown key IDs
-	providerSupabase = "supabase"
-)
+const providerSupabase = "supabase"
 
 // Only asymmetric algorithms: accepting others would allow key-confusion attacks.
 var allowedAlgs = map[string]bool{"ES256": true, "RS256": true}
 
 // SupabaseVerifier checks Supabase access tokens against the project's JWKS.
 type SupabaseVerifier struct {
-	issuer, audience, jwksURL string
-
-	mu        sync.Mutex
-	keys      jwk.Set
-	fetchedAt time.Time
+	issuer, audience string
+	cache            *keyCache
 }
 
 func NewSupabaseVerifier(issuer, audience, jwksURL string) *SupabaseVerifier {
-	return &SupabaseVerifier{issuer: issuer, audience: audience, jwksURL: jwksURL}
+	return &SupabaseVerifier{issuer: issuer, audience: audience, cache: &keyCache{url: jwksURL}}
 }
 
 func (*SupabaseVerifier) Provider() string { return providerSupabase }
 
 func (v *SupabaseVerifier) keySet(ctx context.Context, kid string) (jwk.Set, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	age := time.Since(v.fetchedAt)
-	stale := v.keys == nil || age > jwksTTL
-	if !stale {
-		if _, known := v.keys.LookupKeyID(kid); !known && age > jwksMinRefetch {
-			stale = true
-		}
-	}
-	if stale {
-		fetchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		keys, err := jwk.Fetch(fetchCtx, v.jwksURL)
-		if err != nil {
-			if v.keys != nil && age < 2*jwksTTL {
-				return v.keys, nil // ride out a brief outage
-			}
-			return nil, fmt.Errorf("fetch jwks: %w", err)
-		}
-		v.keys, v.fetchedAt = keys, time.Now()
-	}
-	return v.keys, nil
+	return v.cache.get(ctx, kid)
 }
 
 func tokenHeader(token string) (alg, kid string, err error) {

@@ -72,7 +72,7 @@ export function NetworkFacts({ segment: s, info }: { segment: Segment; info: Net
           <Tile label="Total addresses" value={formatCount(Number(info.totalAddresses))} sub="including network and broadcast" />
           <Tile label="Usable" value={formatCount(usable)} sub={`.${info.firstUsable.split('.').pop()} to .${info.lastUsable.split('.').pop()}`} />
           <Tile label="DHCP pool" value={pool ? formatCount(pool) : s.kind === 'dhcp' ? 'Not set' : 'None'}
-            sub={pool ? `${Math.round((pool * 100) / usable)}% of usable` : s.kind === 'dhcp' ? 'Set it in Settings' : 'Static addresses only'} />
+            sub={pool ? `${Math.round((pool * 100) / usable)}% of usable` : s.kind === 'dhcp' ? 'Set it in Network setup' : 'Static addresses only'} />
           <Tile label="Gateway" value={gateway ? <span className="font-mono">{gateway}</span> : 'Not set'} sub={!s.gateway && s.detectedGateway ? 'Detected, not saved' : s.gateway ? 'Saved on the segment' : undefined} />
           <Tile label="Broadcast" value={<span className="font-mono">{info.broadcast ?? '—'}</span>} />
           <Tile label="VLAN" value={s.vlan ?? '—'} sub={s.floor !== null ? `Floor ${s.floor}` : undefined} />
@@ -94,7 +94,7 @@ export function AvailableList({ segment: s, ranges, onRegister }: { segment: Seg
         <div className="p-4 text-[13px] text-ink-2">
           <p className="font-medium text-ink">No Available candidates.</p>
           <p className="mt-1">{s.kind === 'dhcp' && s.dhcpStart
-            ? 'Every usable address is in the DHCP pool, registered, reserved or in use. To assign static addresses, shrink the DHCP pool in Settings > Segments (and on the DHCP server) to leave a static range.'
+            ? 'Every usable address is in the DHCP pool, registered, reserved or in use. To assign static addresses, shrink the DHCP pool in Network setup > Segments (and on the DHCP server) to leave a static range.'
             : 'Every usable address is registered, reserved or in use. Release or reclaim addresses, or widen the segment.'}</p>
         </div>
       ) : (

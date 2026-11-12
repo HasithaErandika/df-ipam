@@ -22,12 +22,16 @@ Say **Available candidate**, never "Free".
 
 ## Screens
 
-One folder per screen in `web/src/features/`: `dashboard`, `discovery`, `servers`, `devices`, `alerts`, `requests`, `reservations`, `reports`, `settings`, plus `auth` and `shared`. What each screen holds is in [new.md](new.md#screens). Screens not built say so, and no screen shows sample data.
+One folder per screen in `web/src/features/`: `dashboard`, `discovery`, `servers`, `devices`, `alerts`, `requests`, `reservations`, `reports`, `audit`, `network` (Network setup), `access` (Users and roles), `system`, plus `auth` and `shared`. What each screen holds is in [new.md](new.md#screens). Screens not built say so, and no screen shows sample data.
 
 ## Patterns
 
 - **Dialogs** are centred over a blurred background (`Modal`, `ConfirmDialog`). No side drawers.
-- **Tabs are paths** (`/discovery/segments`, `/settings/departments`) through `PathTabs` and `useRouteTab`.
+- **Tabs are paths** (`/discovery/segments`, `/network-setup/departments`) through `PathTabs` and `useRouteTab`. Old `/settings/…` links redirect to the page that now holds them.
+- **The sidebar** groups pages, with the collapse button at the top, counts beside Devices (pending), Alerts (open) and IP Requests (waiting, for approvers), and the version and build at the bottom (`__APP_VERSION__` from `package.json`, `__APP_COMMIT__` from git, passed in by `make` for Docker builds).
+- **The header** shows the notification bell, who is signed in with their role (click for details), and Sign out.
+- **Drill-down pages** (a segment) link back to the menu page they were opened from (`lib/backTo.ts`), with its filters.
+- **Imports** are reviewed before they run: a dry run shows every row to be added and every skipped row with its reason (`ImportPreview`, `SegmentImport`).
 - **The query string** holds filters, sorting, paging and open dialogs (`?finding=<id>`).
 - **Every data view** has loading, empty and error states (`DataTable` does this).
 - **Tables** page on the server: 25 rows by default, up to 200. Each row shows its one main action as a button, and the rest in a menu.

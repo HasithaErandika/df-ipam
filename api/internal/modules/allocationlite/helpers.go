@@ -34,5 +34,5 @@ func auditChange(c *gin.Context, tx pgx.Tx, action, kind, id string, old, new an
 // someone who manages the system.
 func canManage(c *gin.Context, owner *string) bool {
 	p := auth.Current(c)
-	return p.Has(auth.SystemManage) || (owner != nil && *owner == p.UserID)
+	return p.Has(auth.InventoryEdit) || (owner != nil && *owner == p.UserID)
 }

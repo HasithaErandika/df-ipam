@@ -26,7 +26,7 @@ export function ReservationsPage() {
   const tab = useRouteTab(Object.keys(views))
   const me = useMe()
   const canReserve = useCan('ip:reserve')
-  const isAdmin = useCan('system:manage')
+  const isAdmin = useCan('inventory:edit')
   const segments = useSegments()
   const f = useFilters(['segmentId', 'q', 'mine'] as const)
   const { query, rows, meta, paging } = usePagedList<Reservation>('/reservations', { ...f.values, view: views[tab] })

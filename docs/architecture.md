@@ -10,7 +10,9 @@
 
 A `migrate` step applies migrations and the seed, then exits. Supabase provides sign-in only; all data stays in PostgreSQL.
 
-Compose files: `docker-compose.yml` (always), `docker-compose.dev.yml` (local ports), `docker-compose.prod.yml` (publishes 80 and 443 with TLS), and `docker-compose.hostnet.yml` (with `HOST_NETWORK=true`: the backend on the host's network, to read MAC addresses). Always start them with `make`, which loads the env files.
+Instead of the `web` container, Apache on the host can serve the app and proxy the API: `deploy/apache/df-ipam.conf`, `docker-compose.apache.yml`, `make apache-up` and `make apache-web` (see [setup.md](setup.md#run-it-behind-apache)).
+
+Compose files: `docker-compose.yml` (always), `docker-compose.dev.yml` (local ports), `docker-compose.prod.yml` (publishes 80 and 443 with TLS), `docker-compose.apache.yml` (backend on localhost for Apache), and `docker-compose.hostnet.yml` (with `HOST_NETWORK=true`: the backend on the host's network, to read MAC addresses). Always start them with `make`, which loads the env files.
 
 ## Background loops
 

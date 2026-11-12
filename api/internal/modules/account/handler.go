@@ -27,13 +27,14 @@ type Me struct {
 	ID                    string   `json:"id"`
 	Email                 string   `json:"email"`
 	Role                  *string  `json:"role"`
+	RoleName              string   `json:"roleName"`
 	Permissions           []string `json:"permissions"`
 	SessionTimeoutMinutes int      `json:"sessionTimeoutMinutes"`
 }
 
 func (h *Handler) me(c *gin.Context) {
 	p := auth.Current(c)
-	out := Me{ID: p.UserID, Email: p.Email, Permissions: make([]string, 0, len(p.Permissions))}
+	out := Me{ID: p.UserID, Email: p.Email, RoleName: p.RoleName, Permissions: make([]string, 0, len(p.Permissions))}
 	if p.Role != "" {
 		out.Role = &p.Role
 	}

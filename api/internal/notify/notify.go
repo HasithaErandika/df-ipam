@@ -22,11 +22,13 @@ func User(ctx context.Context, tx pgx.Tx, userID, kind, message, link string, em
 	return err
 }
 
-// Admins notifies every active Admin, with email where their preference allows.
-func Admins(ctx context.Context, tx pgx.Tx, kind, message, link string) error {
+// Holders notifies every active person whose role grants permission. email
+// asks for an email too, where their preference allows.
+func Holders(ctx context.Context, tx pgx.Tx, permission, kind, message, link string, email bool) error {
 	_, err := tx.Exec(ctx, `INSERT INTO notifications (user_id, kind, message, link, email_status)
-		SELECT u.id, $1, $2, $3, CASE WHEN COALESCE(p.email, true) THEN 'pending' ELSE 'none' END
+		SELECT u.id, $1, $2, $3, CASE WHEN $5 AND COALESCE(p.email, true) THEN 'pending' ELSE 'none' END
 		FROM users u LEFT JOIN notification_preferences p ON p.user_id = u.id AND p.kind = $1
-		WHERE u.role = 'admin' AND u.is_active`, kind, message, link)
+		WHERE u.is_active AND EXISTS (SELECT 1 FROM roles r WHERE r.key = u.role AND (r.full_access OR $4 = ANY(r.permissions)))`,
+		kind, message, link, permission, email)
 	return err
 }

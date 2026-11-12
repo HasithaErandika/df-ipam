@@ -12,9 +12,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// digestAfter is how many new notifying alerts one evaluation may announce one by
-// one. Past it, Admins get a single summary, so a noisy scan can't flood inboxes.
+// digestAfter is how many new alerts one evaluation may announce one by one.
+// Past it, people get a single summary, so a noisy scan can't flood anyone.
 const digestAfter = 5
+
+// alertsPermission is who hears about alerts: those who may act on them.
+const alertsPermission = "alerts:manage"
 
 // lockKey serialises evaluations: discovery and server checks both run them.
 const lockKey = 7_301_001
@@ -52,7 +55,7 @@ func (e *Engine) Evaluate(ctx context.Context) error {
 				x.message, x.key()).Scan(&inserted, &flapping); err != nil {
 				return err
 			}
-			if inserted && !flapping && x.notifies() {
+			if inserted && !flapping {
 				fresh = append(fresh, x)
 			}
 		}
@@ -85,21 +88,25 @@ func candidates(ctx context.Context, tx pgx.Tx) ([]candidate, error) {
 	return found, rows.Err()
 }
 
-// announce tells Admins about new High and Critical alerts: one by one when there
-// are few, or as one summary when a scan finds many at once.
+// announce tells those who handle alerts about each new one, in the app; High
+// and Critical ones also by email. Many at once become one summary, so a noisy
+// scan can't flood anyone.
 func announce(ctx context.Context, tx pgx.Tx, fresh []candidate) error {
 	if len(fresh) > digestAfter {
-		critical := 0
+		urgent, critical := 0, 0
 		for _, x := range fresh {
+			if x.notifies() {
+				urgent++
+			}
 			if x.severity == "critical" {
 				critical++
 			}
 		}
-		msg := fmt.Sprintf("%d new High or Critical alerts (%d Critical). Open Alerts to review them.", len(fresh), critical)
-		return notify.Admins(ctx, tx, "alert", msg, "/alerts")
+		msg := fmt.Sprintf("%d new alerts, %d of them High or Critical (%d Critical). Open Alerts to review them.", len(fresh), urgent, critical)
+		return notify.Holders(ctx, tx, alertsPermission, "alert", msg, "/alerts", urgent > 0)
 	}
 	for _, x := range fresh {
-		if err := notify.Admins(ctx, tx, "alert", x.message, "/alerts"); err != nil {
+		if err := notify.Holders(ctx, tx, alertsPermission, "alert", x.message, "/alerts?q="+x.ip, x.notifies()); err != nil {
 			return err
 		}
 	}

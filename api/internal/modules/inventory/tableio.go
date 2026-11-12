@@ -1,14 +1,17 @@
 package inventory
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 	"dfipam/api/internal/platform/tabular"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -85,11 +88,46 @@ type rowIssue struct {
 	Issue string `json:"issue"`
 }
 
-// importResult says what an import did. Rows with problems are skipped and listed.
+// importResult says what an import did, or would do on a dry run. Rows with
+// problems are skipped and listed; Preview lists the rows that go in.
 type importResult struct {
-	Imported int        `json:"imported"`
-	Skipped  int        `json:"skipped"`
-	Issues   []rowIssue `json:"issues"`
+	DryRun   bool         `json:"dryRun"`
+	Imported int          `json:"imported"`
+	Skipped  int          `json:"skipped"`
+	Issues   []rowIssue   `json:"issues"`
+	Preview  []previewRow `json:"preview"`
+}
+
+// previewRow is one row an import adds: its line in the file, its key (an IP or
+// MAC) and a label people recognise.
+type previewRow struct {
+	Row   int    `json:"row"`
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+// errDryRun rolls back an import that was only previewed.
+var errDryRun = errors.New("dry run")
+
+// isDryRun reads ?dryRun=true: run the import, report it, and keep nothing.
+func isDryRun(c *gin.Context) bool { return c.Query("dryRun") == "true" }
+
+// importTx runs an import in one transaction. On a dry run it does all the
+// work, so the report is exact, then rolls it back.
+func importTx(c *gin.Context, conn db.Conn, dry bool, fn func(pgx.Tx) error) error {
+	err := db.InTx(c, conn, func(tx pgx.Tx) error {
+		if err := fn(tx); err != nil {
+			return err
+		}
+		if dry {
+			return errDryRun
+		}
+		return nil
+	})
+	if errors.Is(err, errDryRun) {
+		return nil
+	}
+	return err
 }
 
 // exportFormat reads ?format=csv|xlsx, defaulting to CSV.
