@@ -6,6 +6,8 @@ interface Request {
   body: string
   confirmLabel: string
   tone?: 'danger' | 'primary'
+  /** What will change, one line each, such as "Scan interval: 10 → 15 minutes". */
+  changes?: string[]
 }
 
 type Confirm = (request: Request) => Promise<boolean>
@@ -25,7 +27,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     <ConfirmContext.Provider value={confirm}>
       {children}
       <ConfirmDialog open={request !== null} title={request?.title ?? ''} body={request?.body ?? ''} confirmLabel={request?.confirmLabel ?? ''}
-        tone={request?.tone} onConfirm={() => close(true)} onCancel={() => close(false)} />
+        tone={request?.tone} changes={request?.changes} onConfirm={() => close(true)} onCancel={() => close(false)} />
     </ConfirmContext.Provider>
   )
 }
@@ -33,10 +35,13 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 /** Asks a question in a dialog, and resolves to the answer. */
 export const useConfirm = () => useContext(ConfirmContext)
 
-/** Asks before saving an edit, then runs it. what names the record being changed. */
+/**
+ * Asks before saving an edit, then runs it. what names the record being changed;
+ * changes, when given, lists each change so people see exactly what they confirm.
+ */
 export function useConfirmSave() {
   const confirm = useConfirm()
-  return async (what: string, run: () => void, body = 'The change applies straight away and is recorded in the audit log.') => {
-    if (await confirm({ title: `Save changes to ${what}?`, body, confirmLabel: 'Save changes', tone: 'primary' })) run()
+  return async (what: string, run: () => void, body = 'The change applies straight away and is recorded in the audit log.', changes?: string[]) => {
+    if (await confirm({ title: `Save changes to ${what}?`, body, confirmLabel: 'Save changes', tone: 'primary', changes })) run()
   }
 }

@@ -10,7 +10,9 @@ COPY . .
 # The anon key is public by design. The API shares this origin, so it needs no URL.
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
-ENV VITE_API_URL=""
+# The commit this image was built from, shown under the menu. make passes it.
+ARG APP_COMMIT=""
+ENV VITE_API_URL="" APP_COMMIT=$APP_COMMIT
 RUN pnpm build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
@@ -19,5 +21,4 @@ COPY nginx/dfipam.conf.template /etc/nginx/templates/dfipam.conf.template
 COPY nginx/app.inc.template /etc/nginx/templates/app.inc.template
 COPY nginx/site-http.conf /etc/nginx/site/site.conf
 COPY nginx/allow-all.conf /etc/nginx/rules/access.conf
-COPY nginx/allow-all.conf /etc/nginx/rules/agents.conf
 EXPOSE 8080 8443

@@ -1,63 +1,29 @@
+/** A role's key, such as admin or network_engineer. Roles are set up in Users & roles. */
+export type Role = string
 
-
-export interface Me { id: string; email: string; roles: string[]; permissions: string[] }
+/** The signed-in user. Role is null until an Admin gives one. */
+export interface Me { id: string; email: string; role: Role | null; roleName: string; permissions: string[]; sessionTimeoutMinutes: number }
 
 export interface Profile {
   id: string
   email: string
   displayName: string
+  role: Role | null
+  roleName: string | null
   authProvider: string
   isActive: boolean
   lastLoginAt: string | null
   createdAt: string
   updatedAt: string
-  assignments: { role: string; description: string; scope: string }[]
 }
 
-export interface Ref { id: string; name: string }
-
-export interface Organisation { id: string; name: string; code: string; createdAt: string }
-
-export interface RoutingDomain {
-  id: string
-  organisationId: string
-  organisationName: string
+/** A role and the permissions it grants. A full-access role holds every permission. */
+export interface RoleDef {
+  key: string
   name: string
-  kind: string
-  routeDistinguisher: string | null
-  isIsolated: boolean
-  subnetCount: number
+  description: string
+  permissions: string[]
+  fullAccess: boolean
+  isSystem: boolean
+  users: number
 }
-
-export interface User {
-  id: string
-  email: string
-  displayName: string
-  isActive: boolean
-  lastLoginAt: string | null
-  roles: string[]
-  scoped: boolean
-  businessServiceIds: string[]
-  businessServices: string[]
-}
-
-export interface Role { id: string; name: string; description: string }
-
-export interface AuditEntry {
-  id: number
-  actorEmail: string | null
-  actorType: string
-  action: string
-  objectType: string
-  objectId: string | null
-  oldValues: unknown
-  newValues: unknown
-  occurredAt: string
-  sourceIp: string | null
-  correlationId: string | null
-  result: string
-}
-
-export interface HistoryEntry { action: string; occurredAt: string; actorEmail: string | null; result: string }
-
-export interface SavedFilter { id: string; page: string; name: string; filters: Record<string, string> }

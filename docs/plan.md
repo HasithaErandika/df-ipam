@@ -1,24 +1,17 @@
-# Plan: simpler containers, company SSO, no Supabase
+# Plan: company sign-in, no Supabase
 
-**Status:** proposed, nothing built yet. Phase 1 can start now. Phases 2 to 6 wait for the answers in Phase 0.
+**Status:** Phases 1 and 2 are built: Microsoft Entra ID sign-in runs alongside Supabase (see [authentication.md](authentication.md#microsoft-entra-id)), for `@dialogfinance.lk` only. Phases 3 and 4 (moving accounts over, removing Supabase) wait for your go-ahead.
 
 ## Goal
 
 | Today | After |
 | --- | --- |
-| `db`, `api` and `worker` containers, plus the web app outside Docker | `db`, `backend` and `web` containers: one job each |
-| Sign-in through Supabase, with a password | Sign-in through company OIDC SSO. DF-IPAM holds no passwords |
+| Sign-in through Supabase, with a password | Sign-in through the company's OIDC provider. DF-IPAM holds no passwords |
 | Anyone with a Supabase account | Only `@dialogfinance.lk` and `@dialog.lk` |
 | Supabase test database, keys and SQL bundle | Gone. PostgreSQL in Docker is the only database |
 | Tokens in browser storage | A session cookie JavaScript can't read |
 
-This also closes three open items: the missing password screen, the missing multi-factor sign-in, and the leaked `service_role` key.
-
-## Why there are three containers today
-
-`api` and `worker` are the same image running two programs. The API answers people, and the worker runs background jobs: syncs, reports, schedules, expiry and email. They were split so a slow job can't hurt the API. That matters less at this size, because the worker is a few timed loops.
-
-A fourth, `migrate`, runs once and exits, so `docker ps` doesn't show it.
+This also closes three open items: no password screen, no multi-factor sign-in, and the `service_role` key.
 
 ## Phase 0: Answers needed first
 
@@ -26,66 +19,24 @@ From the identity team:
 
 | # | Question | Why it matters |
 | --- | --- | --- |
-| 1 | Which product is it: Entra ID, Keycloak, ADFS, Okta? | Claim names and logout differ |
+| 1 | Which product: Entra ID, Keycloak, ADFS, Okta? | Claim names and logout differ |
 | 2 | **Do `@dialogfinance.lk` and `@dialog.lk` sign in through the same provider?** | If not, the design needs two issuers |
 | 3 | Issuer URL, client ID and client secret | The connection itself |
 | 4 | Can it register `https://<host>/api/v1/auth/callback`, and `http://localhost:5173/api/v1/auth/callback` for development? | Sign-in fails otherwise |
 | 5 | Which claim holds the work email, and is `email_verified` sent? | The domain rule depends on it |
-| 6 | Is multi-factor enforced by the provider? | Meets the brief's "strong authentication" |
+| 6 | Is multi-factor enforced by the provider? | Strong authentication |
 | 7 | Can the server reach the provider, and does it use a private CA? | Firewall and trust store |
 
 From you:
 
 | # | Decision | Recommendation |
 | --- | --- | --- |
-| 8 | Is everyone at `@dialog.lk` meant to sign in, or only some? | Allow sign-in, but they see nothing until given a role |
+| 8 | Is everyone at `@dialog.lk` meant to sign in, or only some? | Allow sign-in; they see nothing until given a role |
 | 9 | Subdomains such as `@it.dialog.lk`? | No: exact domains only |
-| 10 | Session length | 30 minutes idle, 10 hours at most |
-| 11 | Git identity: new commits only, or rewrite old ones? | New commits only. Rewriting changes every commit ID |
-| 12 | Delete the Supabase project after cutover? | Yes, after a week of stable sign-ins. It can't be undone |
+| 10 | Session length | 30 minutes idle (as today), 10 hours at most |
+| 11 | Delete the Supabase project after cutover? | Yes, after a week of stable sign-ins. It can't be undone |
 
-## Phase 1: Containers
-
-Doesn't depend on SSO, so it can start now.
-
-### Backend: one container
-
-1. Add `cmd/server`, which runs the HTTP server and the worker loops in one process.
-2. Move the worker loops from `cmd/worker/main.go` into `internal/worker`, with a `Run(ctx)` entry point.
-3. Recover from a panic in each loop, so a failed job can't stop the API.
-4. Shut down cleanly: stop taking requests, let jobs finish, then close.
-5. Add `WORKER_ENABLED`, default `true`, so the two can be separated again by configuration.
-6. Use one service in `docker-compose.yml`, with a pool of 30 connections instead of 20 and 10.
-
-**Costs of merging:** the API and jobs share memory and CPU, so a large report can slow screens, and a restart interrupts running jobs. Stuck reports and syncs are already recovered, and `SKIP LOCKED` keeps two backends safe if you scale later.
-
-**`migrate` stays a separate one-shot step.** Folding it in would keep the database owner's password inside the always-running backend, undoing the app role's limits. It exits, so it never appears in `docker ps`.
-
-### Frontend: one container
-
-1. Add `web/Dockerfile`: build with Node, serve from an unprivileged Nginx image.
-2. Move `deploy/nginx/df-ipam.conf` into this container, so TLS, rate limits, agent rules and the `/api/` proxy travel with it.
-3. Mount certificates read-only, and publish only ports 80 and 443.
-4. Stop publishing port 8080: the backend is then reachable only through `web`.
-5. Keep Vite for development, for instant reloads.
-
-**Check first:** rate limits, audit logs and the agent allowlist need the real client address. Confirm it reaches Nginx inside Docker. If it doesn't, use host networking for `web`, or keep Nginx on the host.
-
-**Alternative rejected:** embedding the web app in the Go binary gives two containers, but loses Nginx's flood protection, or leaves it on the host outside Docker.
-
-### Result
-
-```text
-df-ipam-web-1       ports 80, 443     the only way in
-df-ipam-backend-1   no public port    API and worker
-df-ipam-db-1        no public port    PostgreSQL
-```
-
-The database port moves from `127.0.0.1:5432` to an opt-in development override, because `make test-db` needs it.
-
-## Phase 2: SSO on the backend
-
-### How sign-in works
+## Phase 1: Sign-in on the backend
 
 The backend does the sign-in, and the browser only ever holds a cookie.
 
@@ -104,147 +55,63 @@ sequenceDiagram
   A->>B: Session cookie, redirect to the app
 ```
 
-A browser-only flow is simpler, but leaves tokens where a script bug could steal them. This system holds a map of a bank's network, so the backend flow is worth it.
+1. Add `api/internal/auth/oidc.go` with `coreos/go-oidc` and `golang.org/x/oauth2`.
+2. Add `GET /auth/login`, `GET /auth/callback` and `POST /auth/logout` outside the authenticated group; list them in the route guard test and `openapi.yaml`.
+3. Replace the bearer check in `Authenticate` with a session lookup, behind an interface so tests can stub it. Keep the per-request active-user check.
+4. Rate-limit the sign-in routes, and audit `auth.login`, `auth.logout` and `auth.login_denied`.
+5. A new migration: a `sessions` table (token hash, user, created, last seen, expires, revoked) with RLS, the `dfipam_app_all` policy and grants; and a unique index on `lower(users.email)`. Expired sessions are removed hourly.
 
-### Work
+**Domain rule:** `AUTH_ALLOWED_EMAIL_DOMAINS=dialogfinance.lk,dialog.lk`, checked on the server in the callback. Lowercase the email, take the part after the last `@`, require an exact match, and require `email_verified`. Pin the issuer; never a multi-tenant "common" endpoint. **Passing the rule gives no access:** a new person waits for a role. Users are identified by the provider's `sub`, not by email.
 
-1. Add `api/internal/auth/oidc.go`, using `coreos/go-oidc` and `golang.org/x/oauth2`.
-2. Add routes outside the authenticated group: `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout`. List them in the route guard test and `openapi.yaml`, as the agent routes are.
-3. Replace bearer checks in `Authenticate` with a session lookup. Keep an interface, so API tests can still stub sign-in.
-4. Keep the per-request user check, so deactivating someone still takes effect at once.
-5. Limit sign-in routes with `httpx.RateLimit`.
-6. Remove expired sessions in `internal/retention`.
-7. Audit `auth.login`, `auth.logout` and `auth.login_denied`.
+**Cookie:** `__Host-dfipam_session`, `Secure`, `HttpOnly`, `SameSite=Lax`, 256 random bits with only a SHA-256 hash stored. Unsafe methods need a matching `Origin` and a custom header. CORS goes, because the app and API share one origin.
 
-### Domain rule
+## Phase 2: Sign-in in the web app
 
-```text
-AUTH_ALLOWED_EMAIL_DOMAINS=dialogfinance.lk,dialog.lk
-```
+1. Replace `web/src/lib/auth.ts` with the redirect, sign-out and a session check.
+2. One **Sign in with company account** button, and a clear message when a domain is refused.
+3. Send cookies and the CSRF header instead of `Authorization` in `web/src/lib/api.ts`.
+4. Remove `@supabase/supabase-js`.
+5. Add **Add person** in Users and roles: a company email and role before their first sign-in. This removes `supabase_admin.go` and the `service_role` key.
 
-- Checked on the server, in the callback, even if the provider also restricts it.
-- Lowercase the email, take the part after the last `@`, and require an **exact** match.
-- Refused: `x@evil-dialog.lk`, `x@dialog.lk.evil.com`, `x@gmail.com`.
-- `email_verified` must be true, where the provider sends it.
-- The issuer is pinned. Never accept a multi-tenant "common" endpoint: anyone can claim an email there.
-- **Passing the rule gives no access.** A new person lands on "Waiting for access" until someone assigns a role.
-- Users are identified by the provider's `sub`, not by email, because emails change.
+## Phase 3: Existing accounts
 
-### Cookie and session
+At cutover, for each existing user, set `auth_provider = 'oidc'`, the company email, and `auth_subject = 'pending:<email>'`. At first sign-in, a verified email matching a `pending:` row takes over that row once, so roles and history stay. **Run it at cutover, not before,** or Supabase sign-in stops working.
 
-| Setting | Value |
-| --- | --- |
-| Cookie | `__Host-dfipam_session`, `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` |
-| Value | 256 random bits. Only a SHA-256 hash is stored, in `sessions` |
-| Lifetime | Decision 10 |
-| CSRF | Unsafe methods need a matching `Origin` and a custom header |
-| CORS | Removed: the app and API share one origin |
-
-**Known limit:** someone disabled at the company stays signed in until their session ends. Deactivate them in DF-IPAM for immediate effect. Refresh tokens could close this later.
-
-### Migration 15
-
-- Give `dfipam_app` access to `sessions` again: migration 14 removed it because the table was unused.
-- Add `last_seen_at` to `sessions`, for the idle limit. It already has `token_hash`, `expires_at` and `revoked_at`.
-- Add a unique index on `lower(users.email)`, because linking depends on it. It only holds one user today.
-
-## Phase 3: SSO in the web app
-
-1. Replace `web/src/lib/auth.ts` with sign-in redirect, sign-out and a session check.
-2. Replace the sign-in form with one **Sign in with company account** button, and show a clear message when a domain is refused.
-3. Remove the `Authorization` header from `web/src/lib/api.ts`, send cookies, and add the CSRF header.
-4. Point the existing 401 handling at the sign-in page.
-5. Remove `@supabase/supabase-js`, saving 55 KB gzipped, and its chunk in `vite.config.ts`.
-6. Replace **Invite user** with **Add person**: enter a company email and roles before their first sign-in. This removes `supabase_admin.go` and the `service_role` key.
-
-## Phase 4: Your account and existing data
-
-There is one user, which keeps this small.
-
-| Where | Now | After |
-| --- | --- | --- |
-| `users.email` | `wickramasinghe.erandika@gmail.com` | `hasitha.wickramasinghe@dialogfinance.lk` |
-| `users.auth_provider` | `supabase` | `oidc` |
-| `users.auth_subject` | Supabase ID | `pending:<email>`, replaced at first sign-in |
-| Git `user.email` | Gmail | Company email, in line with decision 11 |
-
-```sql
-UPDATE users
-SET email = 'hasitha.wickramasinghe@dialogfinance.lk', auth_provider = 'oidc',
-    auth_subject = 'pending:hasitha.wickramasinghe@dialogfinance.lk'
-WHERE email = 'wickramasinghe.erandika@gmail.com';
-```
-
-- Your user ID doesn't change, so your Super Administrator role, requests and history stay yours.
-- At first sign-in, a verified email that matches a `pending:` row takes over that row, once only.
-- **Run this at cutover, not before**, or Supabase sign-in stops working.
-- Audit rows are append-only, so any old value holding the Gmail address stays as history.
-
-**New installs:** the first person signs in, then gets the Super Administrator role through `make db-shell`, as today.
-
-## Phase 5: Remove Supabase
-
-39 files mention it.
+## Phase 4: Remove Supabase
 
 | Area | Change |
 | --- | --- |
-| Code | Delete `api/internal/auth/supabase*.go` and `web/src/lib/auth.ts`'s Supabase code |
+| Code | Delete `api/internal/auth/supabase*.go` and the Supabase code in `web/src/lib/auth.ts` |
 | SQL bundle | Delete `cmd/sqlbundle`, `internal/sqlbundle` and `api/sql/supabase-setup.sql` |
-| Config | Remove `SUPABASE_*` and `AUTH_AUDIENCE` from env files, `config.go` and `docker-compose.yml`. Add `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL` and `AUTH_ALLOWED_EMAIL_DOMAINS` |
-| Makefile and CI | Remove `sql`, `test-db-supabase` and `migrate-supabase`, and clean `.github/workflows/ci.yml` |
-| Nginx | Remove Supabase from `connect-src`, and allow the provider if needed |
-| Tests | Remove the Supabase wording from `dbrules` and allocation fixtures |
-| Load test | Replace `LOADTEST_TOKEN` with a session cookie |
+| Config | Remove `SUPABASE_*` and `AUTH_AUDIENCE`; add `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL`, `AUTH_ALLOWED_EMAIL_DOMAINS` |
+| Makefile and CI | Remove `sql`, `test-db-supabase`, `migrate-supabase` |
+| Nginx | Remove Supabase from `connect-src` |
 | Migrations | Leave them. Applied migrations are never edited |
 
-**Row level security stays.** The Data API is gone, but it is a free second layer if the app role is misused. The rules in `CLAUDE.md` change to match.
+Row level security stays: a free second layer if the app role is misused.
 
-## Phase 6: Tests and documents
+## Tests and documents
 
-**Tests** use a fake OIDC server in Go, so they run without the real provider:
+A fake OIDC server in Go tests: a good sign-in and sign-out; bad state, nonce, issuer, audience, expired and unsigned tokens; every refused domain, including uppercase and look-alikes; `email_verified: false`; a pending row linking only once; a missing CSRF header; a deactivated user.
 
-- A good sign-in creates a session, and signing out ends it.
-- Bad `state`, bad `nonce`, wrong issuer, wrong audience, expired token and unsigned token are all refused.
-- Each refused address in the domain rule, including uppercase and look-alikes.
-- `email_verified: false` is refused.
-- A pending row links once, and can't be taken twice.
-- A request without the CSRF header is refused, and a deactivated user is refused at once.
-- Agent sign-in still works, because agents use their own credentials.
-
-**Documents:** rewrite `authentication.md`, and update `CLAUDE.md`, `architecture.md`, `deployment.md`, `setup.md`, `security.md`, `requirements.md`, `database.md`, `README.md` and the system guide.
+Then rewrite `authentication.md`, and update `CLAUDE.md`, `setup.md`, `security.md`, `database.md` and `README.md`.
 
 ## Cutover
 
 1. Take a backup, and confirm a restore.
-2. Deploy, and run migration 15.
-3. Run the Phase 4 update.
-4. Sign in with your company account, and confirm your role.
-5. Have a second person sign in, and assign them a role.
-6. Try one address from a refused domain.
-7. After a week, delete the Supabase project, and remove its entries from `api/.env`.
-8. Change `POSTGRES_PASSWORD` and `DFIPAM_APP_PASSWORD`, which deleting Supabase doesn't cover.
+2. Deploy and migrate.
+3. Run the Phase 3 update.
+4. Sign in with a company account and confirm the role. Have a second person sign in.
+5. Try one address from a refused domain.
+6. After a week, delete the Supabase project and its entries in `api/.env`.
 
-**Rollback:** redeploy the previous images, and reverse the Phase 4 update. Keep Supabase until step 7, so this stays possible.
+**Rollback:** redeploy the previous images and reverse the Phase 3 update. Keep Supabase until step 6.
 
 ## Risks
 
 | Risk | Mitigation |
 | --- | --- |
-| `@dialog.lk` uses a different provider | Answer question 2 first. Two issuers is a contained change if planned early |
-| The provider is down, so nobody can sign in | Sessions already open carry on. Keep a break-glass procedure in `runbooks.md` |
+| `@dialog.lk` uses another provider | Answer question 2 first |
+| The provider is down, so nobody can sign in | Open sessions carry on. Add a break-glass procedure to `runbooks.md` |
 | The server can't reach the provider | Test from the server in Phase 0 |
-| Docker hides the real client address | Check in Phase 1, before moving Nginx |
-| A large report slows the API | Separate with `WORKER_ENABLED=false` on a second container |
 | Everyone at `@dialog.lk` can create a user row | They see nothing, and rows are small. Revisit with decision 8 |
-
-## Order
-
-| Phase | Size | Waits for |
-| --- | --- | --- |
-| 0. Answers | Small | Identity team, you |
-| 1. Containers | Medium | Nothing |
-| 2. SSO backend | Large | Phase 0 |
-| 3. SSO web | Medium | Phase 2 |
-| 4. Your account | Small | Cutover |
-| 5. Remove Supabase | Medium | Phases 2 and 3 |
-| 6. Tests and documents | Medium | Alongside each phase |

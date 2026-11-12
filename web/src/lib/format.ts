@@ -1,97 +1,28 @@
-export const environments: Record<string, string> = {
-  production: 'Production',
-  disaster_recovery: 'Disaster Recovery',
-  uat: 'UAT',
-  development: 'Development',
-  testing: 'Testing',
-}
-
-export const domainKinds: Record<string, string> = {
-  default: 'Default', vrf: 'VRF', vpc: 'AWS VPC', vnet: 'Azure VNet', isolated: 'Isolated',
-}
-
-/** Address counts can exceed safe integers, so they stay strings. */
-export function formatCapacity(count: string, family: 4 | 6, prefixLength: number): string {
-  if (family === 6 && prefixLength < 96) return `2^${128 - prefixLength}`
-  return BigInt(count).toLocaleString('en-GB')
-}
-
 export function formatCount(n: number): string {
   return n.toLocaleString('en-GB')
 }
 
-/** How long ago, in words: "just now", "12 minutes ago", "3 days ago". */
+/** How long ago, in words: "just now", "12 min ago", "3 days ago". */
 export function formatAgo(iso: string, now = Date.now()): string {
   const minutes = Math.floor((now - new Date(iso).getTime()) / 60000)
   if (minutes < 1) return 'just now'
-  const [n, unit] = minutes < 60 ? [minutes, 'minute'] : minutes < 1440 ? [Math.floor(minutes / 60), 'hour'] : [Math.floor(minutes / 1440), 'day']
-  return `${n} ${unit}${n === 1 ? '' : 's'} ago`
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  const days = Math.floor(hours / 24)
+  return `${days} day${days === 1 ? '' : 's'} ago`
+}
+
+/** How long until a moment, in words: "in 4 min", "in 2 h". */
+export function formatIn(iso: string, now = Date.now()): string {
+  const minutes = Math.ceil((new Date(iso).getTime() - now) / 60000)
+  if (minutes <= 0) return 'now'
+  if (minutes < 60) return `in ${minutes} min`
+  return `in ${Math.round(minutes / 60)} h`
 }
 
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
-}
-
-export type Severity = 'normal' | 'warning' | 'critical'
-
-export function severity(pct: number, warn: number, critical: number): Severity {
-  if (pct >= critical) return 'critical'
-  return pct >= warn ? 'warning' : 'normal'
-}
-
-export const classifications: Record<string, string> = {
-  new_device: 'New device',
-  unknown_ip: 'Unknown IP',
-  ip_conflict_suspected: 'Conflict suspected',
-  duplicate_mac: 'Duplicate MAC',
-  dns_mismatch: 'DNS mismatch',
-  allocated_not_observed: 'Allocated, not observed',
-  observed_not_allocated: 'Observed, not allocated',
-  subnet_overlap: 'Subnet overlap',
-  ownership_missing: 'Ownership missing',
-  infrastructure_mismatch: 'Infrastructure mismatch',
-  stale_evidence: 'Stale evidence',
-}
-
-/** Page numbers to show, with gaps marked by null: 1 … 4 5 6 … 20. */
-export function pageWindow(page: number, totalPages: number): (number | null)[] {
-  const wanted = new Set([1, totalPages, page - 1, page, page + 1].filter((p) => p >= 1 && p <= totalPages))
-  const sorted = [...wanted].sort((a, b) => a - b)
-  const out: (number | null)[] = []
-  sorted.forEach((p, i) => {
-    if (i > 0) {
-      const gap = p - sorted[i - 1]
-      if (gap === 2) out.push(p - 1)
-      else if (gap > 2) out.push(null)
-    }
-    out.push(p)
-  })
-  return out
-}
-
-export function humanAction(action: string): string {
-  const [object, verb] = action.split('.')
-  const noun = object.replaceAll('_', ' ')
-  return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} ${(verb ?? '').replaceAll('_', ' ')}`.trim()
-}
-
-export const requestTypes: Record<string, string> = { allocation: 'Allocation', reservation: 'Reservation', release: 'Release' }
-
-export const requestStatuses: Record<string, string> = {
-  draft: 'Draft', submitted: 'Submitted', pending_approval: 'Pending approval', approved: 'Approved', rejected: 'Rejected',
-  allocated: 'Allocated', reserved: 'Reserved', released: 'Released', cancelled: 'Cancelled', expired: 'Expired',
-}
-
-type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger'
-
-export function requestTone(status: string): Tone {
-  switch (status) {
-    case 'pending_approval': return 'warn'
-    case 'approved': return 'accent'
-    case 'allocated': case 'reserved': case 'released': return 'ok'
-    case 'rejected': return 'danger'
-    default: return 'neutral'
-  }
 }
 
 /** Short date for date-only values such as YYYY-MM-DD, read as calendar dates. */
@@ -113,9 +44,41 @@ export function daysUntil(iso: string, now = Date.now()): number {
 }
 
 /**
- * A reservation runs to the end of its chosen day in UTC, stored as midnight
- * that follows it. Showing the day itself avoids an apparent off-by-one.
+ * A reservation runs to the end of its chosen day in UTC, stored as the midnight
+ * that follows it. These give back the chosen day.
  */
+export function endOfDayDate(iso: string): string {
+  return new Date(Date.parse(iso) - 1000).toISOString().slice(0, 10)
+}
+
 export function formatEndOfDay(iso: string): string {
-  return `End of ${formatDate(new Date(Date.parse(iso) - 1000).toISOString())}`
+  return formatDate(endOfDayDate(iso))
+}
+
+export type Level = 'normal' | 'warning' | 'critical'
+
+export function level(pct: number, warn: number, critical: number): Level {
+  if (pct >= critical) return 'critical'
+  return pct >= warn ? 'warning' : 'normal'
+}
+
+/** Page numbers to show, with gaps marked by null: 1 … 4 5 6 … 20. */
+export function pageWindow(page: number, totalPages: number): (number | null)[] {
+  const wanted = new Set([1, totalPages, page - 1, page, page + 1].filter((p) => p >= 1 && p <= totalPages))
+  const sorted = [...wanted].sort((a, b) => a - b)
+  const out: (number | null)[] = []
+  sorted.forEach((p, i) => {
+    if (i > 0) {
+      const gap = p - sorted[i - 1]
+      if (gap === 2) out.push(p - 1)
+      else if (gap > 2) out.push(null)
+    }
+    out.push(p)
+  })
+  return out
+}
+
+/** "Floor 4 · VLAN 40" style segment captions. */
+export function segmentCaption(s: { floor: number | null; vlan: number | null; network: string }): string {
+  return [s.floor !== null ? `Floor ${s.floor}` : null, s.vlan !== null ? `VLAN ${s.vlan}` : null, s.network].filter(Boolean).join(' · ')
 }

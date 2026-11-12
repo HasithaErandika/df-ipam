@@ -33,6 +33,16 @@
   --state-available: #1baf7a;
   --state-quarantined: #eda100;
   --state-retired: #e87ba4;
+  /* Address map states. Checked with the dataviz palette validator (light surface). */
+  --addr-assigned: #2a78d6;
+  --addr-reserved: #eb6834;
+  --addr-held: #eda100;
+  --addr-seen: #8b5cf6;
+  --addr-dhcp-used: #0f9fb3;
+  --addr-dhcp-free: #cdebef;
+  --addr-available: #1baf7a;
+  --addr-blocked: #4d586a;
+  --addr-gateway: #131a26;
   --side: #ffffff;
   --side-hover: #eff3fa;
   --side-border: #e2e6ec;

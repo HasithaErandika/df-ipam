@@ -1,120 +1,101 @@
+// Package discovery shows what the scanner is doing and everything it has seen,
+// and lets an Admin start a scan. It never changes the register or devices.
 package discovery
 
 import (
+	"errors"
 	"net/http"
-	"time"
 
+	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
+	"dfipam/api/internal/scanner"
+	"dfipam/api/internal/validate"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
-type Handler struct{ svc *Service }
-
-func NewHandler(svc *Service) *Handler { return &Handler{svc} }
-
-var viewDiscovery = []string{auth.DiscoveryRun, auth.DiscoveryManage, auth.AuditView}
-
-func (h *Handler) Register(g *auth.Guard) {
-	g.Handle(http.MethodGet, "/discovery/status", h.status, viewDiscovery...)
-	g.Handle(http.MethodPost, "/discovery/emergency-stop", h.emergencyStop, auth.DiscoveryRun, auth.DiscoveryManage)
-	g.Handle(http.MethodGet, "/discovery/policies", h.policies, viewDiscovery...)
-	g.Handle(http.MethodPost, "/discovery/policies", h.createPolicy, auth.DiscoveryManage)
-	g.Handle(http.MethodPut, "/discovery/policies/:id", h.updatePolicy, auth.DiscoveryManage)
-	g.Handle(http.MethodPost, "/discovery/policies/:id/approve", h.approvePolicy, auth.DiscoveryManage)
-	g.Handle(http.MethodGet, "/discovery/jobs", h.jobs, viewDiscovery...)
-	g.Handle(http.MethodPost, "/discovery/jobs", h.createJob, auth.DiscoveryRun)
-	g.Handle(http.MethodGet, "/discovery/jobs/:id", h.job, viewDiscovery...)
-	g.Handle(http.MethodGet, "/discovery/jobs/:id/logs", h.logs, viewDiscovery...)
-	g.Handle(http.MethodPost, "/discovery/jobs/:id/pause", h.control("pause"), auth.DiscoveryRun)
-	g.Handle(http.MethodPost, "/discovery/jobs/:id/resume", h.control("resume"), auth.DiscoveryRun)
-	g.Handle(http.MethodPost, "/discovery/jobs/:id/cancel", h.control("cancel"), auth.DiscoveryRun)
-	g.Handle(http.MethodGet, "/agents", h.agents, viewDiscovery...)
-	g.Handle(http.MethodPost, "/agents", h.createAgent, auth.DiscoveryManage)
-	g.Handle(http.MethodPost, "/agents/:id/rotate", h.rotateAgent, auth.DiscoveryManage)
-	g.Handle(http.MethodPost, "/agents/:id/revoke", h.revokeAgent, auth.DiscoveryManage)
+// Scanner is the part of the background scanner this module uses.
+type Scanner interface {
+	Trigger(segmentID, by string) error
+	Snapshot() scanner.Status
 }
 
-func respond(c *gin.Context, status int, v any, err error) {
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	httpx.OK(c, status, v)
+type Handler struct {
+	conn db.Conn
+	scan Scanner
+}
+
+func New(conn db.Conn, scan Scanner) *Handler { return &Handler{conn: conn, scan: scan} }
+
+func (h *Handler) Register(g *auth.Guard) {
+	g.Handle(http.MethodGet, "/discovery/status", h.status, auth.InventoryView)
+	g.Handle(http.MethodPost, "/discovery/scan", h.start, auth.DiscoveryScan)
+	g.Handle(http.MethodGet, "/discovery/findings", h.findings, auth.InventoryView)
+	g.Handle(http.MethodGet, "/discovery/summary", h.summary, auth.InventoryView)
+}
+
+var errUnavailable = httpx.NewError(http.StatusServiceUnavailable, "SCANNER_UNAVAILABLE", "The scanner is not running in this process.")
+
+type statusDTO struct {
+	scanner.Status
+	Method          string `json:"method"`
+	IntervalMinutes int    `json:"intervalMinutes"`
 }
 
 func (h *Handler) status(c *gin.Context) {
-	ctx := c.Request.Context()
-	var out struct {
-		EmergencyStop bool       `json:"emergencyStop"`
-		StoppedAt     *time.Time `json:"changedAt"`
-		Queued        int64      `json:"queued"`
-		Running       int64      `json:"running"`
-		Paused        int64      `json:"paused"`
-		AgentsOnline  int64      `json:"agentsOnline"`
-		AgentsTotal   int64      `json:"agentsTotal"`
-	}
-	err := h.svc.conn.QueryRow(ctx, `SELECT
-		coalesce((SELECT value = 'true'::jsonb FROM system_settings WHERE key = 'discovery.emergency_stop'), false),
-		(SELECT updated_at FROM system_settings WHERE key = 'discovery.emergency_stop'),
-		(SELECT count(*) FROM discovery_jobs WHERE status = 'queued'), (SELECT count(*) FROM discovery_jobs WHERE status = 'running'),
-		(SELECT count(*) FROM discovery_jobs WHERE status = 'paused'),
-		(SELECT count(*) FROM discovery_agents WHERE status = 'active'), (SELECT count(*) FROM discovery_agents WHERE status <> 'revoked')`).
-		Scan(&out.EmergencyStop, &out.StoppedAt, &out.Queued, &out.Running, &out.Paused, &out.AgentsOnline, &out.AgentsTotal)
-	respond(c, http.StatusOK, out, err)
-}
-
-func (h *Handler) emergencyStop(c *gin.Context) {
-	var req struct {
-		Active bool   `json:"active"`
-		Reason string `json:"reason"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
+	if h.scan == nil {
+		httpx.Fail(c, errUnavailable)
 		return
 	}
-	// Anyone allowed to run discovery may stop it; lifting the stop needs the manage permission.
-	if !req.Active && !auth.Current(c).Has(auth.DiscoveryManage) {
-		httpx.Fail(c, httpx.ErrForbidden)
-		return
-	}
-	n, err := h.svc.EmergencyStop(c.Request.Context(), auth.Current(c).UserID, req.Active, req.Reason)
-	respond(c, http.StatusOK, gin.H{"emergencyStop": req.Active, "jobsStopped": n}, err)
+	out := statusDTO{Status: h.scan.Snapshot(), Method: "ping", IntervalMinutes: 5}
+	_ = h.conn.QueryRow(c, `SELECT COALESCE((SELECT value #>> '{}' FROM settings WHERE key = 'scan.method'), 'ping'),
+		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 5)`).Scan(&out.Method, &out.IntervalMinutes)
+	httpx.OK(c, http.StatusOK, out)
 }
 
-func (h *Handler) policies(c *gin.Context) {
-	out, err := h.svc.Policies(c.Request.Context())
-	if err != nil {
+// start asks for a scan now. The scanner refuses while one runs and spaces manual
+// scans a minute apart, so repeated clicks can't flood the network.
+func (h *Handler) start(c *gin.Context) {
+	if h.scan == nil {
+		httpx.Fail(c, errUnavailable)
+		return
+	}
+	var in struct {
+		SegmentID string `json:"segmentId"`
+	}
+	if c.Request.ContentLength > 0 && !httpx.Bind(c, &in) {
+		return
+	}
+	var v validate.V
+	v.UUID("segmentId", in.SegmentID, false, "a segment")
+	if err := v.Err(); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
-	httpx.List(c, out, httpx.Page{Number: 1, Size: len(out)}, int64(len(out)))
-}
-
-func (h *Handler) savePolicy(c *gin.Context, id string, status int) {
-	var in PolicyInput
-	if err := c.ShouldBindJSON(&in); err != nil {
-		httpx.Fail(c, httpx.ErrBadRequest)
-		return
+	uid := auth.Current(c).UserID
+	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
+		if in.SegmentID != "" {
+			var ok bool
+			if err := tx.QueryRow(c, "SELECT EXISTS (SELECT 1 FROM segments WHERE id = $1::uuid)", in.SegmentID).Scan(&ok); err != nil || !ok {
+				return httpx.ErrNotFound
+			}
+		}
+		if err := audit.Write(c, tx, audit.Entry{ActorID: uid, Action: "scan", ObjectType: "discovery", ObjectID: in.SegmentID, New: in}); err != nil {
+			return err
+		}
+		return h.scan.Trigger(in.SegmentID, "manual") // last, so a refusal rolls the audit row back
+	})
+	switch {
+	case errors.Is(err, scanner.ErrBusy):
+		httpx.Fail(c, httpx.NewError(http.StatusConflict, "SCAN_RUNNING", "A scan is already running. Wait for it to finish."))
+	case errors.Is(err, scanner.ErrTooSoon):
+		httpx.Fail(c, httpx.NewError(http.StatusTooManyRequests, "SCAN_TOO_SOON", "A scan was started less than a minute ago. Try again shortly."))
+	case err != nil:
+		httpx.Fail(c, db.Friendly(err))
+	default:
+		httpx.OK(c, http.StatusAccepted, gin.H{"queued": true})
 	}
-	p, err := h.svc.SavePolicy(c.Request.Context(), auth.Current(c).UserID, id, in)
-	respond(c, status, p, err)
-}
-
-func (h *Handler) createPolicy(c *gin.Context) { h.savePolicy(c, "", http.StatusCreated) }
-
-func (h *Handler) updatePolicy(c *gin.Context) {
-	if id, ok := httpx.PathID(c); ok {
-		h.savePolicy(c, id, http.StatusOK)
-	}
-}
-
-func (h *Handler) approvePolicy(c *gin.Context) {
-	id, ok := httpx.PathID(c)
-	if !ok {
-		return
-	}
-	p, err := h.svc.ApprovePolicy(c.Request.Context(), auth.Current(c).UserID, id)
-	respond(c, http.StatusOK, p, err)
 }

@@ -1,31 +1,19 @@
 # Setup, Run and Deploy
 
-How to run DF-IPAM on your own machine, and how to deploy it to a server. To enter data and use the system, see the system guide PDF, which is shared outside git.
-
-## What runs
-
-| Container | Holds | Reached through |
-| --- | --- | --- |
-| `web` | Nginx: the built web app, HTTPS, rate limits, and the way in to the API | The browser |
-| `backend` | The API and the background worker, in one process | `web` only |
-| `db` | PostgreSQL, with its data in the `df-ipam_db-data` volume | `backend` only |
-
-A `migrate` step runs first, applies migrations and the seed, and exits. Discovery agents run on hosts in the networks they cover. An optional built-in agent runs as a container: see [step 13](#13-discovery-agents).
-
-Supabase provides sign-in only. All network data stays in your PostgreSQL.
+How to run DF-IPAM on your machine, and deploy it to a server. What runs is described in [architecture.md](architecture.md).
 
 ## Run it on your machine
 
 ### What you need
 
 - Docker with the Compose plugin
-- Go 1.26.10 or later, and Node 24 with pnpm, for the tests and commands run outside Docker
-- A Supabase project for sign-in. Its URL and keys are under **Project Settings, API**
+- Go 1.26.10+, and Node 24 with pnpm, for tests and commands outside Docker
+- A Supabase project for sign-in (URL and keys under **Project Settings, API**). Turn public sign-ups off
 
 ### First run
 
 ```bash
-make setup       # installs dependencies, and creates api/.env and web/.env
+make setup       # installs dependencies, creates api/.env and web/.env
 ```
 
 Fill in `api/.env`:
@@ -33,11 +21,13 @@ Fill in `api/.env`:
 | Setting | Value |
 | --- | --- |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | From your Supabase project |
-| `POSTGRES_PASSWORD`, `DFIPAM_APP_PASSWORD` | Run `openssl rand -hex 24` for each |
+| `POSTGRES_PASSWORD`, `DFIPAM_APP_PASSWORD` | `openssl rand -hex 24` each. They take effect when the database is first created |
 | `DATABASE_URL`, `MIGRATION_DATABASE_URL` | As in the example, with those passwords |
-| `SECRET_ENCRYPTION_KEY` | Run `openssl rand -base64 32` |
+| `SECRET_ENCRYPTION_KEY` | `openssl rand -base64 32`. Needed to store a FortiGate token |
+| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | From the Entra ID app registration, for Microsoft sign-in. See [authentication.md](authentication.md#setting-it-up-in-entra-id) |
+| `HOST_NETWORK` | `true` on Linux to let the scanner read MAC addresses (see below) |
 
-Fill in `web/.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. **The `service_role` key never goes in `web/.env`.** Then:
+Fill in `web/.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, and leave `VITE_API_URL` empty. **The `service_role` key never goes in `web/.env`.**
 
 ```bash
 make env-check   # lists anything missing
@@ -46,134 +36,70 @@ make dev         # starts the containers, then the web app with instant reloads
 
 | Address | What |
 | --- | --- |
-| <http://localhost:5173> | The web app, with instant reloads. Use this while developing |
-| <http://localhost:8088> | The web app in its container, as it runs on a server |
+| <http://localhost:5173> | The web app with instant reloads |
+| <http://localhost:8088> | The web app in its container |
 | <http://127.0.0.1:8080> | The API |
 
 Everything is published on localhost only.
 
-### Make yourself an administrator
+### Make yourself an Admin
 
-1. In the Supabase dashboard, open **Authentication, Users**, and add a user with a password and auto-confirm on. The app has no screen to set a password.
-2. Sign in to DF-IPAM. You see "Waiting for access", and your user now exists.
-3. Run `make db-shell`, then:
+1. In Supabase, **Authentication, Users**: add a user with a password and auto-confirm on.
+2. Sign in to DF-IPAM. You see "Waiting for access".
+3. In `make db-shell`:
 
    ```sql
-   INSERT INTO user_roles (user_id, role_id)
-   SELECT u.id, r.id FROM users u, roles r
-   WHERE u.email = '<your email>' AND r.name = 'Super Administrator';
+   UPDATE users SET role = 'admin' WHERE lower(email) = lower('<your email>');
    ```
 
-4. Press **Check again**.
+4. Press **Check again**. Give others roles in Users and roles.
 
-### Load the sample network
+### First data
 
-```bash
-make seed-demo
-```
+In Network setup: add the segments (by hand, or paste FortiGate `show system interface` output into Import from text; set each floor's DHCP pool and each server segment's environment), departments, and check the environments. Give people roles in Users and roles. Discovery starts on the next scan, or press **Scan now** in Discovery. Import existing devices and register entries from CSV, text or Excel to avoid a flood of unknown devices.
 
-This loads a sample bank network in about a minute: 23 sites, around 190 subnets, about 1,300 address records, requests in every status, discovery evidence, integrations and findings. Everything goes through the real API, so it follows every rule and is audited.
+### MAC addresses and host networking
 
-- It sends no packets, and calls no real system.
-- It refuses to run with `APP_ENV=production`, and refuses to run twice.
-- Existing records are left alone.
-- Its people use `@example.com` addresses and can't sign in.
-
-**It can't be removed record by record, because audit logs are append-only.** To start again, use `make db-reset CONFIRM=yes`, which deletes everything, then `make docker-up`.
+The scanner sees MAC addresses only on networks the server itself is on. With `HOST_NETWORK=true` in `api/.env` (Linux only), `make` adds `docker-compose.hostnet.yml`: the backend shares the host's network and reads its ARP table. The API then listens on loopback and the Docker gateway only, never on the Wi-Fi or Ethernet address.
 
 ### Daily commands
 
 | Command | What it does |
 | --- | --- |
 | `make dev` | Start everything |
-| `make docker-up` | Start or rebuild the containers, migrating first |
+| `make docker-up` | Rebuild and start the containers, migrating first |
 | `make docker-down` | Stop the containers. Data stays |
-| `make docker-logs` | Follow the logs |
-| `make docker-ps` | Show status |
-| `make lint test` | Check formatting and types, and run the unit tests |
-| `make test-db` | Run the database tests on a fresh `dfipam_test` database. Your data isn't touched |
-| `make db-shell` | Open `psql` as the owner |
-| `make help` | List every command |
+| `make docker-logs`, `make docker-ps` | Logs and status |
+| `make lint test` | Formatting, types and unit tests |
+| `make test-db` | Database and API tests on a throwaway database |
+| `make db-shell` | `psql` as the owner |
+| `make db-reset CONFIRM=yes` | **Delete all local data** and start empty |
 
-Schema changes go in a new numbered pair in `api/migrations/`, followed by `make sql`.
+A restart doesn't scan straight away: the first scan waits until the scan interval has passed since the last one. Use **Scan now** to scan at once.
 
 ## Deploy to a server
 
-Do these in order. Your own test system should come first: nothing below has been rehearsed on a real server yet.
+Nothing here has been rehearsed on a real server yet. Try it on a test system first.
 
-### Before you start
+### 1. The server
 
-| Needed | From | Blocks |
+One Ubuntu Server in a management VLAN, able to reach every floor and server segment. 2 vCPU, 4 GB of memory and 50 GB of SSD is plenty for one building (an estimate). For MAC addresses on every floor it needs to sit on those VLANs (see [new.md](new.md#not-built)).
+
+Install Docker Engine with the Compose plugin from Docker's apt repository, then `sudo apt install -y make gnupg git`. Anyone in the `docker` group is effectively root, so keep it to administrators.
+
+### 2. Firewall
+
+| Direction | To or from | Port |
 | --- | --- | --- |
-| List of core banking and payment networks | Network and security | Any active discovery |
-| Read-only service accounts for each platform | Platform owners | Integrations |
-| SMTP host and sender address | Infrastructure | Email. In-app alerts work without it |
-| RPO, RTO and retention periods | Business and compliance | Sign-off of backups |
+| Out | `<project>.supabase.co` | 443/tcp |
+| Out | Mail server | 587/tcp |
+| Out | The FortiGate's management address, if used | 443/tcp or its admin port |
+| Out | Floors and server segments | ICMP; UDP 53, 137, 1900, 5353; TCP 80 for UPnP descriptions; the check ports of monitored servers; the common ports, where port checks are on |
+| In | Office and VPN ranges | 443/tcp, and 80/tcp for the redirect |
 
-### 1. Sort networks into zones
+Browsers also need `<project>.supabase.co` on 443, because sign-in happens in the browser.
 
-| Zone | Examples | How DF-IPAM reaches it |
-| --- | --- | --- |
-| **Public** | Supabase, AWS and Azure APIs | The server calls out on 443. Nothing comes in |
-| **Private** | Offices, server VLANs, FortiGate and vCenter management | The server calls them directly, or an agent runs nearby |
-| **Restricted** | Core banking, payments, DMZ, PCI segments | **Passive or API only**, unless a sensitive policy is approved |
-
-Agents always connect out to the server on 443, so you never open a port into a segment. Nothing DF-IPAM does changes a network.
-
-### 2. Choose an access model
-
-DF-IPAM holds a map of the bank's network, so keep exposure as low as you can.
-
-| Model | Who reaches it | Use when |
-| --- | --- | --- |
-| **A. Private** (recommended) | Office and VPN users | Almost always |
-| **B. Private with remote segments** | As A, plus agents in other sites over private links | Several sites or isolated segments |
-| **C. Public** | Anyone who can reach the URL | Only if security approves it. Needs a WAF or zero-trust proxy, and MFA, which isn't set up yet |
-
-### 3. Prepare the server
-
-One dedicated Ubuntu Server in a management VLAN, not a DMZ. For under 50,000 IPs, start with 4 vCPU, 8 GB of memory and 250 GB of SSD. These are estimates.
-
-Install Docker Engine with the Compose plugin from Docker's own apt repository, then:
-
-```bash
-sudo apt update && sudo apt install -y make gnupg git
-```
-
-Anyone in the `docker` group is effectively root on this server, so keep that group to administrators.
-
-### 4. Open the firewall
-
-**Outbound from the server:**
-
-| To | Port | Purpose |
-| --- | --- | --- |
-| `<project-ref>.supabase.co` | 443/tcp | Sign-in keys |
-| FortiGate, vCenter | 443/tcp, or your admin port | Read-only APIs |
-| AWS and Azure APIs | 443/tcp | Read-only APIs |
-| Mail server | 587/tcp | Email |
-| Docker Hub, npm and Go module mirrors | 443/tcp | Building images |
-
-**Users' browsers** need `<project-ref>.supabase.co` on 443, because sign-in happens in the browser. Without it they see the app but can't sign in.
-
-**Inbound to the server:**
-
-| Model | From | Port |
-| --- | --- | --- |
-| A | Office and VPN ranges | 443/tcp, and 80/tcp for the redirect |
-| B | As A, plus each agent host or its NAT address | 443/tcp |
-| C | Your WAF or zero-trust proxy only | 443/tcp |
-
-**Outbound from an agent host:** the server on 443, and targets only as a policy allows: ICMP, and 53/udp and tcp.
-
-### 5. Set up Supabase
-
-1. Create a project, and note its reference and keys.
-2. Under **Authentication**, **turn off public sign-ups**. Otherwise anyone with the URL can create an account.
-3. Confirm it uses asymmetric signing keys: `curl https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json` must return a key.
-4. Under **URL Configuration**, set the site URL to `https://<your host name>`.
-
-### 6. Get the code and configure
+### 3. Configure
 
 ```bash
 sudo git clone <repository> /opt/df-ipam && cd /opt/df-ipam
@@ -186,21 +112,15 @@ In `api/.env`, as on your machine, plus:
 | Setting | Value |
 | --- | --- |
 | `APP_ENV` | `production` |
-| `COMPOSE_FILE` | `docker-compose.yml:docker-compose.prod.yml`. **Without this, nothing is published on 80 and 443** |
-| `CORS_ALLOWED_ORIGINS`, `APP_BASE_URL` | `https://<your host name>` |
-| `DOCKER_SUBNET`, `DOCKER_GATEWAY` | Change only if `172.30.0.0/24` is in use. Then also set `WEB_ADDRESS` and `BACKEND_ADDRESS` |
+| `COMPOSE_FILE` | `docker-compose.yml:docker-compose.prod.yml`. **Without it nothing is published on 80 and 443** |
+| `CORS_ALLOWED_ORIGINS`, `APP_BASE_URL` | `https://<host name>` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | Your mail server. Empty `SMTP_HOST` keeps email off |
-| `BACKUP_GPG_RECIPIENT` | See step 12 |
-| `INTEGRATION_ALLOWED_HOSTS` | Host names connectors may reach. Empty refuses every URL. A leading dot allows subdomains |
-| `INTEGRATION_ALLOWED_PRIVATE_RANGES` | **Needed for any private target.** List only management ranges |
+| `BACKUP_GPG_RECIPIENT` | See step 6 |
+| `DOCKER_SUBNET`, `DOCKER_GATEWAY` | Change only if `172.30.0.0/24` is in use |
 
-In `web/.env`, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. They are built into the web image.
+Store `SECRET_ENCRYPTION_KEY` in your vault, apart from backups. In Supabase, set the site URL to `https://<host name>`.
 
-Use `openssl rand -hex 24` for the database passwords, because they go into connection URLs. **They take effect when the database is first created.** Store `SECRET_ENCRYPTION_KEY` in your secrets vault, apart from backups. If it is lost, every integration credential has to be entered again.
-
-### 7. Certificates and access lists
-
-Use your internal CA for models A and B, and install it on every user device and agent host. Use a public CA for model C.
+### 4. Certificates and access list
 
 ```bash
 sudo mkdir -p /etc/ssl/df-ipam
@@ -208,153 +128,93 @@ sudo cp fullchain.pem privkey.pem /etc/ssl/df-ipam/
 sudo chown root:101 /etc/ssl/df-ipam/privkey.pem && sudo chmod 640 /etc/ssl/df-ipam/privkey.pem
 ```
 
-The web container reads them as user 101. Then edit the lists it mounts:
+List your office and VPN ranges in `deploy/nginx/access-private.conf`. **Don't leave the example `10.0.0.0/8`.** Only if security approves public access, use `deploy/nginx/access-public.conf` through `NGINX_ACCESS_FILE` in `api/.env`, behind a WAF.
 
-| File | Holds |
-| --- | --- |
-| `deploy/nginx/access-private.conf` | Who may open the site, for models A and B. List your office and VPN ranges |
-| `deploy/nginx/agents-allow.conf` | Which hosts agents connect from |
-| `deploy/nginx/access-public.conf` | Model C only. Set `NGINX_ACCESS_FILE=./deploy/nginx/access-public.conf` in `api/.env` |
-
-**Don't leave the example `10.0.0.0/8` in place.**
-
-With a load balancer in front (model C), set `real_ip_header` and `set_real_ip_from` in `web/nginx/app.inc.template`, or audit logs and rate limits use the wrong address.
-
-### 8. Start it
+### 5. Start and check
 
 ```bash
 sudo make docker-up
-sudo make docker-ps
+sudo make docker-ps      # web, backend and db healthy; migrate Exited (0)
 ```
 
-`web`, `backend` and `db` must show `healthy`, and `migrate` should show `Exited (0)`.
-
-### 9. Flood protection
-
-| Layer | Stops | Where |
-| --- | --- | --- |
-| Upstream firewall | **Volumetric floods** | FortiGate DoS policy, or your ISP |
-| Host | SYN floods, spoofing, connection bursts | Below |
-| Nginx | Request floods, slow clients | In the `web` container |
-| API | Abuse per address and per person | Built in |
-| Discovery | **DF-IPAM flooding your own network** | Built in: see [discovery-and-reconciliation.md](discovery-and-reconciliation.md) |
+Host flood protection:
 
 ```bash
 sudo cp deploy/sysctl/99-df-ipam.conf /etc/sysctl.d/ && sudo sysctl --system
-sudo nft -c -f deploy/nftables/df-ipam-flood.nft   # check it first
-sudo nft -f deploy/nftables/df-ipam-flood.nft
+sudo nft -c -f deploy/nftables/df-ipam-flood.nft && sudo nft -f deploy/nftables/df-ipam-flood.nft
 ```
 
-To keep the rules after a reboot, add `include "/opt/df-ipam/deploy/nftables/df-ipam-flood.nft"` to `/etc/nftables.conf`, and enable the `nftables` service.
+Add `include "/opt/df-ipam/deploy/nftables/df-ipam-flood.nft"` to `/etc/nftables.conf` and enable `nftables` to keep it after a reboot. Volumetric floods must be stopped upstream, on the FortiGate.
 
-An office behind one NAT address counts as one client. If real people see "Too many requests", raise `rate` in `web/nginx/dfipam.conf.template` and the nftables file.
+| Check | Expected |
+| --- | --- |
+| Open the site from the office or VPN, sign in | Works |
+| Open it from outside | Times out, or 403 |
+| `nc -zv <server> 5432` and `8080` from another machine | Refused or times out |
+| Make a small change, read the Audit log | The source address is your machine, not `172.30.0.1` |
 
-The discovery ceiling is 100 packets a second across all agents, and can be raised to 500, never higher. To change it, in `make db-shell`:
+### 6. Backups
 
-```sql
-UPDATE system_settings SET value = '300' WHERE key = 'discovery.max_total_pps';
-```
-
-### 10. Check it
-
-| Test | From | Expected |
-| --- | --- | --- |
-| Open the site and sign in | Office and VPN | Works |
-| Open the site | Outside (models A, B) | Times out, or 403 |
-| `curl https://<host>/api/v1/agent-api/heartbeat` | A host not in the agents list | 403 |
-| `nc -zv <server> 5432` and `8080` | Any other machine | Refused or times out |
-
-**Check the client address.** Sign in from another machine, make a small change, and read the source address in **Audit Logs**. It must be that machine, not `172.30.0.1`. If it isn't, Docker is hiding it, and rate limits and the access lists won't work properly. Give the `web` service `network_mode: host`, and point its upstream in `web/nginx/dfipam.conf.template` at the published backend port. This hasn't been tried on a real server yet.
-
-### 11. First administrator and data
-
-Create your account as in [Make yourself an administrator](#make-yourself-an-administrator), and add a second administrator straight away. Approvals, imports and discovery policies need a second person.
-
-Then enter the data, following the system guide. **Don't run `make seed-demo` here.**
-
-Connectors have only run on sample data and VMware's simulator, so try each against a non-production system first. Create its read-only account, and test that it really can't write.
-
-### 12. Backups and retention
-
-Create a GPG key on a machine **other than the server**, import only the public key as root on the server, and set `BACKUP_GPG_RECIPIENT`.
+Create a GPG key on a machine **other than the server**, import only its public key on the server as root, and set `BACKUP_GPG_RECIPIENT`.
 
 ```bash
-cd /opt/df-ipam
-sudo cp deploy/systemd/df-ipam-{retention,backup}.* /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now df-ipam-backup.timer df-ipam-retention.timer
+sudo cp deploy/systemd/df-ipam-backup.* /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now df-ipam-backup.timer
 sudo systemctl start df-ipam-backup.service
 ```
 
-Backups go to `/var/backups/df-ipam`. **Copy that folder off the server every day.** Then do a real restore, following [runbooks.md](runbooks.md).
+It runs `make db-backup` daily at 01:00 into `/var/backups/df-ipam`, checks the dump can be read, and keeps 30 days. **Copy that folder off the server every day,** and test a restore with [runbooks.md](runbooks.md).
 
-### 13. Discovery agents
+### 7. Go-live
 
-Do this **only after** the sensitive-networks list is agreed. Until then, integrations alone are passive and safe.
+Run the checklist in [security.md](security.md), and make a second Admin straight away.
 
-| Zone | Agent? |
-| --- | --- |
-| Private | One per site is usually enough. ICMP crosses routers, but ARP needs an agent on that segment |
-| Restricted, approved for scanning | One inside the segment. Add its address to `agents-allow.conf` and the firewall |
-| Restricted, not approved | **None.** Use platform data only |
-| Cloud | **None.** Inventory comes from the APIs |
+## Run it behind Apache
 
-#### Built-in agent
+Use this when the server already runs Apache, or Apache is the standard. Apache takes the place of the `web` container: it serves the built web app and passes `/api/` to the backend container, which is published on `127.0.0.1:8080` only. Steps 1, 2, 4 and 6 above still apply.
 
-Runs on this server, so nothing is installed elsewhere. It scans whatever the server can route to, and it can run alongside local agents.
+1. **Install Apache and its modules.**
 
-1. In **Discovery Centre**, create an agent, such as `Built-in agent`, and copy its one-time token.
-2. Set `AGENT_REGISTRATION_TOKEN` in `api/.env`.
-3. Run `make agent-up`, and check it shows as active. `make agent-logs` shows what it is doing.
-4. Delete the token line from `api/.env`. The credential is kept in the `agent-data` volume.
+   ```bash
+   sudo apt install -y apache2
+   sudo a2enmod ssl headers proxy proxy_http rewrite reqtimeout
+   ```
 
-| It can | It can't |
-| --- | --- |
-| Ping, reverse DNS and Nmap host discovery on routable segments | Read ARP from remote segments, so MAC addresses come from a local agent or the FortiGate connector |
-| | Reach a network with no route from this server, or the second of two routing domains using the same addresses |
+2. **Configure `api/.env`** as in step 3, but **don't** set `COMPOSE_FILE`: `make apache-up` chooses the files. Set `APP_BASE_URL` and `CORS_ALLOWED_ORIGINS` to `https://<host name>`. In `web/.env`, leave `VITE_API_URL` empty.
 
-Allow the server's address through the firewall to each segment. Hosts that block ping and those ports won't be seen, so a quiet result doesn't prove an address is unused.
+3. **Start the database and backend** (no web container):
 
-**Choose the agent when it matters.** A job or schedule with no agent goes to whichever agent asks first. Pin it to the local agent if only that one can reach the segment.
+   ```bash
+   sudo make apache-up        # db and backend; the API answers on 127.0.0.1:8080 only
+   curl -s http://127.0.0.1:8080/ready
+   ```
 
-#### Local agents
+4. **Build the web app and put it where Apache serves it:**
 
-Build the agent with `make build-api`, which writes `api/bin/agent`. On each agent host:
+   ```bash
+   make apache-web                                  # builds web/dist
+   sudo mkdir -p /var/www/df-ipam
+   sudo rsync -a --delete web/dist/ /var/www/df-ipam/
+   ```
 
-```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin dfipam-agent
-sudo mkdir -p /opt/df-ipam/bin /etc/df-ipam /var/lib/df-ipam-agent
-sudo chown dfipam-agent:dfipam-agent /var/lib/df-ipam-agent && sudo chmod 700 /var/lib/df-ipam-agent
-sudo cp agent /opt/df-ipam/bin/
-sudo cp company-ca.pem /usr/local/share/ca-certificates/company-ca.crt && sudo update-ca-certificates
-sudo cp agent.env.example /etc/df-ipam/agent.env
-sudo cp df-ipam-agent.service /etc/systemd/system/
-```
+5. **Add the site.** Copy the site file, then edit the host name, the certificate paths, your office and VPN ranges (both `Require ip` lines; don't leave `10.0.0.0/8`), and `<project-ref>` in the Content Security Policy while Supabase sign-in runs.
 
-1. In **Discovery Centre**, create an agent and copy its one-time token.
-2. Put the token and server URL in `/etc/df-ipam/agent.env`, with group `dfipam-agent` and mode 640. On a fragile link, also set `AGENT_MAX_PPS`.
-3. Run `sudo systemctl enable --now df-ipam-agent`, and check it shows as active.
-4. **Delete the token line.** The agent now uses its own stored credential.
+   ```bash
+   sudo cp deploy/apache/df-ipam.conf /etc/apache2/sites-available/
+   sudo nano /etc/apache2/sites-available/df-ipam.conf
+   sudo a2ensite df-ipam && sudo a2dissite 000-default
+   sudo apache2ctl configtest && sudo systemctl reload apache2
+   ```
 
-Then, in this order: enter exclusions for every restricted network, add blackouts, approve one small policy on a low-risk subnet at a low rate, and **test the emergency stop** while that job runs. New subnets have discovery off, so tick **Discovery enabled** first.
+6. **Check it** as in step 5 above. The audit log must show each person's own address; the backend trusts `X-Forwarded-For` only from Apache.
 
-### 14. Go-live checks
+The site file matches the web container: HTTPS only with HSTS, the same Content Security Policy and headers, the app's own links working on reload, long caching for `/assets`, 2 MB request bodies (8 MB on the three import routes), slow-client timeouts, and `/health` and `/ready` not exposed. The API keeps its own per-address and per-person rate limits; Apache has no per-request limiter built in, so add `mod_evasive` or rely on the FortiGate if you need one in front.
 
-Run through the checklist in [security.md](security.md), and at least these:
+**Upgrade with Apache:** `git pull`, then `sudo make apache-up`, `make apache-web` and the `rsync` line again. Migrations run on `apache-up`.
 
-- [ ] Public sign-ups are off
-- [ ] Database passwords and the `service_role` key are new, not ones shared during development
-- [ ] `api/.env` and `web/.env` have mode 600
-- [ ] From outside, the site is unreachable (models A, B)
-- [ ] Ports 5432 and 8080 can't be reached from another machine
-- [ ] Audit logs show real client addresses
-- [ ] Each connector's account is confirmed read-only
-- [ ] Restricted networks are excluded, and the emergency stop has been tested
-- [ ] Backups are copied off the server, and a restore has been tested
-- [ ] `SECRET_ENCRYPTION_KEY` is stored apart from backups
-- [ ] System Administration shows the worker healthy and a recent backup
+For Microsoft sign-in, register `https://<host name>/api/v1/auth/microsoft/callback` in Entra ID (see [authentication.md](authentication.md#setting-it-up-in-entra-id)).
 
-## Upgrade a server
+## Upgrade
 
 ```bash
 cd /opt/df-ipam
@@ -363,25 +223,19 @@ sudo git pull
 sudo make docker-up
 ```
 
-This rebuilds both images, runs new migrations and the seed, and restarts what changed. The seed adds new permissions, and leaves roles you have edited alone.
-
-Moving from the older layout, stop and disable the host's Nginx first, so the `web` container can take ports 80 and 443. Rebuild and reinstall agents after an upgrade that changes them.
+This rebuilds the images, runs new migrations and the seed, and restarts what changed.
 
 ## Common problems
 
-| Symptom | Likely cause | Fix |
+| Symptom | Cause | Fix |
 | --- | --- | --- |
-| The page loads, sign-in fails | The browser can't reach Supabase, or `VITE_` values were wrong at build | Check step 4, fix `web/.env`, then `make docker-up` |
-| "Waiting for access" | Signed in with no role | Assign one in User Management |
-| `required variable ... is missing` | Compose was run directly | Use the `make` commands, which load the env files |
-| Nothing on port 443 | `COMPOSE_FILE` isn't set | Set it as in step 6 |
-| `web` keeps restarting | Certificates missing, or unreadable by user 101 | Check step 7, and `make docker-logs` |
-| `migrate` or the backend can't sign in to PostgreSQL | Passwords changed after the volume was created | Set them back, or change them in PostgreSQL |
-| "Too many requests" for real users | Many people behind one NAT address | Raise the rates as in step 9 |
-| Audit logs show `172.30.0.1` | Docker is hiding the client address | See step 10 |
-| `Pool overlaps with other one` | `DOCKER_SUBNET` clashes with another network | Choose another range in `api/.env` |
-| `port is already allocated` | Something else has the port | Change `POSTGRES_PORT`, `API_PORT` or `WEB_PORT`, or stop the host's Nginx |
-| A discovery job stays queued | No agent, outside its window, over the ceiling, or an overlapping job | It starts when the other job ends. See the policy's windows |
-| Connection test: "refused by the outbound policy" | Host or its private range isn't allowed | Fix `INTEGRATION_ALLOWED_HOSTS` and `INTEGRATION_ALLOWED_PRIVATE_RANGES` |
-| Connection test: certificate error | Internal certificate | Add the CA with `INTEGRATION_CA_FILE`, as a path inside the container, with a volume mount |
-| Can't save credentials | No master key | Set `SECRET_ENCRYPTION_KEY`, then `make docker-up` |
+| The page loads, sign-in fails | The browser can't reach Supabase, or `VITE_` values were wrong at build | Fix `web/.env`, then `make docker-up` |
+| "Waiting for access" | Signed in with no role | An Admin assigns one |
+| `required variable ... is missing` | Compose run directly | Use the `make` commands |
+| Nothing on 443 | `COMPOSE_FILE` not set | See step 3 |
+| `web` keeps restarting | Certificates missing or unreadable by user 101 | See step 4, and `make docker-logs` |
+| Can't sign in to PostgreSQL | Passwords changed after the volume was created | Set them back, or change them in PostgreSQL |
+| Discovery shows no MACs | The server isn't on the devices' network | `HOST_NETWORK=true`, or a trunk port (not built) |
+| A segment is skipped | More than 4,096 addresses | Split it into smaller segments |
+| Can't save the FortiGate token | No `SECRET_ENCRYPTION_KEY` | Set it, then `make docker-up` |
+| `port is already allocated` | Something else has the port | Change `POSTGRES_PORT`, `API_PORT` or `WEB_PORT` |

@@ -1,150 +1,83 @@
 # Security
 
+DF-IPAM holds a map of the company network, so read access is itself sensitive.
+
 ## Trust boundaries
 
-| Boundary | Main controls |
+| Boundary | Controls |
 | --- | --- |
-| Browser to API | HTTPS, JWT verification, RBAC, validation, rate limits |
-| Agent to API | Per-agent credential, least-privilege endpoints, payload limits |
-| Worker to integrations | Outbound allowlist, TLS validation, read-only accounts |
-| App to database | TLS, separate database roles, parameterised SQL |
-| Agent to network | Approved scope, exclusions, rate limits, emergency stop |
+| Browser to `web` | HTTPS, Nginx access lists and rate limits |
+| `web` to API | JWT verification, permissions on every route, validation, rate limits |
+| API to database | `dfipam_app` role with least-privilege grants, parameterised SQL |
+| Scanner to network | Read-only probes, fixed rate and concurrency limits (see [new.md](new.md#keeping-the-network-steady)) |
+| API to FortiGate | `https://` only, GET only, a token from a read-only admin profile, TLS verification on by default |
 
 ## Threat model
 
-Grouped by STRIDE.
-
 | Threat | Example | Mitigation |
 | --- | --- | --- |
-| **Spoofing** | Forged JWT | JWKS signature check, algorithm allowlist, `iss`/`aud`/`exp` checks |
-| | Rogue agent | Single-use registration, per-agent credentials, revocation |
-| **Tampering** | Agent sends false evidence | Evidence never changes authoritative data; results are tied to the agent and job |
-| | Audit rows altered | App role has `INSERT`/`SELECT` only on `audit_logs`, plus a blocking trigger |
+| Spoofing | Forged Microsoft sign-in | Pinned tenant and issuer, client ID audience, nonce, state tied to a cookie, PKCE, exact email domain; guests refused |
+| | Stolen session cookie | `HttpOnly`, `SameSite=Lax`, `__Host-` over HTTPS, hash stored only, idle and 10-hour limits, ends at deactivation |
+| | Cross-site request with the cookie | Changes need `X-Requested-With: DF-IPAM`; CORS allows only listed origins |
+| | Forged token | JWKS signature, algorithm allowlist, `iss`, `aud`, `exp` checks; active `users` row required |
+| Tampering | Audit rows altered | `dfipam_app` has only `SELECT` and `INSERT` on `audit_logs`, and a trigger blocks changes |
 | | SQL injection | Parameterised queries; allowlisted sort and filter fields |
-| **Repudiation** | User denies a change | Audit log with actor, values, source IP and correlation ID |
-| **Information disclosure** | Credentials leak | Encryption at rest, redacted logs, write-only API fields |
-| | Viewer sees out-of-scope data | Scoped report exports are filtered by business service. `inventory:view_scoped` opens no inventory route |
-| | Stolen token through XSS | CSP, output encoding, no `dangerouslySetInnerHTML` |
-| **Denial of service** | Huge IPv6 listing | Range limits, no enumeration, page caps |
-| | Request flood | Limits per address and person, in-flight cap, Nginx and host limits |
-| | Network flood | Upstream firewall. Models A and B aren't reachable from the internet |
-| | Discovery overloads a network | Ceiling across all agents, limits held by the agent itself, every packet paced, limits rechecked between targets, job size cap, emergency stop. See [Traffic limits](discovery-and-reconciliation.md#traffic-limits) |
-| | Large file upload | Request size limits |
-| **Elevation of privilege** | Self-approval | Enforced in the service layer and database |
-| | SSRF through integration URL | See below |
-| | Command injection through Nmap | Fixed arguments, validated IPs, no shell |
-| | Compromised connector tries writes | Read-only service accounts on the target system |
-
-Specific to this system: DF-IPAM holds a detailed map of the bank's network, so read access is itself sensitive and exports are audited.
-
-## Supabase Data API
-
-The production database is local PostgreSQL, which has no Data API. These controls stay because the same migrations run on the Supabase test database.
-
-Supabase serves the `public` schema over a REST API to anyone holding the anon key, and that key is in the browser by design. Left open, it would bypass RBAC and the audit log entirely.
-
-- Every table has row level security on, with a policy only for `dfipam_app`.
-- `anon` and `authenticated` have no grants on tables, sequences or functions.
-- The browser uses `supabase-js` for sign-in only, never for data.
-- The `service_role` key bypasses all of this, so it stays on the backend and is used only for invitations.
-- A database test fails if any table is left open.
-
-## SSRF protection
-
-Applies to integration URLs and anything else that makes outbound requests.
-
-1. Allow `https` only, against an approved host allowlist.
-2. Resolve DNS, canonicalise the IP, then check it. Decimal, octal and IPv4-mapped IPv6 forms are normalised first.
-3. Connect to the validated IP, so DNS rebinding can't swap it. TLS still checks the hostname.
-4. Block metadata addresses (such as `169.254.169.254`), loopback and link-local always. Private ranges are allowed only if they are on the allowlist.
-5. Re-validate every redirect, or disable redirects.
-
-Users can't supply arbitrary URLs or ranges to get around this: connection URLs are limited to the allowlist, and discovery targets to approved scopes.
-
-Nothing in DF-IPAM changes firewalls, DNS, DHCP or cloud networks.
+| | Evidence used to change the register | Discovery and the FortiGate write only sightings and alerts |
+| | Spreadsheet formulas in imports or exports | Neutralised on the way in and out |
+| Repudiation | Someone denies a change | Audit row with actor, values, source IP and correlation ID, in the same transaction |
+| Disclosure | Supabase Data API with the anon key | Row level security on every table, no grants for `anon` or `authenticated`; tested |
+| | Secrets leak | FortiGate token encrypted with AES-256-GCM, never returned or logged; `service_role` key only in `api/.env` |
+| | Stolen token through XSS | Content Security Policy, no `dangerouslySetInnerHTML`, idle sign-out |
+| Denial of service | Request flood | Limits per address and per person, an in-flight cap, Nginx limits, host SYN protection |
+| | DF-IPAM flooding the network | 100 pings a second, 16 port checks in flight, slow probes every 6 hours at most, one scan at a time, manual scans a minute apart, at least 5 minutes between scans |
+| | Large upload | 1 MB bodies, 5 MB imports |
+| Elevation | A Requester approving | Permissions checked in the API on every route; a test fails on an unprotected route |
+| | Admin locks everyone out | Nobody changes their own role; the last Admin can't be removed |
 
 ## Secrets
 
-- Integration credentials use AES-256-GCM envelope encryption. The master key comes from the environment or secret manager, never the database or source control.
-- A key version is stored with each secret, so keys can be rotated.
-- Secrets never appear in API responses, logs, errors, frontend code or source control.
-- CI scans the full git history for secrets on each change, and fails on known reachable vulnerabilities.
+- `api/.env` and `web/.env` only, never committed, mode 600 on servers.
+- The FortiGate token is encrypted with `SECRET_ENCRYPTION_KEY`; a key version is kept so the key can be rotated (see [runbooks.md](runbooks.md)).
+- Secrets never appear in responses, logs, errors or the web bundle.
 
 ## HTTP hardening
 
-- TLS 1.2+ at Nginx, with HSTS
-- `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`, and `frame-ancestors 'none'`
-- CORS restricted to `CORS_ALLOWED_ORIGINS`
-- Rate limits per address and per signed-in person, stricter for agent registration, with at most five running reports per person
-- An IPv6 client counts as its whole /64, so stepping through addresses doesn't escape a limit
-- A cap on requests running at once, which refuses work instead of queueing it, and a bound on the limiter's memory
-- Nginx connection limits and timeouts for slow clients, and SYN cookies and per-source limits on the host
-- Discovery stays inside a budget across all agents, and two jobs can't scan one network at once
-- Volumetric floods are stopped upstream, not here: see Flood protection in [setup.md](setup.md)
-- Request size limits: 1 MB on every route. The 5 MB import and 8 MB agent limits can't take effect yet
-- Errors return a generic message and a correlation ID, with detail only in the logs
+- TLS at Nginx, with HSTS, `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy` and `frame-ancestors 'none'`.
+- CORS limited to `CORS_ALLOWED_ORIGINS`.
+- Errors return a generic message and a correlation ID; details stay in the logs.
+- Bearer tokens, so no cookies and no CSRF tokens. These return if company sign-in uses cookies.
 
-Secure cookies and CSRF tokens don't apply while the API uses bearer tokens. They return if the company auth uses cookies.
+## Network safety
 
-## Audit
+- The scanner only asks questions: ping, DNS, NetBIOS, mDNS, SSDP and, on segments that ask, TCP connects that close at once. It never logs in, never sends data to services, never changes a device.
+- Port checks are off by default per segment, because security tools may report them as a port scan. Agree with the security team before turning them on.
+- The FortiGate client refuses non-HTTPS addresses, addresses with credentials or paths, and sends only GET requests.
 
-- Records actor, action, object type and ID, old and new values, timestamp, source IP, correlation ID, approval reference and result.
-- The audit row is written in the **same transaction** as the change.
-- Secret fields are redacted before writing.
-- Retention is configurable, with the period agreed with compliance. Pruning uses a separate privileged role, not the app.
-- Reservations, allocations and releases go through approval workflows, with separation of duties where required.
-
-## Security review checklist
-
-Used before each release.
+## Release checklist
 
 **Auth**
 - [ ] Supabase public sign-ups are off
-- [ ] JWT checks cover signature, algorithm, issuer, audience and expiry
-- [ ] `service_role` key is only in `api/.env` and only used for invitations
-- [ ] Supabase Data API can't read any DF-IPAM table with the anon key
-- [ ] Every route has a permission check, with an automated test that fails on an unprotected route
-- [ ] Inactive users are rejected
-- [ ] Scope limits are tested for Business Viewer
+- [ ] The Entra app is single-tenant, its redirect URIs are only DF-IPAM's, and the client secret is in `api/.env` only, with its expiry noted
+- [ ] Sign-in with a non-`dialogfinance.lk` account and a guest account is refused
+- [ ] `service_role` key is only in `api/.env`
+- [ ] Supabase Data API can't read any table with the anon key (`make test-db-supabase`)
+- [ ] The unprotected-route test passes
 
 **Data**
-- [ ] All SQL is parameterised
-- [ ] App database role can't modify audit logs or run DDL
-- [ ] PostgreSQL is published on localhost only. If it moves to its own server, connections use TLS with certificate verification
-- [ ] Backups are encrypted and a restore has been tested
+- [ ] `make test-db` passes
+- [ ] PostgreSQL and the API are published on localhost only
+- [ ] Backups are encrypted, copied off the server, and a restore has been tested
 
 **Secrets**
-- [ ] No secrets in the repo, logs, or frontend bundle
-- [ ] Integration credentials are encrypted and write-only
-- [ ] Rotation has been exercised
+- [ ] No secrets in the repository, logs or web bundle
+- [ ] Database passwords and keys are new, not ones used in development
+- [ ] `SECRET_ENCRYPTION_KEY` is stored apart from backups
 
-**Network and integrations**
-- [ ] Each connector's account has been confirmed read-only
-- [ ] TLS verification is on everywhere
-- [ ] SSRF tests pass, including rebinding and redirects
-- [ ] Discovery can't run outside its allowlist (tested)
-- [ ] Emergency stop tested end to end
-- [ ] Sensitive networks are passive-only
+**Network**
+- [ ] The FortiGate token comes from a read-only admin profile
+- [ ] TLS verification is on for the FortiGate
+- [ ] Port checks are on only where security agreed
 
 **Build**
-- [ ] `govulncheck` and `pnpm audit` are clean or exceptions are recorded
+- [ ] `make vuln` is clean, or exceptions are recorded
 - [ ] Security headers verified on the deployed site
-- [ ] Debug endpoints and Swagger UI are off in production
-
-## Database role
-
-`dfipam_app` can't read or change `schema_migrations`, can't touch `sessions`, and can't delete `users` (accounts are deactivated). It can't change `audit_logs`, `discovery_observations` or `discovery_job_logs`. `TestAppRoleCannotDamageHistoryOrPeople` holds this in place.
-
-## Review, 5 November 2026
-
-Data leak and flooding review, against the running system.
-
-**Checked and sound:** the Supabase Data API refuses the anon key, row level security is on for all 73 tables, secrets are hashed or encrypted and absent from responses, git history, images and the web bundle hold no secrets, and backups are encrypted.
-
-**Open:**
-
-- Role scope columns are only used for scoped report exports, so don't rely on them to hide inventory.
-- `GET /people` lists active users' emails to anyone with inventory or request access, for the owner pickers.
-- Finished reports are stored unencrypted in the database until retention removes them, after 30 days.
-- The app has no screen to set or reset a password.
-- Supabase's database couldn't be reached directly from the test machine, so the Data API result comes from REST requests only.

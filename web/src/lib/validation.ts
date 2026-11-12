@@ -1,82 +1,65 @@
 /**
  * Checks that catch mistakes before a request is sent. The API checks everything
  * again and has the final word: these only make the answer quicker and clearer.
- * Each check returns a message, or undefined when the value is fine.
+ * DF-IPAM Lite is IPv4 only.
  */
-export type Issue = string | undefined
+import { z } from 'zod'
 
 export function isIPv4(v: string): boolean {
   const parts = v.split('.')
   return parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p) && !(p.length > 1 && p.startsWith('0')) && Number(p) <= 255)
 }
 
-export function isIPv6(v: string): boolean {
-  if (!/^[0-9a-fA-F:.]+$/.test(v) || !v.includes(':') || v.includes(':::')) return false
-  const halves = v.split('::')
-  if (halves.length > 2) return false
-  const groups = halves.flatMap((h) => (h === '' ? [] : h.split(':')))
-  let count = groups.length
-  const last = groups[groups.length - 1]
-  if (last?.includes('.')) {
-    if (!isIPv4(last)) return false
-    count += 1 // an embedded IPv4 address fills two groups
-    groups.pop()
-  }
-  if (!groups.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))) return false
-  return halves.length === 2 ? count < 8 : count === 8
+export function ipToInt(v: string): number {
+  return v.split('.').reduce((n, p) => n * 256 + Number(p), 0)
 }
 
-export const isIP = (v: string) => isIPv4(v) || isIPv6(v)
+export const intToIP = (n: number) => [24, 16, 8, 0].map((s) => Math.floor(n / 2 ** s) % 256).join('.')
 
-export function isCIDR(v: string): boolean {
-  const [address, prefix, extra] = v.split('/')
-  if (extra !== undefined || !prefix || !/^\d{1,3}$/.test(prefix)) return false
-  const n = Number(prefix)
-  return isIPv4(address) ? n <= 32 : isIPv6(address) && n <= 128
+/** A network written as its network address with a /16 to /30 prefix. */
+export function cidrIssue(v: string): string | undefined {
+  const [address, prefix, extra] = v.trim().split('/')
+  if (extra !== undefined || !prefix || !/^\d{1,2}$/.test(prefix) || !isIPv4(address)) return 'Enter a network such as 192.168.4.0/24.'
+  const bits = Number(prefix)
+  if (bits < 16 || bits > 30) return 'Use a prefix from /16 to /30.'
+  const size = 2 ** (32 - bits)
+  const start = ipToInt(address)
+  if (start % size !== 0) return `Use the network address: ${intToIP(start - (start % size))}/${bits}.`
+  return undefined
+}
+
+/** Whether an IPv4 address is inside a CIDR network. */
+export function inNetwork(ip: string, cidr: string): boolean {
+  const [address, prefix] = cidr.split('/')
+  if (!isIPv4(ip) || !isIPv4(address)) return false
+  const size = 2 ** (32 - Number(prefix))
+  const start = ipToInt(address)
+  return ipToInt(ip) >= start && ipToInt(ip) < start + size
 }
 
 export const isMAC = (v: string) => /^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/.test(v) || /^([0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}$/.test(v)
 
 export const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 
-export function isHttpsUrl(v: string): boolean {
-  try {
-    const u = new URL(v)
-    return u.protocol === 'https:' && u.hostname !== '' && u.username === '' && u.password === ''
-  } catch {
-    return false
-  }
-}
+// Zod pieces shared by forms. Messages match the API's wording.
 
-/** Five fields: minute hour day month weekday. The API checks the ranges. */
-export const isCron = (v: string) => /^[\d*/,-]+( [\d*/,-]+){4}$/.test(v.trim())
+export const text = (label: string, max: number) => z.string().trim().max(max, `${label} can be at most ${max} characters.`)
 
-export const isUUID = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim())
+export const requiredText = (label: string, max: number) => text(label, max).min(1, `${label} is required.`)
 
-export const required = (v: string | null | undefined, label: string): Issue => (v?.trim() ? undefined : `${label} is required.`)
+export const ipv4 = z.string().trim().refine(isIPv4, 'Enter a valid IPv4 address such as 192.168.1.10.')
 
-export const choose = (v: string | null | undefined, label: string): Issue => (v ? undefined : `Choose ${label}.`)
+export const optionalIPv4 = z.string().trim().refine((v) => v === '' || isIPv4(v), 'Enter a valid IPv4 address such as 192.168.1.10.')
 
-export const optionalIP = (v: string): Issue => (v.trim() === '' || isIP(v.trim()) ? undefined : 'Enter a valid IPv4 or IPv6 address.')
+export const optionalMAC = z.string().trim().refine((v) => v === '' || isMAC(v), 'Enter a MAC address such as 00:11:22:33:44:55.')
 
-export const ip = (v: string): Issue => (isIP(v.trim()) ? undefined : 'Enter a valid IPv4 or IPv6 address.')
+export const choose = (what: string) => z.string().min(1, `Choose ${what}.`)
 
-export const cidr = (v: string): Issue => (isCIDR(v.trim()) ? undefined : 'Enter a network such as 10.20.30.0/24.')
+/** A whole number from an input, or null when left empty. */
+export const optionalInt = (label: string, min: number, max: number) => z.string().trim()
+  .refine((v) => v === '' || (/^-?\d+$/.test(v) && Number(v) >= min && Number(v) <= max), `${label} must be a whole number from ${min} to ${max}.`)
 
-export const optionalMAC = (v: string): Issue => (v.trim() === '' || isMAC(v.trim()) ? undefined : 'Enter a MAC address such as 00:11:22:33:44:55.')
+/** An optional YYYY-MM-DD that is today or later. */
+export const futureDate = (label: string) => z.string().refine((v) => v === '' || v >= new Date().toISOString().slice(0, 10), `${label} can't be in the past.`)
 
-export const email = (v: string): Issue => (isEmail(v.trim()) ? undefined : 'Enter a valid email address.')
-
-export function between(v: string | number, min: number, max: number, label: string): Issue {
-  const n = Number(v)
-  return v === '' || !Number.isInteger(n) || n < min || n > max ? `${label} must be a whole number from ${min} to ${max}.` : undefined
-}
-
-export const dateOrder = (from: string, to: string): Issue => (from && to && to < from ? 'The end is before the start.' : undefined)
-
-export const maxLength = (v: string, max: number, label: string): Issue => (v.length > max ? `${label} can be at most ${max} characters.` : undefined)
-
-/** Drops the fields that passed, so an empty object means the form is valid. */
-export function issues(checks: Record<string, Issue>): Record<string, string> {
-  return Object.fromEntries(Object.entries(checks).filter((e): e is [string, string] => Boolean(e[1])))
-}
+export const toInt = (v: string) => (v.trim() === '' ? null : Number(v))

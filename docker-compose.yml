@@ -24,17 +24,20 @@ x-backend-env: &backend-env
   SUPABASE_SERVICE_ROLE_KEY:
   AUTH_AUDIENCE:
   APP_BASE_URL:
-  SECRET_ENCRYPTION_KEY:
-  SECRET_ENCRYPTION_KEY_VERSION:
-  SECRET_ENCRYPTION_KEY_PREVIOUS:
-  INTEGRATION_ALLOWED_HOSTS:
-  INTEGRATION_ALLOWED_PRIVATE_RANGES:
-  INTEGRATION_CA_FILE:
+  ENTRA_TENANT_ID:
+  ENTRA_CLIENT_ID:
+  ENTRA_CLIENT_SECRET:
+  ENTRA_AUTHORITY:
+  ENTRA_REDIRECT_URL:
+  AUTH_ALLOWED_EMAIL_DOMAINS:
   SMTP_HOST:
   SMTP_PORT:
   SMTP_USERNAME:
   SMTP_PASSWORD:
   MAIL_FROM:
+  SECRET_ENCRYPTION_KEY:
+  SECRET_ENCRYPTION_KEY_VERSION:
+  SECRET_ENCRYPTION_KEY_PREVIOUS:
   DATABASE_URL: postgres://dfipam_app:${DFIPAM_APP_PASSWORD:?use make, or set it in api/.env}@db:5432/${POSTGRES_DB:-dfipam}?sslmode=disable
 
 services:
@@ -55,7 +58,7 @@ services:
       timeout: 3s
       retries: 20
 
-  # Runs once and exits. The API and worker wait for it.
+  # Runs once and exits. The backend waits for it.
   migrate:
     <<: *backend
     command: [sh, -c, /app/migrate up && /app/seed]
@@ -65,10 +68,12 @@ services:
       db:
         condition: service_healthy
 
-  # The API and the background worker, in one process.
+  # The API, with the scanner, server checks, alert rules, email outbox and the
+  # optional FortiGate reader in the same process.
   backend:
     <<: *backend
     command: [/app/server]
+    cap_add: [NET_RAW]
     restart: unless-stopped
     environment:
       <<: *backend-env
@@ -77,7 +82,6 @@ services:
       # would share one rate limit, and audit logs would show the wrong address.
       TRUSTED_PROXIES: ${WEB_ADDRESS:-172.30.0.10}
       API_MAX_IN_FLIGHT:
-      WORKER_ENABLED:
       DB_MAX_CONNS: ${BACKEND_DB_MAX_CONNS:-30}
     networks:
       default:
@@ -100,6 +104,7 @@ services:
       args:
         VITE_SUPABASE_URL:
         VITE_SUPABASE_ANON_KEY:
+        APP_COMMIT:
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -122,34 +127,6 @@ services:
       backend:
         condition: service_healthy
 
-  # Optional built-in discovery agent: `make agent-up`. It scans what this server can
-  # route to, alongside any agents installed in the segments. No capabilities: ICMP
-  # uses the unprivileged socket that ping_group_range allows for this user alone.
-  agent:
-    profiles: [agent]
-    image: df-ipam-agent:local
-    build:
-      context: ./api
-      target: agent
-    restart: unless-stopped
-    read_only: true
-    tmpfs: [/tmp]
-    cap_drop: [ALL]
-    security_opt: ['no-new-privileges:true']
-    sysctls:
-      net.ipv4.ping_group_range: 10001 10001
-    environment:
-      AGENT_API_URL: http://backend:8080
-      AGENT_CREDENTIAL_FILE: /var/lib/df-ipam-agent/credential
-      AGENT_REGISTRATION_TOKEN:
-      AGENT_MAX_PPS:
-      AGENT_POLL_SECONDS:
-    volumes:
-      - agent-data:/var/lib/df-ipam-agent
-    depends_on:
-      backend:
-        condition: service_healthy
-
 # Fixed, so the backend can trust the web container and no other address.
 networks:
   default:
@@ -160,4 +137,6 @@ networks:
 
 volumes:
   db-data:
-  agent-data:
+    # Lite has a new schema that cannot upgrade the previous enterprise DB.
+    # Keep the old project's volume intact and give Lite its own fresh database.
+    name: df-ipam-lite-db-data

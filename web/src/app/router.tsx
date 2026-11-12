@@ -1,13 +1,34 @@
-import { type ComponentType, lazy } from 'react'
-import { createBrowserRouter, Navigate } from 'react-router'
-import { Planned } from '../features/planned/Planned'
-import { allItems } from './nav'
+import { lazy } from 'react'
+import { createBrowserRouter, Navigate, useParams } from 'react-router'
 import { AppShell } from './shell/AppShell'
 
-/** Loads a screen the first time it is opened, so sign-in doesn't wait for all of them. */
-function screen<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) {
-  const Page: ComponentType = lazy(() => load().then((module): { default: ComponentType } => ({ default: module[name] })))
-  return <Page />
+// Each screen loads on first visit, so signing in doesn't download the whole app.
+const page = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })))
+
+const Dashboard = page(() => import('../features/dashboard/DashboardPage'), 'DashboardPage')
+const Discovery = page(() => import('../features/discovery/DiscoveryPage'), 'DiscoveryPage')
+const SegmentPage = page(() => import('../features/discovery/SegmentPage'), 'SegmentPage')
+const Servers = page(() => import('../features/servers/ServersPage'), 'ServersPage')
+const Devices = page(() => import('../features/devices/DevicesPage'), 'DevicesPage')
+const Alerts = page(() => import('../features/alerts/AlertsPage'), 'AlertsPage')
+const Requests = page(() => import('../features/requests/RequestsPage'), 'RequestsPage')
+const Reservations = page(() => import('../features/reservations/ReservationsPage'), 'ReservationsPage')
+const Reports = page(() => import('../features/reports/ReportsPage'), 'ReportsPage')
+const NetworkSetup = page(() => import('../features/network/NetworkSetupPage'), 'NetworkSetupPage')
+const Access = page(() => import('../features/access/AccessPage'), 'AccessPage')
+const Audit = page(() => import('../features/audit/AuditPage'), 'AuditPage')
+const System = page(() => import('../features/system/SystemPage'), 'SystemPage')
+
+// Settings was split into separate pages; old links land on the right one.
+const moved: Record<string, string> = {
+  settings: '/network-setup', environments: '/network-setup/environments', departments: '/network-setup/departments',
+  users: '/access', audit: '/audit', system: '/system', integrations: '/system/fortigate',
+}
+
+function OldSettings() {
+  const { tab } = useParams()
+  return <Navigate to={moved[tab ?? 'settings'] ?? '/'} replace />
 }
 
 export const router = createBrowserRouter([
@@ -15,26 +36,20 @@ export const router = createBrowserRouter([
     path: '/',
     element: <AppShell />,
     children: [
-      { index: true, element: screen(() => import('../features/dashboard/Dashboard'), 'Dashboard') },
-      { path: 'network/:tab?', element: screen(() => import('../features/network/Network'), 'Network') },
-      { path: 'subnets', element: screen(() => import('../features/subnets/Subnets'), 'Subnets') },
-      { path: 'audit', element: screen(() => import('../features/audit/Audit'), 'Audit') },
-      { path: 'reconciliation/:tab?', element: screen(() => import('../features/reconciliation/Reconciliation'), 'Reconciliation') },
-      { path: 'users', element: screen(() => import('../features/users/Users'), 'Users') },
-      { path: 'requests/:tab?', element: screen(() => import('../features/requests/Requests'), 'Requests') },
-      { path: 'reservations', element: screen(() => import('../features/reservations/Reservations'), 'Reservations') },
-      { path: 'alerts/:tab?', element: screen(() => import('../features/alerts/Alerts'), 'Alerts') },
-      { path: 'ip-addresses/:tab?', element: screen(() => import('../features/explorer/Explorer'), 'Explorer') },
-      { path: 'search', element: screen(() => import('../features/search/SearchResults'), 'SearchResults') },
-      { path: 'devices/:tab?', element: screen(() => import('../features/devices/Devices'), 'Devices') },
-      { path: 'interfaces', element: screen(() => import('../features/devices/Devices'), 'Interfaces') },
-      { path: 'discovery/:tab?', element: screen(() => import('../features/discovery/Discovery'), 'Discovery') },
-      { path: 'imports/:tab?', element: screen(() => import('../features/imports/Imports'), 'Imports') },
-      { path: 'integrations', element: screen(() => import('../features/integrations/Integrations'), 'Integrations') },
-      { path: 'reports', element: screen(() => import('../features/reports/Reports'), 'Reports') },
-      { path: 'roles', element: screen(() => import('../features/roles/Roles'), 'Roles') },
-      { path: 'system', element: screen(() => import('../features/system/System'), 'System') },
-      ...allItems.filter((i) => i.phase).map((item) => ({ path: item.to.slice(1), element: <Planned item={item} /> })),
+      { index: true, element: <Dashboard /> },
+      { path: 'discovery/:tab?', element: <Discovery /> },
+      { path: 'segments/:id', element: <SegmentPage /> },
+      { path: 'servers/:tab?', element: <Servers /> },
+      { path: 'devices/:tab?', element: <Devices /> },
+      { path: 'alerts/:tab?', element: <Alerts /> },
+      { path: 'requests/:tab?', element: <Requests /> },
+      { path: 'reservations/:tab?', element: <Reservations /> },
+      { path: 'reports', element: <Reports /> },
+      { path: 'network-setup/:tab?', element: <NetworkSetup /> },
+      { path: 'access/:tab?', element: <Access /> },
+      { path: 'audit', element: <Audit /> },
+      { path: 'system/:tab?', element: <System /> },
+      { path: 'settings/:tab?', element: <OldSettings /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

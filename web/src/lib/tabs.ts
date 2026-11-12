@@ -9,16 +9,6 @@ export function tabPath(base: string, key: string): string {
   return key === base.slice(1) ? base : `${base}/${key}`
 }
 
-/** The address an old ?tab= link now lives at, or null. Stored notifications still hold these. */
-export function legacyTabUrl(pathname: string, search: string): string | null {
-  const params = new URLSearchParams(search)
-  const tab = params.get('tab')
-  if (!tab) return null
-  params.delete('tab')
-  const rest = params.toString()
-  return `${tabPath(pathname, tab)}${rest ? `?${rest}` : ''}`
-}
-
 /** The open tab. An address naming a tab this person can't see opens the first one. */
 export function useRouteTab(keys: string[]): string {
   const { tab } = useParams()

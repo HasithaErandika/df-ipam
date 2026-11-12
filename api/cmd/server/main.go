@@ -1,24 +1,27 @@
-// Command server is the DF-IPAM backend: the HTTP API and, unless WORKER_ENABLED is
-// false, the background worker, in one process.
+// Command server is the DF-IPAM Lite backend: the HTTP API, the built-in scanner,
+// server checks, alert rules and the email outbox, in one process (docs/new.md).
 package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/integrations/fortigate"
+	"dfipam/api/internal/modules/notifications"
+	"dfipam/api/internal/modules/signin"
 	"dfipam/api/internal/platform/config"
 	"dfipam/api/internal/platform/db"
-	"dfipam/api/internal/platform/safehttp"
+	"dfipam/api/internal/platform/mail"
 	"dfipam/api/internal/platform/secrets"
+	"dfipam/api/internal/scanner"
 	"dfipam/api/internal/server"
-	"dfipam/api/internal/worker"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +53,27 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	scan := scanner.New(pool)
+	go scan.Run(ctx)
+	mailCfg, mailEnabled, err := mail.FromEnv()
+	if err != nil {
+		return err
+	}
+	var mailer mail.Mailer
+	if mailEnabled {
+		mailer = mail.NewSMTP(mailCfg)
+	}
+	go notifications.RunOutbox(ctx, pool, mailer, cfg.AppBaseURL)
+	go notifications.RunReservationReminders(ctx, pool)
+
+	// The FortiGate token is stored encrypted, so the integration needs the master key.
+	keys, err := secrets.FromEnv()
+	if err != nil {
+		slog.Warn("stored credentials are unavailable; the FortiGate can't be connected", "reason", err.Error())
+		keys = nil
+	}
+	firewall := fortigate.NewSyncer(pool, keys)
+	go firewall.Run(ctx)
 
 	admin := auth.NewSupabaseAdmin(cfg.SupabaseURL, cfg.SupabaseAnonKey, cfg.SupabaseServiceKey)
 	if err := admin.Check(ctx); err != nil {
@@ -57,40 +81,34 @@ func run() error {
 	}
 	verifier := auth.NewSupabaseVerifier(cfg.SupabaseURL+"/auth/v1", cfg.AuthAudience, cfg.SupabaseURL+"/auth/v1/.well-known/jwks.json")
 	resolver := &auth.Resolver{Pool: pool, Provider: verifier.Provider()}
-	deps := server.Deps{Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
-		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight}
-	if cfg.SupabaseServiceKey != "" {
-		deps.Inviter = admin
+	sessions := &auth.Sessions{Conn: pool}
+	var microsoft signin.Microsoft
+	if entra := (auth.EntraConfig{Authority: cfg.EntraAuthority, TenantID: cfg.EntraTenantID, ClientID: cfg.EntraClientID,
+		ClientSecret: cfg.EntraClientSecret, RedirectURL: cfg.EntraRedirectURL, Domains: cfg.AllowedEmailDomains}); entra.Enabled() {
+		microsoft = auth.NewEntra(entra)
+		slog.Info("microsoft sign-in is on", "tenant", cfg.EntraTenantID, "domains", cfg.AllowedEmailDomains, "redirect", cfg.EntraRedirectURL)
 	}
-	switch keys, err := secrets.FromEnv(); {
-	case err == nil:
-		deps.Keys = keys
-	case errors.Is(err, secrets.ErrNotConfigured):
-		slog.Warn("SECRET_ENCRYPTION_KEY is not set, so integration credentials can't be stored")
-	default:
-		return err
-	}
-	if deps.Outbound, err = safehttp.FromEnv(); err != nil {
-		return err
-	}
+	deps := server.Deps{Sessions: sessions, SignIn: signin.New(pool, microsoft, sessions, cfg.AppBaseURL), Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
+		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
-	jobs := make(chan struct{})
-	if cfg.WorkerEnabled {
+	// API_LISTEN_ADDR may list several addresses, for host networking: loopback
+	// for local tools, and the Docker gateway for the web container.
+	var servers []*http.Server
+	errs := make(chan error, 4)
+	for _, addr := range strings.Split(cfg.ListenAddr, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		srv := &http.Server{Addr: addr, Handler: router, ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
+		servers = append(servers, srv)
 		go func() {
-			defer close(jobs)
-			worker.Run(ctx, pool)
+			slog.Info("server listening", "addr", addr)
+			errs <- srv.ListenAndServe()
 		}()
-	} else {
-		close(jobs)
 	}
-	errs := make(chan error, 1)
-	go func() {
-		slog.Info("server listening", "addr", cfg.ListenAddr, "worker", cfg.WorkerEnabled)
-		errs <- srv.ListenAndServe()
-	}()
 	select {
 	case err := <-errs:
 		stop()
@@ -99,11 +117,11 @@ func run() error {
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
-	err = srv.Shutdown(shutdown)
-	select {
-	case <-jobs:
-	case <-shutdown.Done():
-		slog.Warn("background jobs were still running at shutdown")
+	var failed error
+	for _, srv := range servers {
+		if err := srv.Shutdown(shutdown); err != nil {
+			failed = err
+		}
 	}
-	return err
+	return failed
 }

@@ -2,144 +2,126 @@ package reports
 
 import (
 	"bytes"
-	"encoding/csv"
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/xuri/excelize/v2"
+	"dfipam/api/internal/platform/tabular"
+
+	"github.com/go-pdf/fpdf"
 )
 
-// Row limits per format. A report that reaches one says so: it is marked truncated
-// and carries a notice, so nobody mistakes it for the whole register.
+// Row limits per format. A report that reaches one says so, so nobody mistakes a
+// cut-off file for the whole register.
 const (
-	maxRowsSheet = 500_000
+	maxRowsTable = 200_000
 	maxRowsPDF   = 5_000
-	maxFileBytes = 64 << 20
 )
 
-// Formats and their file details.
-var formats = map[string]struct{ contentType, extension string }{
-	"csv":  {"text/csv; charset=utf-8", "csv"},
-	"xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"},
-	"pdf":  {"application/pdf", "pdf"},
-}
-
-func limitFor(format string) int64 {
-	if format == "pdf" {
-		return maxRowsPDF
-	}
-	return maxRowsSheet
-}
-
-// safeCell stops a spreadsheet treating inventory text as a formula. Hostnames,
-// descriptions and DHCP names come from the network, so anyone on it could plant one.
-func safeCell(v string) string {
-	if v != "" && strings.ContainsRune("=+-@\t\r|%", rune(v[0])) {
-		return "'" + v
-	}
-	return v
-}
-
-// renderer receives rows one at a time.
 type renderer interface {
 	row(cells []string) error
-	finish(truncated bool, limit int64) ([]byte, error)
+	finish(truncated bool, limit int) ([]byte, error)
 }
 
-func newRenderer(format string, d Definition, asOf time.Time) (renderer, error) {
-	switch format {
-	case "csv":
-		return newCSV(d)
-	case "xlsx":
-		return newSheet(d)
-	case "pdf":
-		return newPDF(d, asOf), nil
-	}
-	return nil, errors.New("unknown format")
+// tableRenderer writes CSV or Excel through the shared tabular package.
+type tableRenderer struct{ w tabular.Writer }
+
+func newTable(format string, r Report) (*tableRenderer, error) {
+	w, err := tabular.NewWriter(format, r.Title, r.Columns)
+	return &tableRenderer{w: w}, err
 }
 
-type csvRenderer struct {
-	buf bytes.Buffer
-	w   *csv.Writer
-}
+func (t *tableRenderer) row(cells []string) error { return t.w.Write(cells) }
 
-func newCSV(d Definition) (*csvRenderer, error) {
-	r := &csvRenderer{}
-	r.w = csv.NewWriter(&r.buf)
-	return r, r.w.Write(d.Columns)
-}
-
-func (r *csvRenderer) row(cells []string) error {
-	safe := make([]string, len(cells))
-	for i, c := range cells {
-		safe[i] = safeCell(c)
-	}
-	if r.buf.Len() > maxFileBytes {
-		return errTooLarge
-	}
-	return r.w.Write(safe)
-}
-
-func (r *csvRenderer) finish(truncated bool, limit int64) ([]byte, error) {
+func (t *tableRenderer) finish(truncated bool, limit int) ([]byte, error) {
 	if truncated {
-		if err := r.w.Write([]string{fmt.Sprintf("Truncated at %d rows. Narrow the filters to see the rest.", limit)}); err != nil {
-			return nil, err
+		_ = t.w.Write([]string{fmt.Sprintf("Truncated at %d rows. Narrow the date range to see the rest.", limit)})
+	}
+	return t.w.Bytes()
+}
+
+type pdfRenderer struct {
+	pdf       *fpdf.Fpdf
+	translate func(string) string
+	widths    []float64
+	columns   []string
+}
+
+const (
+	pdfUsable = 277.0 // A4 landscape less margins, in millimetres
+	pdfLine   = 5.0
+)
+
+func newPDF(r Report, subtitle string, asOf time.Time) *pdfRenderer {
+	pdf := fpdf.New("L", "mm", "A4", "")
+	pdf.SetMargins(10, 10, 10)
+	pdf.SetAutoPageBreak(true, 12)
+	pdf.SetCreator("DF-IPAM", false)
+	pdf.SetTitle(r.Title, false)
+	translate := pdf.UnicodeTranslatorFromDescriptor("")
+	out := &pdfRenderer{pdf: pdf, translate: translate, columns: r.Columns}
+	for range r.Columns {
+		out.widths = append(out.widths, pdfUsable/float64(len(r.Columns)))
+	}
+	first := true
+	pdf.SetHeaderFunc(func() {
+		if first {
+			pdf.SetFont("Helvetica", "B", 13)
+			pdf.SetTextColor(23, 48, 95)
+			pdf.CellFormat(0, 7, translate("DF-IPAM · "+r.Title), "", 1, "L", false, 0, "")
+			pdf.SetFont("Helvetica", "", 8)
+			pdf.SetTextColor(90, 100, 115)
+			pdf.CellFormat(0, 5, translate(subtitle), "", 1, "L", false, 0, "")
+			pdf.Ln(2)
+			first = false
 		}
-	}
-	r.w.Flush()
-	return r.buf.Bytes(), r.w.Error()
+		pdf.SetTextColor(20, 20, 20)
+		pdf.SetFont("Helvetica", "B", 7.5)
+		pdf.SetFillColor(232, 238, 248)
+		for i, c := range out.columns {
+			pdf.CellFormat(out.widths[i], pdfLine+1, out.fit(c, out.widths[i]), "1", 0, "L", true, 0, "")
+		}
+		pdf.Ln(-1)
+		pdf.SetFont("Helvetica", "", 7)
+	})
+	pdf.SetFooterFunc(func() {
+		pdf.SetY(-10)
+		pdf.SetFont("Helvetica", "", 7)
+		pdf.CellFormat(0, 4, translate(fmt.Sprintf("DF-IPAM | %s | Generated %s | Confidential | Page %d",
+			r.Title, asOf.Format("2006-01-02 15:04 MST"), pdf.PageNo())), "", 0, "C", false, 0, "")
+	})
+	pdf.AddPage()
+	return out
 }
 
-var errTooLarge = errors.New("the report is too large: narrow the filters")
-
-const sheetName = "Report"
-
-type sheetRenderer struct {
-	f    *excelize.File
-	w    *excelize.StreamWriter
-	line int
+// fit shortens text so a cell never wraps into the next column.
+func (p *pdfRenderer) fit(text string, width float64) string {
+	text = p.translate(text)
+	limit := width - 1.5
+	if p.pdf.GetStringWidth(text) <= limit {
+		return text
+	}
+	for len(text) > 0 && p.pdf.GetStringWidth(text+"...") > limit {
+		text = text[:len(text)-1]
+	}
+	return text + "..."
 }
 
-func newSheet(d Definition) (*sheetRenderer, error) {
-	f := excelize.NewFile()
-	if err := f.SetSheetName("Sheet1", sheetName); err != nil {
-		return nil, err
-	}
-	w, err := f.NewStreamWriter(sheetName)
-	if err != nil {
-		return nil, err
-	}
-	r := &sheetRenderer{f, w, 0}
-	return r, r.row(d.Columns)
-}
-
-func (r *sheetRenderer) row(cells []string) error {
-	r.line++
-	values := make([]any, len(cells))
+func (p *pdfRenderer) row(cells []string) error {
 	for i, c := range cells {
-		values[i] = safeCell(c)
+		p.pdf.CellFormat(p.widths[i], pdfLine, p.fit(c, p.widths[i]), "1", 0, "L", false, 0, "")
 	}
-	cell, err := excelize.CoordinatesToCellName(1, r.line)
-	if err != nil {
-		return err
-	}
-	return r.w.SetRow(cell, values)
+	p.pdf.Ln(-1)
+	return p.pdf.Error()
 }
 
-func (r *sheetRenderer) finish(truncated bool, limit int64) ([]byte, error) {
-	defer r.f.Close()
+func (p *pdfRenderer) finish(truncated bool, limit int) ([]byte, error) {
 	if truncated {
-		if err := r.row([]string{fmt.Sprintf("Truncated at %d rows. Narrow the filters to see the rest.", limit)}); err != nil {
-			return nil, err
-		}
+		p.pdf.Ln(2)
+		p.pdf.SetFont("Helvetica", "B", 8)
+		p.pdf.CellFormat(0, 6, fmt.Sprintf("Truncated at %d rows. Download CSV, or narrow the date range, to see the rest.", limit), "", 1, "L", false, 0, "")
 	}
-	if err := r.w.Flush(); err != nil {
-		return nil, err
-	}
-	buf, err := r.f.WriteToBuffer()
-	if err != nil {
+	var buf bytes.Buffer
+	if err := p.pdf.Output(&buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

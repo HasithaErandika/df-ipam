@@ -1,98 +1,68 @@
-# API Design
+# API
 
-Versioned REST under `/api/v1`. The contract lives in `api/openapi.yaml`, and Swagger UI is served outside production.
+REST under `/api/v1`. The contract is `api/openapi.yaml`; a test fails if a route is missing from it.
 
 ## Conventions
 
-**List response**
-
-```json
-{
-  "data": [],
-  "meta": { "page": 1, "pageSize": 50, "total": 1240, "totalPages": 25, "hasNext": true, "hasPrev": false }
-}
-```
-
-**Error response**
-
-```json
-{
-  "error": {
-    "code": "SUBNET_OVERLAP",
-    "message": "This subnet overlaps 10.0.0.0/24 in the same routing domain.",
-    "details": [{ "field": "cidr", "issue": "overlap" }],
-    "correlationId": "01J..."
-  }
-}
-```
-
 | Topic | Rule |
 | --- | --- |
-| Auth | `Authorization: Bearer <token>` on every route except `/health` |
-| Pagination | `?page=1&pageSize=50`, maximum 200, on every list. Ordering always ends in a unique column, so pages never overlap. A page past the end returns no rows, with `totalPages` showing where to go. Audit logs use the same scheme for now; move them to cursors if volume requires it |
-| Sorting | `?sort=-updatedAt,name`, allowlisted per endpoint |
-| Filtering | Named query parameters, allowlisted per endpoint |
-| Correlation | `X-Correlation-ID` accepted or generated, and returned on every response |
-| Concurrency | Updates send `If-Match` with the record version, otherwise `412` |
-| Idempotency | `Idempotency-Key` supported on allocation and job-start endpoints |
-| Large numbers | Address counts are JSON **strings**, because IPv6 values exceed safe integers |
-| DTOs | Database rows are never returned directly. Secrets are never returned |
+| Auth | `Authorization: Bearer <token>` on every `/api/v1` route. `/health` and `/ready` are open |
+| Permissions | Every route is registered with its permissions through the route guard. A test fails on an unprotected route |
+| Lists | `?page=1&pageSize=25`, at most 200. Ordering always ends in a unique column, so pages never overlap |
+| Sorting and filters | Named query parameters, allowlisted per endpoint |
+| Responses | DTOs only, never database rows, never secrets |
+| Correlation | `X-Correlation-ID` is accepted or generated, and returned on every response |
 
-## Status codes
+**Success**
 
-| Code | Use |
+```json
+{ "data": { } }
+{ "data": [ ], "meta": { "page": 1, "pageSize": 25, "total": 240, "totalPages": 10, "hasNext": true, "hasPrev": false } }
+```
+
+**Error**, with a stable code:
+
+```json
+{ "error": { "code": "VALIDATION_FAILED", "message": "…", "details": [{ "field": "ip", "issue": "…" }], "correlationId": "…" } }
+```
+
+Unknown errors are logged with the correlation ID and answered as `INTERNAL_ERROR`, with no detail.
+
+| Status | Use |
 | --- | --- |
 | 400 | Malformed request |
-| 401 / 403 | Not authenticated / not permitted |
-| 404 | Not found, or outside the user's scope |
-| 409 | Business conflict: overlap, address already allocated |
-| 412 | Stale version |
-| 422 | Validation failed |
-| 429 | Rate limited |
+| 401 / 403 | Not signed in / not permitted |
+| 404 | Not found (a malformed ID is also not found) |
+| 409 | Conflict, such as an IP already registered or a scan already running |
+| 422 | Validation failed, with `details` per field |
+| 429 | Rate limited, or a manual scan within a minute of the last |
+| 503 | The scanner isn't running in this process |
 
-## Endpoint map
+## Limits
 
-Standard CRUD (`GET` list, `POST`, `GET /:id`, `PATCH /:id`, `DELETE /:id`) applies to: `/business-units`, `/sites`, `/network-zones`, `/vdoms`, `/vlans`, `/network-blocks`, `/devices`, `/interfaces`, `/business-services`, `/applications`, `/teams`, `/reserved-ranges`, `/dhcp-scopes`, `/overlap-exceptions`. They share one handler, `modules/catalog`. `/organisations` and `/routing-domains` have list and create.
-
-| Area | Endpoints |
+| Limit | Value |
 | --- | --- |
-| Auth | `GET /auth/me`, `GET /auth/me/profile` (sign-in itself happens in Supabase) |
-| Users and roles | `/users`, `/users/invite`, `/users/:id/roles`, `/roles`, `GET /people` (email and name only, for owner pickers) |
-| Scope | `PUT /users/:id/scope` sets the business services of a scoped role. See [authentication.md](authentication.md) for scoped reading and editing assigned records. `GET /dashboard/summary` leaves out totals of areas the caller can't open |
-| Subnets | CRUD on `/subnets`. `q` takes a name or text, a CIDR for the subnets inside or around it, or an IP for the subnets holding it. `/ip-addresses` also takes a CIDR for the addresses inside it. Also `POST /subnets/:id/archive`, `POST /subnets/bulk` (all or nothing, `dryRun`), `POST /subnets/bulk-archive`, `POST /subnets/check-overlap`, `POST /subnets/calculate`, `GET /subnets/:id/utilisation`, `GET /subnets/:id/free-ranges`, `GET /subnets/:id/addresses?offset=&limit=` |
-| Tools | `POST /tools/split`, `POST /tools/summarise`, `GET /tools/locate?address=`, `GET /network-blocks/:id/free-space` |
-| IP addresses | `GET /ip-addresses`, `POST /ip-addresses`, `GET /ip-addresses/:id`, `PATCH /ip-addresses/:id`, `GET /ip-addresses/:id/history`, `GET /ip-addresses/:id/evidence`, `GET /ip-addresses/:id/device` (inventory and read-only sources only) |
-| DNS and DHCP (read-only inventory) | `GET /dns-records`, `GET /dhcp-scopes`, `GET /dhcp-scopes/:id` |
-| Imports enrichment | `GET /imports/enrichment-queue`, `PATCH /imports/records/:id` |
-| Requests | CRUD on `/requests` (edit and delete drafts only, by the requester), plus `POST /requests/:id/submit`, `POST /requests/:id/cancel`. Without a wider permission, people see only their own |
-| Approvals | `GET /approvals` (steps the caller may decide now), `POST /approvals/:id/approve`, `POST /approvals/:id/reject`; `GET`, `POST`, `PUT /:id`, `DELETE /:id` on `/approval-workflows` |
-| Allocations | `GET /allocations`, `GET /allocations/:id`, `POST /allocations` and `POST /allocations/:id/release` (fulfil an approved request; repeats return the same result) |
-| Reservations | `GET /reservations`, `GET /reservations/:id`, `POST /reservations` (fulfil an approved request), `POST /reservations/:id/extend`, `POST /reservations/:id/release`. History is kept, so there is no delete |
-| Discovery | `/discovery/policies`, `/discovery/schedules`, `/discovery/exclusions`, `/discovery/jobs`, `POST /discovery/jobs/:id/{pause,resume,cancel}`, `POST /discovery/emergency-stop` |
-| Agents (admin) | `/agents`, `POST /agents/:id/{revoke,rotate}` |
-| Agents (agent credential) | `POST /agent-api/register`, `POST /agent-api/heartbeat`, `GET /agent-api/jobs`, `POST /agent-api/jobs/:id/results`. A job's `maxPps` is what is left of the ceiling, not the policy's figure. The reply to results holds `instruction` (`continue`, `pause` or `stop`) and `skipTargets` |
-| Reconciliation | `GET /reconciliation/results`, `GET /reconciliation/summary`, `GET /reconciliation/last-run`, `POST /reconciliation/run`, `POST /reconciliation/results/:id/review`, `/reconciliation/rules` |
-| Imports | `POST /imports`, `GET /imports/:id/preview`, `POST /imports/:id/{approve,reverse,discard}`, `GET /imports`, `GET /imports/templates`, `GET /imports/templates/:key` (`workbook` for the Excel file, or a type for its CSV) |
-| Notifications | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/:id/read`, `POST /notifications/read-all`, `GET`/`PUT /notifications/preferences` (own), `GET /notifications/rules`, `PUT /notifications/rules/:eventType` |
-| Audit | `GET /audit-logs`, `GET /audit-logs/filters` |
-| Dashboard and search | `GET /dashboard/summary`, `GET /dashboard/trends`, `GET /search?q=`, `GET`/`POST /saved-filters`, `DELETE /saved-filters/:id` (own) |
+| Request body | 1 MB; imports 5 MB and 5,000 rows |
+| Imports | `?dryRun=true` does the whole import in a transaction that is rolled back, and returns what would be added and skipped |
+| Per client address | 50 requests a second, bursts of 100 |
+| Per signed-in person | 30 requests a second, bursts of 60 |
+| Requests running at once | 200 (`API_MAX_IN_FLIGHT`); more are refused, not queued |
 
-## Key error codes
+Nginx in the `web` container adds its own per-address limits.
 
-`VALIDATION_FAILED`, `UNAUTHENTICATED`, `REQUEST_NOT_APPROVED`, `SEPARATION_OF_DUTIES`, `NOT_ELIGIBLE_APPROVER`, `APPROVAL_NOT_CURRENT`, `RELEASE_ALREADY_REQUESTED`, `RESERVATION_NOT_ACTIVE`, `FORBIDDEN`, `NOT_FOUND`, `STALE_VERSION`, `SUBNET_OVERLAP`, `ADDRESS_NOT_IN_SUBNET`, `ADDRESS_UNAVAILABLE`, `SUBNET_EXHAUSTED`, `SELF_APPROVAL_DENIED`, `TARGET_NOT_ALLOWED`, `DISCOVERY_STOPPED`, `RATE_LIMITED`, `INTERNAL_ERROR`.
+## Endpoint groups
 
-## Phases 5 to 7
+| Group | Paths |
+| --- | --- |
+| Account | `/auth/me`, `/auth/me/profile` |
+| Segments | `/segments`, `/segments/{id}`, `/segments/import` (text), `/segments/{id}/addresses`, `/segments/{id}/map` |
+| Devices | `/devices`, `/devices/{id}`, `/devices/{id}/decision`, `/devices/import`, `/devices/export` |
+| IP register | `/ip-addresses`, `/ip-addresses/{id}`, `/ip-addresses/available-candidate`, `/ip-addresses/check`, `/ip-addresses/import` (`?as=server`), `/ip-addresses/export` |
+| Discovery | `/discovery/status`, `/discovery/scan`, `/discovery/findings`, `/discovery/summary` |
+| Requests and reservations | `/ip-requests…`, `/reservations…` |
+| Alerts and notifications | `/alerts…`, `/notifications…`, `/notification-preferences` |
+| Reports and audit | `/reports…`, `/audit-logs`, `/audit-logs/export` |
+| Administration | `/users…`, `/roles`, `/roles/{key}`, `/environments…`, `/departments…`, `/settings` |
+| FortiGate | `/integrations/fortigate`, `…/test`, `…/sync` |
 
-| Area | Routes | Permission |
-| --- | --- | --- |
-| Integrations | `/integrations/connections`, `/{id}/test`, `/{id}/sync`, `/{id}/syncs`, `/integrations/syncs/{id}/errors`, `/integrations/kinds` | `integrations:manage`; reading also `audit:view` |
-| Rule settings | `/reconciliation/rules`, `/reconciliation/rules/{classification}` | `inventory:view`; `discovery:manage` to change |
-| Change requests | `/reconciliation/results/{id}/change-requests`, `/change-requests`, `/{id}/approve`, `/{id}/reject` | `inventory:edit` to propose, `requests:approve` to decide |
-| Reports | `/reports`, `/reports/types`, `/reports/summary`, `/reports/{id}/download` | `reports:export` or `reports:export_scoped`. Audit reports need `audit:view` |
-| Dashboard | `/dashboard/trends`, `/dashboard/distribution` | `inventory:view` |
-| Roles | `/admin/permission-matrix`, `/roles`, `/roles/{id}`, `/roles/{id}/permissions` | `users:manage` |
-| System | `/system/health`, `/system/retention`, `/system/retention/{class}` | `system:manage`; reading also `audit:view` |
-
-`/users`, `/integrations/connections` and `/reconciliation/results` take `q` to search. `/audit-logs` takes `actor`, `action`, `objectType`, `result`, `from` and `to`, and `/audit-logs/filters` lists the actions and object types that exist.
-
-New error codes: `ENCRYPTION_NOT_CONFIGURED`, `CONNECTOR_NOT_AVAILABLE`, `CREDENTIALS_MISSING`, `CONNECTION_HAS_HISTORY`, `SYNC_ACTIVE`, `NAME_TAKEN`, `FINDING_NOT_CHANGEABLE`, `CHANGE_ALREADY_OPEN`, `CHANGE_ALREADY_DECIDED`, `REPORT_LIMIT`, `REPORT_NOT_READY`, `ROLE_PROTECTED`, `LAST_ADMINISTRATOR`, `ROLE_IN_USE`, `ROLE_IS_SYSTEM`.
+Every change to devices, the register or segments re-checks the alert rules before replying, so the reply already reflects closed alerts.

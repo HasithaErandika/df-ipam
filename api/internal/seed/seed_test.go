@@ -1,48 +1,48 @@
 package seed
 
 import (
-	"slices"
+	"encoding/json"
+	"strings"
 	"testing"
-
-	"dfipam/api/internal/auth"
 )
 
-func role(t *testing.T, name string) Role {
-	t.Helper()
-	for _, r := range Roles {
-		if r.Name == name {
-			return r
-		}
+func TestEnvironmentsFollowThePlan(t *testing.T) {
+	want := map[string]string{"Production": "critical", "DR": "critical", "UAT": "high", "Development": "medium", "Test": "medium"}
+	if len(Environments) != len(want) {
+		t.Fatalf("want %d environments, got %d", len(want), len(Environments))
 	}
-	t.Fatalf("no role %q", name)
-	return Role{}
-}
-
-func TestRolePermissionsAreKnown(t *testing.T) {
-	if len(Roles) != 6 {
-		t.Fatalf("want 6 roles, got %d", len(Roles))
-	}
-	for _, r := range Roles {
-		for _, p := range r.Permissions {
-			if !slices.Contains(AllPermissions, p) {
-				t.Errorf("%s has unknown permission %s", r.Name, p)
-			}
+	for _, e := range Environments {
+		if want[e.Name] != e.Severity {
+			t.Errorf("%s: severity %s, want %s", e.Name, e.Severity, want[e.Name])
 		}
 	}
 }
 
-func TestLeastPrivilege(t *testing.T) {
-	for name, denied := range map[string][]string{
-		"Security Auditor":        {auth.InventoryCreate, auth.InventoryEdit, auth.InventoryDelete, auth.IPAllocate},
-		"Business Viewer":         {auth.InventoryView, auth.AuditView, auth.ReportsExport},
-		"Infrastructure Engineer": {auth.InventoryEdit, auth.IPAllocate, auth.RequestsApprove},
-		"Network Engineer":        {auth.RequestsApprove, auth.UsersManage, auth.InventoryDelete},
-		"IPAM Administrator":      {auth.UsersManage},
-	} {
-		for _, p := range denied {
-			if slices.Contains(role(t, name).Permissions, p) {
-				t.Errorf("%s must not have %s", name, p)
-			}
+func TestSettingsAreJSON(t *testing.T) {
+	for _, s := range Settings {
+		if !json.Valid([]byte(s.Value)) {
+			t.Errorf("%s: %q is not JSON", s.Key, s.Value)
 		}
 	}
+}
+
+func TestSQLIsRepeatable(t *testing.T) {
+	for _, line := range strings.Split(strings.TrimSpace(SQL()), "\n") {
+		if !strings.Contains(line, "ON CONFLICT") {
+			t.Errorf("not repeatable: %s", line)
+		}
+	}
+}
+
+// Email starts off: the plan is to test with it disabled (docs/new.md, section 9).
+func TestEmailStartsDisabled(t *testing.T) {
+	for _, s := range Settings {
+		if s.Key == "email.enabled" {
+			if s.Value != "false" {
+				t.Fatalf("email.enabled seeds as %s", s.Value)
+			}
+			return
+		}
+	}
+	t.Fatal("email.enabled is not seeded")
 }

@@ -1,200 +1,169 @@
+// Package integrations configures the optional, read-only FortiGate connection.
 package integrations
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net"
+	"errors"
 	"net/http"
-	"net/netip"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"dfipam/api/internal/platform/safehttp"
+	"dfipam/api/internal/audit"
+	"dfipam/api/internal/auth"
+	"dfipam/api/internal/integrations/fortigate"
+	"dfipam/api/internal/platform/db"
+	"dfipam/api/internal/platform/httpx"
+	"dfipam/api/internal/validate"
 
-	"golang.org/x/time/rate"
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
-const (
-	fortiPageSize = 1000
-	fortiMaxBody  = 64 << 20
-	fortiMaxPages = 500
-	fortiRetries  = 3
-)
-
-// fortiGate reads the FortiOS REST API. Its only request method is get.
-type fortiGate struct {
-	base    *url.URL
-	token   string
-	client  *http.Client
-	limiter *rate.Limiter
-	backoff time.Duration
+type Handler struct {
+	conn db.Conn
+	sync *fortigate.Syncer
 }
 
-func newFortiGate(c Connection, credentials map[string]string, policy safehttp.Policy) (Connector, error) {
-	base, err := policy.CheckURL(c.BaseURL)
-	if err != nil {
-		return nil, err
+func New(conn db.Conn, sync *fortigate.Syncer) *Handler { return &Handler{conn: conn, sync: sync} }
+
+func (h *Handler) Register(g *auth.Guard) {
+	g.Handle(http.MethodGet, "/integrations/fortigate", h.get, auth.SystemManage)
+	g.Handle(http.MethodPut, "/integrations/fortigate", h.save, auth.SystemManage)
+	g.Handle(http.MethodPost, "/integrations/fortigate/test", h.test, auth.SystemManage)
+	g.Handle(http.MethodPost, "/integrations/fortigate/sync", h.syncNow, auth.SystemManage)
+}
+
+var errOff = httpx.NewError(http.StatusServiceUnavailable, "INTEGRATION_UNAVAILABLE", "The FortiGate connection is not running in this process.")
+
+// The token is never sent back: only whether one is stored.
+func (h *Handler) get(c *gin.Context) {
+	if h.sync == nil {
+		httpx.Fail(c, errOff)
+		return
 	}
-	return &fortiGate{base, credentials["apiToken"], policy.Client(60 * time.Second), rate.NewLimiter(10, 10), time.Second}, nil
+	cfg, err := fortigate.Load(c, h.conn, h.sync.Keys())
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	httpx.OK(c, http.StatusOK, gin.H{"config": cfg, "status": h.sync.Snapshot(), "encryptionReady": h.sync.Keys() != nil})
 }
 
-type fortiError struct {
-	Path   string
-	Status int
+type saveInput struct {
+	Enabled         bool   `json:"enabled"`
+	URL             string `json:"url"`
+	VDOM            string `json:"vdom"`
+	VerifyTLS       bool   `json:"verifyTls"`
+	IntervalMinutes int    `json:"intervalMinutes"`
+	Token           string `json:"token"`      // empty keeps the stored one
+	ClearToken      bool   `json:"clearToken"` // removes the stored one
 }
 
-func (e *fortiError) Error() string {
-	return fmt.Sprintf("FortiGate answered %d for %s", e.Status, e.Path)
-}
-
-type fortiResponse[T any] struct {
-	Results []T    `json:"results"`
-	Serial  string `json:"serial"`
-	Version string `json:"version"`
-}
-
-// list reads every page of a table. Monitor endpoints ignore start and count, and
-// a short page ends the loop.
-func fortiList[T any](ctx context.Context, f *fortiGate, path, vdom string) ([]T, error) {
-	var out []T
-	for page := range fortiMaxPages {
-		q := url.Values{"start": {strconv.Itoa(page * fortiPageSize)}, "count": {strconv.Itoa(fortiPageSize)}}
-		if vdom != "" {
-			q.Set("vdom", vdom)
-		}
-		body, err := f.get(ctx, path, q)
+func (h *Handler) save(c *gin.Context) {
+	if h.sync == nil {
+		httpx.Fail(c, errOff)
+		return
+	}
+	var in saveInput
+	if !httpx.Bind(c, &in) {
+		return
+	}
+	var v validate.V
+	v.Text("url", &in.URL, 200, in.Enabled, "Address")
+	if in.URL != "" && !strings.HasPrefix(in.URL, "https://") {
+		v.Add("url", "Use an https:// address. The API token must never travel unencrypted.")
+	}
+	v.Text("vdom", &in.VDOM, 40, false, "VDOM")
+	interval := in.IntervalMinutes
+	v.IntRange("intervalMinutes", &interval, 5, 1440, "Read interval")
+	in.Token = strings.TrimSpace(in.Token)
+	if len(in.Token) > 200 {
+		v.Add("token", "The token is too long.")
+	}
+	if err := v.Err(); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	values := map[string]string{
+		"fortigate.enabled": strconv.FormatBool(in.Enabled), "fortigate.url": quote(in.URL), "fortigate.vdom": quote(in.VDOM),
+		"fortigate.verify_tls": strconv.FormatBool(in.VerifyTLS), "fortigate.interval_minutes": strconv.Itoa(interval),
+	}
+	if in.Token != "" {
+		sealed, err := fortigate.SealToken(h.sync.Keys(), in.Token)
 		if err != nil {
-			return nil, err
+			httpx.Fail(c, httpx.Validation("token", err.Error()+"."))
+			return
 		}
-		var r fortiResponse[T]
-		if err := json.Unmarshal(body, &r); err != nil {
-			return nil, fmt.Errorf("%s: the response can't be read", path)
-		}
-		out = append(out, r.Results...)
-		if len(r.Results) < fortiPageSize {
-			return out, nil
-		}
+		values["fortigate.token"] = sealed
 	}
-	return out, fmt.Errorf("%s: more than %d pages", path, fortiMaxPages)
-}
-
-func (f *fortiGate) Test(ctx context.Context) error {
-	_, err := f.get(ctx, "/api/v2/monitor/system/status", nil)
-	return err
-}
-
-type fortiStatus struct {
-	Serial  string `json:"serial"`
-	Version string `json:"version"`
-	Results struct {
-		Hostname  string `json:"hostname"`
-		ModelName string `json:"model_name"`
-		Model     string `json:"model_number"`
-	} `json:"results"`
-}
-
-type fortiHA struct {
-	Results struct {
-		Mode      string `json:"mode"`
-		GroupName string `json:"group-name"`
-	} `json:"results"`
-}
-
-type fortiInterface struct {
-	Name        string `json:"name"`
-	VDOM        string `json:"vdom"`
-	IP          string `json:"ip"`
-	Type        string `json:"type"`
-	Status      string `json:"status"`
-	Alias       string `json:"alias"`
-	Description string `json:"description"`
-	MAC         string `json:"macaddr"`
-	VLAN        int    `json:"vlanid"`
-	Secondary   []struct {
-		IP string `json:"ip"`
-	} `json:"secondaryip"`
-}
-
-type fortiAddress struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Subnet  string `json:"subnet"`
-	StartIP string `json:"start-ip"`
-	EndIP   string `json:"end-ip"`
-	FQDN    string `json:"fqdn"`
-	Comment string `json:"comment"`
-}
-
-type fortiGroup struct {
-	Name    string `json:"name"`
-	Comment string `json:"comment"`
-	Member  []struct {
-		Name string `json:"name"`
-	} `json:"member"`
-}
-
-type fortiRoute struct {
-	Dst     string `json:"dst"`
-	Gateway string `json:"gateway"`
-	Device  string `json:"device"`
-}
-
-type fortiARP struct {
-	IP        string `json:"ip"`
-	MAC       string `json:"mac"`
-	Interface string `json:"interface"`
-}
-
-type fortiDHCPServer struct {
-	ID        int    `json:"id"`
-	Interface string `json:"interface"`
-	IPRange   []struct {
-		Start string `json:"start-ip"`
-		End   string `json:"end-ip"`
-	} `json:"ip-range"`
-}
-
-type fortiLease struct {
-	IP        string `json:"ip"`
-	MAC       string `json:"mac"`
-	Hostname  string `json:"hostname"`
-	Interface string `json:"interface"`
-	Status    string `json:"status"`
-}
-
-// splitIPMask reads FortiOS's "10.0.0.1 255.255.255.0" form. Zero means unset.
-func splitIPMask(v string) (netip.Addr, netip.Prefix, bool) {
-	ip, mask, ok := strings.Cut(strings.TrimSpace(v), " ")
-	if !ok {
-		return netip.Addr{}, netip.Prefix{}, false
-	}
-	a, err := netip.ParseAddr(ip)
+	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
+		for k, val := range values {
+			if _, err := tx.Exec(c, `INSERT INTO settings (key, value, updated_by) VALUES ($1, $2::jsonb, $3::uuid)
+				ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by`,
+				k, val, auth.Current(c).UserID); err != nil {
+				return err
+			}
+		}
+		if in.ClearToken && in.Token == "" {
+			if _, err := tx.Exec(c, `DELETE FROM settings WHERE key = 'fortigate.token'`); err != nil {
+				return err
+			}
+		}
+		logged := in
+		logged.Token = map[bool]string{true: "(changed)", false: ""}[in.Token != ""]
+		return audit.Write(c, tx, audit.Entry{ActorID: auth.Current(c).UserID, Action: "update", ObjectType: "integration", ObjectID: "fortigate", New: logged})
+	})
 	if err != nil {
-		return netip.Addr{}, netip.Prefix{}, false
+		httpx.Fail(c, err)
+		return
 	}
-	m := net.ParseIP(strings.TrimSpace(mask)).To4()
-	if m == nil {
-		return netip.Addr{}, netip.Prefix{}, false
-	}
-	ones, bits := net.IPMask(m).Size()
-	if bits == 0 {
-		return netip.Addr{}, netip.Prefix{}, false // not a contiguous mask
-	}
-	p, err := a.Prefix(ones)
-	if err != nil {
-		return netip.Addr{}, netip.Prefix{}, false
-	}
-	return a, p, true
+	h.get(c)
 }
 
-func vdomContext(name string) string { return "vdom:" + name }
+func quote(s string) string { return strconv.Quote(s) }
 
-func fortiMAC(v string) string {
-	if v == "00:00:00:00:00:00" {
-		return ""
+// test checks the saved connection without recording anything.
+func (h *Handler) test(c *gin.Context) {
+	if h.sync == nil {
+		httpx.Fail(c, errOff)
+		return
 	}
-	return v
+	cfg, err := fortigate.Load(c, h.conn, h.sync.Keys())
+	if err == nil {
+		var client *fortigate.Client
+		if client, err = cfg.Client(); err == nil {
+			ctx, cancel := context.WithTimeout(c, 20*time.Second)
+			defer cancel()
+			var name string
+			if name, err = client.Status(ctx); err == nil {
+				httpx.OK(c, http.StatusOK, gin.H{"ok": true, "firewall": name})
+				return
+			}
+		}
+	}
+	httpx.OK(c, http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+}
+
+func (h *Handler) syncNow(c *gin.Context) {
+	if h.sync == nil {
+		httpx.Fail(c, errOff)
+		return
+	}
+	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
+		if err := audit.Write(c, tx, audit.Entry{ActorID: auth.Current(c).UserID, Action: "sync", ObjectType: "integration", ObjectID: "fortigate"}); err != nil {
+			return err
+		}
+		return h.sync.Trigger() // last, so a refusal rolls the audit row back
+	})
+	switch {
+	case errors.Is(err, fortigate.ErrBusy):
+		httpx.Fail(c, httpx.NewError(http.StatusConflict, "SYNC_RUNNING", "A FortiGate read is already running."))
+	case errors.Is(err, fortigate.ErrTooSoon):
+		httpx.Fail(c, httpx.NewError(http.StatusTooManyRequests, "SYNC_TOO_SOON", "The FortiGate was read less than a minute ago. Try again shortly."))
+	case err != nil:
+		httpx.Fail(c, err)
+	default:
+		httpx.OK(c, http.StatusAccepted, gin.H{"queued": true})
+	}
 }

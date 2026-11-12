@@ -1,48 +1,67 @@
 # Authentication and Authorisation
 
-## Decision
+Two ways to sign in run side by side:
 
-Use **simple Supabase Auth for now**. It will be replaced by the company auth later, so it stays small and isolated. This replaces the Entra design in main brief §18 and supplement §15 for the time being. Entra group-to-role mapping and the SSO configuration page wait for the company auth.
+- **Microsoft Entra ID** (the company's sign-in), for `@dialogfinance.lk` accounts. This is the way forward.
+- **Supabase email and password**, kept until it is removed (see [plan.md](plan.md)).
 
-Authentication (who you are) comes from Supabase. Authorisation (what you can do) stays entirely in DF-IPAM's database, so it survives the move unchanged.
+Authorisation stays entirely in DF-IPAM's own `users` and `roles` tables, whichever way a person signed in.
 
-## How it works
+## Microsoft Entra ID
 
-1. The React app signs the user in with `supabase-js` (email and password).
-2. `supabase-js` holds the session and refreshes the token.
-3. The app sends `Authorization: Bearer <access_token>` on each API call.
-4. The Go API verifies the JWT, finds the `users` row by `auth_subject`, loads roles, and checks permissions.
+The backend does the sign-in, so the browser never holds a Microsoft token:
 
-Supabase Row Level Security is not used. DF-IPAM data lives in its own PostgreSQL database, and Supabase is used only for sign-in.
+1. **Sign in with Microsoft** sends the browser to `/api/v1/auth/microsoft/login`, which redirects to the tenant's authorize endpoint with a random state, nonce and PKCE challenge. The attempt is kept in the API's memory for 10 minutes, tied to a short-lived cookie.
+2. Microsoft returns to `/api/v1/auth/microsoft/callback`. The API checks the state against the cookie, exchanges the code with the client secret, and verifies the ID token: RS256 signature against the tenant's keys, issuer `https://login.microsoftonline.com/<tenant>/v2.0` (the tenant is pinned, never `common`), audience the client ID, the nonce, expiry, and that `tid` is the tenant.
+3. The email (`email`, else `preferred_username`) must end exactly in an allowed domain (`AUTH_ALLOWED_EMAIL_DOMAINS`, default `dialogfinance.lk`). Guests (`…#EXT#@…`), look-alikes and subdomains are refused.
+4. The person is found or added by their Microsoft object ID (`oid`), with `auth_provider = 'entra'`. **A new person has no role** and sees "Waiting for access" until an administrator gives one. A deactivated person is refused.
+5. The API starts a session and sets an `HttpOnly`, `SameSite=Lax` cookie: `__Host-dfipam_session` over HTTPS, `dfipam_session` on plain-HTTP local use. Only the token's SHA-256 hash is stored, in `sessions`.
 
-## Supabase project setup
+A session ends after 10 hours, after the idle timeout in System (default 30 minutes), at **Sign out**, or at once when the person is deactivated. Changes made with the cookie must send `X-Requested-With: DF-IPAM`, which another site can't add, so a forged form can't act for someone. Sign-ins, sign-outs and refused domains are in the audit log. A refused sign-in returns to `/?signin_error=` with a plain reason.
 
-- Turn **off** public sign-ups. Add users in the Supabase dashboard with a password. The app has no screen to set one, so an invitation alone isn't enough yet.
-- Use asymmetric JWT signing keys (ES256 or RS256), and confirm the JWKS URL returns keys. It returns none on the legacy HS256 secret.
-- Put only the project URL and anon key in the frontend. The `service_role` key stays in `api/.env`.
+### Setting it up in Entra ID
 
-The `df-ipam` project was checked on 2026-11-05: its JWKS URL returns an ES256 key, and email is the only enabled provider. Public sign-ups were still **on** and must be turned off.
+1. In the Microsoft Entra admin centre, **App registrations > New registration**: name `DF-IPAM`, **Accounts in this organizational directory only**, platform **Web**, redirect URI `https://<host>/api/v1/auth/microsoft/callback`. For local use add `http://localhost:5173/api/v1/auth/microsoft/callback` (and `http://localhost:8088/...` for the container).
+2. **Certificates & secrets > New client secret.** Copy the value at once; note its expiry and renew it before then.
+3. **API permissions:** Microsoft Graph delegated `openid`, `profile`, `email` (the defaults). No admin consent is needed for these.
+4. Optional: **Token configuration > Add optional claim > ID > email**, so the work email is sent even when it differs from the sign-in name.
+5. Optional: under **Enterprise applications > DF-IPAM > Properties**, set **Assignment required** and assign the people or group allowed in. Multi-factor sign-in is enforced by your Conditional Access policies.
+6. In `api/.env`: `ENTRA_TENANT_ID` (Directory ID), `ENTRA_CLIENT_ID` (Application ID), `ENTRA_CLIENT_SECRET`, and `APP_BASE_URL` set to the address people use, so the redirect URI matches. Then `make docker-up`.
 
-## Token verification in the API
+For local use, leave `VITE_API_URL` empty in `web/.env`, so the app and API share one address and the cookie is sent.
+
+### Your account
+
+Signing in with Microsoft creates a new DF-IPAM user (a different identity from any Supabase account). Sign in once, then give that user a role from an existing administrator account, or in `make db-shell`:
+
+```sql
+UPDATE users SET role = 'admin' WHERE auth_provider = 'entra' AND lower(email) = lower('<you>@dialogfinance.lk');
+```
+
+## Supabase email and password
+
+1. The web app signs the person in with `supabase-js`, which holds and refreshes the session.
+2. The app sends `Authorization: Bearer <access_token>` on each API call.
+3. The API verifies the token, finds the `users` row by its subject, checks it is active, and checks the route's permission.
+
+The browser never reads tables through `supabase-js`. The `service_role` key is read only by `api/internal/auth/supabase_admin.go`, which checks at startup that Supabase is reachable.
+
+### Token checks
 
 | Check | Expected |
 | --- | --- |
-| Signature | Against `https://<project>.supabase.co/auth/v1/.well-known/jwks.json` |
-| `alg` | ES256 or RS256 only, from an allowlist |
+| Signature | Against `https://<project>.supabase.co/auth/v1/.well-known/jwks.json`, cached at most 10 minutes, refetched once on an unknown `kid` |
+| `alg` | ES256 or RS256 only |
 | `iss` | `https://<project>.supabase.co/auth/v1` |
-| `aud` | `authenticated` (confirm against a real token; Supabase docs show this only as an example) |
+| `aud` | `authenticated` |
 | `exp` | Not expired |
-| `sub` | Matches an active `users` row |
-
-Cache JWKS for no more than 10 minutes, as Supabase advises against caching longer. Refetch once on an unknown `kid`.
-
-Configuration lives in two files:
+| `sub` | An active `users` row |
 
 ```bash
 # api/.env
 SUPABASE_URL=https://<project>.supabase.co
 SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_SERVICE_ROLE_KEY=      # backend only, never in web/
 CORS_ALLOWED_ORIGINS=http://localhost:5173
 # web/.env
 VITE_SUPABASE_URL=https://<project>.supabase.co
@@ -50,121 +69,57 @@ VITE_SUPABASE_ANON_KEY=
 VITE_API_URL=http://127.0.0.1:8080
 ```
 
-The API derives the issuer and JWKS URL from `SUPABASE_URL`. It uses the anon key to check Supabase at startup, and the service role key only to send invitations.
+### Supabase project
 
-## User provisioning
+- **Turn off public sign-ups.** Add people in the Supabase dashboard with a password and auto-confirm on. DF-IPAM has no screen to set a password.
+- Use asymmetric signing keys: the JWKS URL above must return a key.
+- Set the site URL to the address people use.
 
-- A valid token with no `users` row creates an active row with **no roles**, so that user can see nothing until they are given a role.
-- Roles are managed in the database, or on the User Management page by a Super Administrator. There is no bootstrap setting.
-- Deactivating a user in DF-IPAM blocks them on their next request, because `users.is_active` is checked every time. A signed-out token otherwise stays valid until it expires.
+## People and roles
 
-To make someone the first Super Administrator, have them sign in once, then run this in `make db-shell`:
+A valid token with no `users` row creates one with **no role**: the person sees "Waiting for access" until someone who may manage users gives them a role in **Users and roles**. Deactivating someone blocks them on their next request.
+
+Make the first administrator after they have signed in once, in `make db-shell`:
 
 ```sql
-INSERT INTO user_roles (user_id, role_id)
-SELECT u.id, r.id FROM users u, roles r
-WHERE u.email = '<their email>' AND r.name = 'Super Administrator';
+UPDATE users SET role = 'admin' WHERE lower(email) = lower('<their email>');
 ```
 
-## Roles and permissions
+Nobody can change their own role or deactivate themselves, and no change (to a person or to a role) may leave nobody active who can manage users.
 
-Stored in `roles`, `permissions`, `role_permissions` and `user_roles`. Checked by API middleware and again in background jobs.
+### Roles
 
-| Role | Purpose |
+Roles live in the `roles` table: a key, a name, a description and a list of permissions. A role with `full_access` holds every permission, including ones added later; the starting Administrator role is the only one, and it can't be limited or deleted. Others are set up in Users and roles > Roles, and a role nobody holds can be deleted. The starting roles are listed in [new.md](new.md#roles).
+
+### Permissions
+
+Defined in `api/internal/auth/permissions.go` and described for people in `web/src/lib/permissions.ts`. The code checks permissions, never role names; "everyone who may do X" is found with `auth.HolderSQL`.
+
+| Permission | Lets a person |
 | --- | --- |
-| Super Administrator | Full platform configuration and user administration |
-| IPAM Administrator | Manages subnets, IP records, discovery policies and integrations |
-| Network Engineer | Manages network records and performs authorised discovery |
-| Infrastructure Engineer | Views inventory, manages assigned records, requests allocations |
-| Security Auditor | Read-only access to inventory, audit evidence and reports |
-| Business Viewer | Read-only access to specifically permitted business-service information |
+| `inventory:view` | See discovery, servers, the register, devices, alerts and reservations |
+| `inventory:edit` | Change the register and devices, import them, manage anyone's reservations |
+| `network:manage` | Set up segments (including import from text), environments and departments |
+| `discovery:scan` | Start a scan |
+| `ip:request` | Raise IP requests |
+| `ip:reserve` | Reserve addresses |
+| `requests:approve` | Decide IP requests, and hear about new ones |
+| `alerts:manage` | Acknowledge alerts, and hear about new High and Critical ones |
+| `reports:export` | Download reports |
+| `audit:view` | Read and export the audit log |
+| `users:manage` | Give people roles, and set up roles |
+| `system:manage` | Intervals, email, sessions and the FortiGate connection |
 
-| Permission | Super Admin | IPAM Admin | Network Eng | Infra Eng | Security Auditor | Business Viewer |
-| --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| View | ✓ | ✓ | ✓ | ✓ | ✓ | Scoped |
-| Create / Edit | ✓ | ✓ | ✓ | Assigned | | |
-| Delete | ✓ | ✓ | | | | |
-| Request allocation | ✓ | ✓ | ✓ | ✓ | | |
-| Allocate / Reserve | ✓ | ✓ | ✓ | | | |
-| Approve | ✓ | ✓ | | | | |
-| Import | ✓ | ✓ | ✓ | | | |
-| Discover | ✓ | ✓ | ✓ | | | |
-| Manage discovery policies | ✓ | ✓ | | | | |
-| Manage integrations | ✓ | ✓ | | | | |
-| Manage users | ✓ | | | | | |
-| View audit history | ✓ | ✓ | | | ✓ | |
-| Export reports | ✓ | ✓ | ✓ | ✓ | ✓ | Scoped |
-
-The role purposes come from the brief. The ticks are a proposed default, and administrators can change them. The code checks permissions, never role names. Separation of duties is enforced regardless: nobody approves their own request, and a person decides at most one step of a request. Approval workflows and notification rules are administration, so they need `users:manage`. Anyone signed in reads their own notifications and preferences.
-
-### What each role sees
-
-`web/src/app/nav.ts` holds the rule for every page: the side panel uses it, and so does the page guard, which shows "You don't have access" for a link or bookmark the role can't use. `TestRolesReachOnlyTheirPages` checks the same table against the API, so a link never leads to a refusal. Hiding a page is for clarity: the API does the real check.
-
-| Pages | Super Admin | IPAM Admin | Network Eng | Infra Eng | Security Auditor | Business Viewer |
-| --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| Dashboard, Alerts, Reports | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| IP Address Explorer | ✓ | ✓ | ✓ | ✓ | ✓ | Scoped |
-| Other inventory, Reconciliation, Reservations, Requests | ✓ | ✓ | ✓ | ✓ | ✓ | |
-| Discovery, Imports | ✓ | ✓ | ✓ | | Read only | |
-| Integrations, Audit Logs, Roles, System | ✓ | ✓ | | | Read only | |
-| User Management | ✓ | | | | | |
-
-The dashboard follows the same rules, and the API leaves out totals of areas a person can't open. Approvers see pending approvals, those who allocate see what is waiting to be fulfilled, and integration and discovery tiles need access to those pages. A Business Viewer sees a short page of what the role offers. Retention can be read with `audit:view`, and changed only with `system:manage`.
-
-### Scoped reading
-
-`inventory:view_scoped` limits a person to the business services assigned in User Management, stored as `user_roles.business_service_id`. The other scope columns (organisation, business unit, site) aren't used yet. No services means nothing is shown, never everything.
-
-- A subnet is in scope through its business service, and an address through its own or its subnet's.
-- Gateway, VLAN, VDOM, network block and zone, MAC, device, OS, confidence, notes, evidence and history stay hidden. Search doesn't match hidden fields.
-- A record out of scope answers 404, so its existence isn't confirmed. The subnet grid needs `inventory:view`, because it walks the whole subnet.
-- A role that is kept keeps its services. One that is taken away loses them. Nobody changes their own.
-
-### Editing assigned records
-
-`inventory:edit_assigned` lets someone edit what they own: an address or device whose Owner they are, or a subnet where they are technical or business owner. Owners are set by people with `inventory:edit`.
-
-- Owners can't change who owns a record, or what it belongs to, or it could be handed on. Allocation state still needs `ip:allocate` or `ip:reserve`.
-- On a subnet they change the name and description only. On a device, everything but owner, business service, sensitivity and status.
-- Every change is audited as usual.
+`web/src/app/nav.ts` hides what a person can't open, for clarity only: the API does the real check.
 
 ## Keeping the swap easy
 
-Only the auth layer knows about Supabase:
+Only `api/internal/auth/supabase*.go` and the Supabase half of `web/src/lib/auth.ts` know about Supabase; Microsoft sign-in lives in `api/internal/auth/entra.go`, `sessions.go` and `api/internal/modules/signin`. Removing Supabase means deleting its files and half, its settings, and the bearer path in `auth.Authenticate`.
 
-```go
-// api/internal/auth/verifier.go
-type Identity struct {
-    Subject string
-    Email   string
-}
+## Limits of Supabase sign-in
 
-type Verifier interface {
-    Verify(ctx context.Context, bearerToken string) (Identity, error)
-}
-```
-
-- **Backend:** `api/internal/auth/supabase.go` implements `Verifier`, and `supabase_admin.go` sends invitations.
-- **Frontend:** `web/src/lib/auth.ts` is the only file importing `supabase-js`. It exposes `signIn`, `signOut`, `getAccessToken` and `onAuthChange`.
-
-No module reads Supabase claims directly.
-
-## Moving to company auth
-
-1. Add a new `Verifier` and replace `web/src/lib/auth.ts`.
-2. Match existing users by email and update `users.auth_provider` and `users.auth_subject`, so roles and audit history carry over.
-3. Remove the Supabase settings.
-
-If the company auth uses cookies, also add CSRF protection and the `sessions` table at that point.
-
-## Accepted limitations while on Supabase
-
-Acceptable for development and pilot use. Review them before production data is loaded.
-
-- Tokens live in browser storage, so an XSS bug could steal one. The CSP in [security.md](security.md) reduces this.
-- Signing out does not cancel an access token that has already been issued, until it expires. Keep the lifetime at the 1 hour default or lower.
-- Sign-in depends on an external cloud service. The on-prem server and users need outbound access to it.
-- Multi-factor authentication is not part of this simple setup, so the brief's "strong authentication" is not met yet.
-
-Agents never use Supabase. They have their own credentials: see [discovery-and-reconciliation.md](discovery-and-reconciliation.md).
+- Tokens live in browser storage, so an XSS bug could steal one. The Content Security Policy reduces this.
+- Signing out doesn't cancel an issued token until it expires (1 hour by default).
+- Sign-in depends on an internet service: the server and browsers need to reach `<project>.supabase.co`.
+- No multi-factor authentication.
+- Idle sign-out after `session.idle_timeout_minutes` (default 30) limits unattended sessions.

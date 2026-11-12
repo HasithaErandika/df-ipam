@@ -1,0 +1,10 @@
+# Apache on the host serves the web app and proxies /api/ to the backend, in
+# place of the web container (deploy/apache/df-ipam.conf). The backend is
+# published on localhost only, and trusts the client address only from the
+# Docker gateway, where Apache's connections arrive. Start it with make apache-up.
+services:
+  backend:
+    environment:
+      TRUSTED_PROXIES: ${DOCKER_GATEWAY:-172.30.0.1},127.0.0.1
+    ports:
+      - 127.0.0.1:${API_PORT:-8080}:8080

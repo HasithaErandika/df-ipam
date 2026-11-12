@@ -1,35 +1,28 @@
 # DF-IPAM Documentation
 
-**DF-IPAM** is the Dialog Finance IP Address Management platform: the central system for managing, discovering, auditing and governing IPv4 and IPv6 address infrastructure.
-
-**Status:** Phases 0 to 2 complete. Phases 3 to 7 are built and need checks against real systems. See [development_phase.md](development_phase.md) for what is done and what remains.
+**DF-IPAM Lite** is the Dialog Finance IP address management system: it scans the network, keeps the official IP register, watches servers and raises alerts. It is read-only towards the network.
 
 | Document | Covers |
 | --- | --- |
-| [requirements.md](requirements.md) | Scope, spec traceability, deviations, open items |
-| [architecture.md](architecture.md) | Services, modules, repository layout, libraries |
-| [authentication.md](authentication.md) | Supabase Auth (temporary), roles, moving to company auth |
-| [database.md](database.md) | Schema rules, tested constraints, ERD, data dictionary |
-| [api.md](api.md) | REST conventions and endpoint map |
-| [discovery-and-reconciliation.md](discovery-and-reconciliation.md) | Discovery safety, agents, reconciliation rules |
-| [integrations.md](integrations.md) | FortiGate, vCenter, AWS, Azure, file imports |
-| [frontend.md](frontend.md) | Pages, design system, UX rules |
-| [security.md](security.md) | Threat model and review checklist |
-| [setup.md](setup.md) | **How to set up, run and deploy the project** |
-| [deployment.md](deployment.md) | Ubuntu server, Docker, Nginx, backups |
+| [new.md](new.md) | **The specification**: what the system does, discovery, alerts, screens, what isn't built |
+| [setup.md](setup.md) | **Run it on your machine, and deploy it to a server** |
+| [architecture.md](architecture.md) | Containers, code layout, background loops |
+| [database.md](database.md) | Tables, schema rules, migrations |
+| [api.md](api.md) | REST conventions and limits |
+| [authentication.md](authentication.md) | Sign-in (Supabase for now), roles and permissions |
+| [frontend.md](frontend.md) | Screens, design and UI rules |
+| [security.md](security.md) | Threat model and release checklist |
 | [runbooks.md](runbooks.md) | Recovery procedures |
-| [roadmap.md](roadmap.md) | Delivery phases and exit criteria |
-| [development_phase.md](development_phase.md) | **Trace of everything to build, and its current status** |
+| [development_phase.md](development_phase.md) | What is done, what isn't, and what waits on others |
+| [changelog.md](changelog.md) | What changed, day by day |
+| [plan.md](plan.md) | Plan, not built: company sign-in in place of Supabase |
 
-## Non-negotiable rules
+## Rules that always hold
 
-These apply to every module and override convenience.
-
-1. **Allocation and observation are separate.** Discovery never changes allocation state or ownership.
-2. **An IP is only unique within a routing domain.** The same private range in two VRFs is not a conflict.
-3. **Nothing is released or assigned automatically.** A failed ping does not free an address, and an unused-looking address is not assigned.
-4. **All integrations are read-only.**
-5. **No discovery outside an approved target scope.** Core banking and payment systems are passive/API-only until explicitly approved.
-6. **Raw evidence stays apart from approved inventory.**
-7. **Authorisation is enforced in the API and background jobs,** never only in the frontend.
-8. **No large range is ever enumerated.** IPv6 subnets use calculated ranges and paginated views.
+1. **Read-only towards the network.** Nothing in DF-IPAM changes DHCP, DNS, firewalls or devices. The FortiGate is only read.
+2. **Evidence stays apart from the register.** Discovery writes sightings and raises alerts; it never changes the register, ownership or a device's decision. People decide.
+3. **Nothing is released or assigned automatically.** A silent address isn't freed, and an expired reservation isn't released.
+4. **Every change is audited** in the same transaction as the change.
+5. **All data goes through the Go API.** Every table has row level security, and the browser never queries tables.
+6. **Permissions, not role names,** are checked, in the API.
+7. **No fake data.** Screens show real records, or say what is missing.

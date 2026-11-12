@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { UserRound } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Badge, Button, ErrorState, Modal, SkeletonRows } from '../../components/ui'
-import { get } from '../../lib/api'
+import { getBody } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
 import { useMe } from '../../lib/session'
 import type { Profile } from '../../lib/types'
@@ -56,18 +56,8 @@ function Details({ profile, permissions }: { profile: Profile; permissions: stri
           <Row label="User ID"><span className="font-mono text-[12px]">{profile.id}</span></Row>
         </dl>
       </Section>
-      <Section title="Roles">
-        {profile.assignments.length === 0 ? <p className="text-[13px] text-ink-2">No role assigned yet.</p> : (
-          <ul className="space-y-2">
-            {profile.assignments.map((a) => (
-              <li key={`${a.role}/${a.scope}`} className="text-[13px]">
-                <span className="font-medium text-ink">{a.role}</span>
-                <span className="text-ink-3"> · {a.scope || 'All scopes'}</span>
-                {a.description && <p className="text-[12px] text-ink-2">{a.description}</p>}
-              </li>
-            ))}
-          </ul>
-        )}
+      <Section title="Role">
+        <p className="text-[13px] text-ink">{profile.roleName ?? 'No role assigned yet.'}</p>
       </Section>
       <Section title={`Permissions (${permissions.length})`}>
         {permissions.length === 0 ? <p className="text-[13px] text-ink-2">No permissions yet.</p> : (
@@ -87,7 +77,7 @@ function Details({ profile, permissions }: { profile: Profile; permissions: stri
 
 export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { permissions } = useMe()
-  const query = useQuery({ queryKey: ['me', 'profile'], enabled: open, queryFn: () => get<Profile>('/auth/me/profile') })
+  const query = useQuery({ queryKey: ['me', 'profile'], enabled: open, queryFn: () => getBody<Profile>('/auth/me/profile') })
   return (
     <Modal open={open} onClose={onClose} title="Account details" size="xl" footer={<Button onClick={onClose}>Close</Button>}>
       {query.isPending && <SkeletonRows rows={5} />}
