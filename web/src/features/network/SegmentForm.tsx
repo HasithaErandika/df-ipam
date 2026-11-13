@@ -11,7 +11,7 @@ import { inventoryKeys, useEnvironments, useInvalidate } from '../../lib/queries
 import { listChanges } from '../../lib/changes'
 import type { Segment } from '../../lib/types'
 import { AddressLayout, type NetworkInfo } from '../discovery/SegmentFacts'
-import { cidrIssue, inNetwork, ipToInt, ipv4NetworkInfo, isIPv4, optionalInt, optionalIPv4, requiredText, text, toInt } from '../../lib/validation'
+import { cidrIssue, inNetwork, ipToInt, ipv4NetworkInfo, isHostAddress, isIPv4, maxScannable, optionalInt, optionalIPv4, requiredText, text, toInt } from '../../lib/validation'
 
 const schema = z.object({
   name: requiredText('Name', 80),
@@ -33,6 +33,17 @@ const schema = z.object({
   }
   if (v.kind === 'dhcp' && Boolean(v.dhcpStart) !== Boolean(v.dhcpEnd)) ctx.addIssue({ code: 'custom', path: ['dhcpEnd'], message: 'Enter both the first and last pool address.' })
   if (v.dhcpStart && v.dhcpEnd && ipToInt(v.dhcpEnd) < ipToInt(v.dhcpStart)) ctx.addIssue({ code: 'custom', path: ['dhcpEnd'], message: 'The last pool address must not be before the first.' })
+  if (!ok) return
+  const host = (k: 'gateway' | 'dhcpStart' | 'dhcpEnd', message: string) => {
+    if (v[k] && inNetwork(v[k], v.network) && !isHostAddress(v[k], v.network)) ctx.addIssue({ code: 'custom', path: [k], message })
+  }
+  host('gateway', 'Use a host address, not the network or broadcast address.')
+  host('dhcpStart', "The pool can't start at the network address.")
+  host('dhcpEnd', "The pool can't include the broadcast address.")
+  if (v.kind === 'dhcp' && isIPv4(v.gateway) && isIPv4(v.dhcpStart) && isIPv4(v.dhcpEnd)
+    && ipToInt(v.gateway) >= ipToInt(v.dhcpStart) && ipToInt(v.gateway) <= ipToInt(v.dhcpEnd)) {
+    ctx.addIssue({ code: 'custom', path: ['gateway'], message: 'The gateway is inside the DHCP pool. Use an address outside it, or narrow the pool.' })
+  }
 })
 type Values = z.infer<typeof schema>
 const fields = Object.keys(schema.shape)
@@ -125,6 +136,11 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
                 <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">Potential available</div><div className="text-[13px] font-semibold text-ok">{formatCount(estimatedAvailable)}</div></div>
                 <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">DHCP pool</div><div className="text-[13px] font-semibold text-ink">{validPool ? formatCount(ipToInt(poolEnd) - ipToInt(poolStart) + 1) : kind === 'dhcp' ? 'Not set' : 'None'}</div></div>
               </div>
+              {kind !== 'cloud' && subnet && subnet.usableAddresses > maxScannable && (
+                <p role="alert" className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+                  Too large to scan: {formatCount(subnet.usableAddresses)} usable addresses, and discovery sweeps at most {formatCount(maxScannable)} (a /20). Split it into smaller segments, or it is never scanned.
+                </p>
+              )}
               <p className="mt-2 text-[11.5px] text-ink-3">Potential available subtracts the entered gateway and DHCP pool. After saving, actual Available candidates also account for registered and reserved addresses and recent discovery.</p>
             </div>
           )}
@@ -135,7 +151,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
               <Field label="First address" htmlFor="sg-ps" error={errors.dhcpStart?.message}><Input id="sg-ps" className="font-mono" placeholder="192.168.4.100" {...register('dhcpStart')} /></Field>
               <Field label="Last address" htmlFor="sg-pe" error={errors.dhcpEnd?.message}><Input id="sg-pe" className="font-mono" placeholder="192.168.4.250" {...register('dhcpEnd')} /></Field>
             </div>
-            <p className="text-[12.5px] text-ink-3">Static detection depends on this range: anything in use outside it is treated as a hand-set IP.</p>
+            <p className="text-[12.5px] text-ink-3">Static detection depends on this range: anything in use outside it is treated as a hand-set IP. Without a pool, nothing here counts as static and no unregistered-static alerts are raised.</p>
           </FormSection>
         ) : (
           <Field label="Default environment" htmlFor="sg-env" hint="New entries in this segment start with it. Each entry can still differ.">
@@ -151,7 +167,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
           <FormSection title="Discovery">
             <Switch id="sg-ports" checked={watch('checkPorts')} onChange={(v) => setValue('checkPorts', v, { shouldDirty: true })}
               label="Check common ports on each device"
-              hint="Each scan tries about 25 common TCP ports (SSH, web, RDP, file sharing, databases, printers) on every device that answers, to show what it runs. It connects and closes at once, sending nothing, but security tools may still see it as a port scan: ask before turning it on for company networks." />
+              hint="Tries about 25 common TCP ports (SSH, web, RDP, file sharing, databases, printers) on each device that answers, at most every 6 hours per device (15 minutes on Scan now), and at most 100 connections a second. It connects and closes at once, sending nothing, but security tools may still see it as a port scan: ask before turning it on for company networks." />
           </FormSection>
         )}
         <Field label="Description" htmlFor="sg-desc" error={errors.description?.message}><Textarea id="sg-desc" {...register('description')} /></Field>

@@ -3,7 +3,6 @@ import { Link } from 'react-router'
 import { Card, EmptyState, ErrorState, SkeletonRows } from '../../components/ui'
 import { formatCount } from '../../lib/format'
 import { useSegments } from '../../lib/queries'
-import { useCan } from '../../lib/session'
 import type { Segment } from '../../lib/types'
 import { attention } from '../network/segmentList'
 
@@ -13,11 +12,11 @@ const kinds: { kind: Segment['kind']; title: string; icon: LucideIcon; tint: str
   { kind: 'cloud', title: 'Cloud networks', icon: Cloud, tint: 'bg-surface-2 text-ink-2' },
 ]
 
-function Tile({ kind, title, icon: Icon, tint, rows, setup }: (typeof kinds)[number] & { rows: Segment[]; setup: boolean }) {
+function Tile({ kind, title, icon: Icon, tint, rows }: (typeof kinds)[number] & { rows: Segment[] }) {
   const sum = (f: (s: Segment) => number) => rows.reduce((n, s) => n + f(s), 0)
   const needs = rows.filter((s) => attention(s)).length
   return (
-    <Link to={setup ? `/network-setup?show=${kind}` : '/discovery/segments'} className="rounded-lg border border-line p-3.5 transition-colors hover:border-accent/50 hover:bg-accent-soft/20">
+    <Link to={`/discovery/segments?kind=${kind}`} className="rounded-lg border border-line p-3.5 transition-colors hover:border-accent/50 hover:bg-accent-soft/20">
       <div className="flex items-center gap-2.5">
         <span aria-hidden className={`grid size-8 place-items-center rounded-md ${tint}`}><Icon size={16} /></span>
         <div className="min-w-0">
@@ -38,19 +37,18 @@ function Tile({ kind, title, icon: Icon, tint, rows, setup }: (typeof kinds)[num
 /** Every network by type, then the busiest ones right now. */
 export function NetworksCard() {
   const q = useSegments()
-  const setup = useCan('network:manage')
   const all = q.data ?? []
   const busiest = [...all].filter((s) => s.online > 0 || s.openAlerts > 0)
     .sort((a, b) => b.openAlerts - a.openAlerts || b.online - a.online).slice(0, 6)
   return (
     <Card title="Networks" subtitle={q.data ? `${formatCount(all.length)} segments. Open one to see every address.` : undefined}
-      action={<Link className="text-[12.5px] font-medium text-accent hover:underline" to={setup ? '/network-setup' : '/discovery/segments'}>All segments</Link>}>
+      action={<Link className="text-[12.5px] font-medium text-accent hover:underline" to="/discovery/segments">All segments</Link>}>
       {q.isPending ? <SkeletonRows rows={4} /> : q.isError ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : all.length === 0
         ? <EmptyState title="No networks yet" body="Add DHCP, server and cloud networks in Network setup, or import them from your firewall's interface list." />
         : (
           <div className="space-y-4 p-4">
             <div className="grid gap-3 sm:grid-cols-3">
-              {kinds.map((k) => <Tile key={k.kind} {...k} setup={setup} rows={all.filter((s) => s.kind === k.kind)} />)}
+              {kinds.map((k) => <Tile key={k.kind} {...k} rows={all.filter((s) => s.kind === k.kind)} />)}
             </div>
             <div>
               <h3 className="mb-1.5 text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase">Most active now</h3>

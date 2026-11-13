@@ -31,11 +31,11 @@ export function formatDate(value: string): string {
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { dateStyle: 'medium', timeZone: 'UTC' })
 }
 
-/** Today as YYYY-MM-DD in UTC, plus a number of days. */
+/** Today as YYYY-MM-DD by the person's own calendar, plus a number of days. */
 export function isoDate(addDays = 0): string {
   const d = new Date()
-  d.setUTCDate(d.getUTCDate() + addDays)
-  return d.toISOString().slice(0, 10)
+  d.setDate(d.getDate() + addDays)
+  return d.toLocaleDateString('en-CA')
 }
 
 /** Whole days from now until an instant; negative once it has passed. */

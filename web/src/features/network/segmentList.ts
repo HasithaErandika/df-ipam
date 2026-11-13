@@ -1,11 +1,15 @@
 import type { Segment } from '../../lib/types'
+import { maxScannable } from '../../lib/validation'
+
+/** A swept segment with more addresses than the scanner sweeps: it is never scanned. */
+export const tooLargeToScan = (s: Segment) => s.kind !== 'cloud' && s.usableSize > maxScannable
 
 /** A segment that needs someone to look at it, with the reason. */
 export function attention(s: Segment): string | null {
+  if (tooLargeToScan(s)) return 'Too large to scan; split it'
   if (s.kind === 'dhcp' && !s.dhcpStart) return 'No DHCP pool set'
   if (!s.gateway && !s.detectedGateway) return 'No gateway'
   if (s.openAlerts > 0) return `${s.openAlerts} open alert${s.openAlerts === 1 ? '' : 's'}`
-  if (s.usableSize > 4096 && s.kind !== 'cloud') return 'Too large to scan; split it'
   return null
 }
 

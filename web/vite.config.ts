@@ -21,7 +21,6 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(version),
     __APP_COMMIT__: JSON.stringify(commit()),
-    __APP_BUILT__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   server: { port: 5173, proxy: { '/api': 'http://127.0.0.1:8080' } },
   build: {

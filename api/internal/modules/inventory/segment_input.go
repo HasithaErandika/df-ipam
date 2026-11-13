@@ -3,6 +3,7 @@ package inventory
 import (
 	"net/netip"
 
+	"dfipam/api/internal/netcalc"
 	"dfipam/api/internal/validate"
 )
 
@@ -48,6 +49,7 @@ func (in *segmentInput) validate() error {
 	case start.IsValid() && end.IsValid() && end.Less(start):
 		v.Add("dhcpEnd", "The last pool address must not be before the first.")
 	}
+	hostAddresses(&v, p, gw, start, end)
 	v.UUID("defaultEnvironmentId", in.EnvironmentID, false, "an environment")
 	if in.Kind == "dhcp" {
 		in.EnvironmentID = ""
@@ -56,4 +58,26 @@ func (in *segmentInput) validate() error {
 		in.CheckPorts = false // never swept from the building
 	}
 	return v.Err()
+}
+
+// hostAddresses checks that the gateway and the DHCP pool use host addresses:
+// not the network or broadcast address, and the gateway outside the pool.
+func hostAddresses(v *validate.V, p netip.Prefix, gw, start, end netip.Addr) {
+	if !p.IsValid() {
+		return
+	}
+	span := netcalc.UsableRange(p)
+	usable := func(a netip.Addr) bool { return !a.Less(span.First) && !span.Last.Less(a) }
+	if gw.IsValid() && p.Contains(gw) && !usable(gw) {
+		v.Add("gateway", "Use a host address, not the network or broadcast address.")
+	}
+	if start.IsValid() && p.Contains(start) && !usable(start) {
+		v.Add("dhcpStart", "The pool can't start at the network address.")
+	}
+	if end.IsValid() && p.Contains(end) && !usable(end) {
+		v.Add("dhcpEnd", "The pool can't include the broadcast address.")
+	}
+	if gw.IsValid() && start.IsValid() && end.IsValid() && !gw.Less(start) && !end.Less(gw) {
+		v.Add("gateway", "The gateway is inside the DHCP pool. Use an address outside it, or narrow the pool.")
+	}
 }

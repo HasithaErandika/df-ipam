@@ -32,9 +32,32 @@ export function Presence({ online, firstSeen, lastSeen, showFirstSeen = true }: 
     <div className="min-w-0">
       {online
         ? <StateBadge tone="ok" title={`Last answered ${formatDateTime(lastSeen)}`}>Online</StateBadge>
-        : <StateBadge tone="neutral" title={`Last answered ${formatDateTime(lastSeen)}`}>Unavailable since {formatAgo(lastSeen)}</StateBadge>}
+        : <StateBadge tone="neutral" title={`Last answered ${formatDateTime(lastSeen)}`}>Not answering · last seen {formatAgo(lastSeen)}</StateBadge>}
       {showFirstSeen && firstSeen && <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink-3" title={formatDateTime(firstSeen)}>First discovered {formatAgo(firstSeen)}{isNew(firstSeen) && <StateBadge tone="accent">New</StateBadge>}</div>}
     </div>
+  )
+}
+
+/** Name, what the device says about itself, its MAC and network card, and open ports. */
+function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void }) {
+  const line = deviceLine(r)
+  const card = networkCard(r)
+  return (
+    <WithPlatform platform={r.platform} vendor={line} hostname={r.hostname || r.deviceName} gateway={r.isGateway}>
+      <div className="flex items-center gap-2 truncate text-ink">
+        <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
+          {r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}
+        </button>
+        {r.isGateway && <GatewayBadge />}
+      </div>
+      {(r.deviceName || r.assignedName) && r.hostname && r.hostname !== (r.deviceName || r.assignedName) && <div className="truncate text-[11.5px] text-ink-3" title="Hostname the device reported">{r.hostname}</div>}
+      {line && <div className="truncate text-[12px] text-ink-2" title="What the device says about itself">{line}</div>}
+      <div className="flex items-center gap-2 truncate text-[11.5px] text-ink-3">
+        <span className="font-mono">{r.mac ?? 'MAC not visible'}</span>{r.isPrivateMac && <PrivateMacBadge />}
+        {card && <span className="truncate" title="Maker of the network card, from the MAC. Often not the device's maker.">· card: {card}</span>}
+      </div>
+      {r.openPorts.length > 0 && <div className="truncate text-[11.5px] text-ink-3" title={r.openPorts.map((p) => `${p} ${serviceName(p)}`).join(', ')}>Open: {r.openPorts.map(serviceName).join(', ')}</div>}
+    </WithPlatform>
   )
 }
 
@@ -55,23 +78,7 @@ export function findingColumns({ canEdit, onOpen, onRegister, onApprove, onRejec
 }): Column<Finding>[] {
   return [
     { key: 'ip', header: 'Address', cell: (r) => <Stack mono main={<button type="button" className="cursor-pointer hover:text-accent hover:underline" onClick={() => onOpen(r)} title="Show details">{r.ip}</button>} sub={r.segmentId ? <Link className="font-sans hover:text-accent hover:underline" to={`/segments/${r.segmentId}`}>{r.segmentName}</Link> : 'No segment'} /> },
-    { key: 'device', header: 'Device', cell: (r) => (
-      <WithPlatform platform={r.platform} vendor={deviceLine(r)} hostname={r.hostname || r.deviceName} gateway={r.isGateway}>
-        <div className="flex items-center gap-2 truncate text-ink">
-          <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
-            {r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}
-          </button>
-          {r.isGateway && <GatewayBadge />}
-        </div>
-        {(r.deviceName || r.assignedName) && r.hostname && r.hostname !== (r.deviceName || r.assignedName) && <div className="truncate text-[11.5px] text-ink-3" title="Hostname the device reported">{r.hostname}</div>}
-        {deviceLine(r) && <div className="truncate text-[12px] text-ink-2" title="What the device says about itself">{deviceLine(r)}</div>}
-        <div className="flex items-center gap-2 truncate text-[11.5px] text-ink-3">
-          <span className="font-mono">{r.mac ?? 'MAC not visible'}</span>{r.isPrivateMac && <PrivateMacBadge />}
-          {networkCard(r) && <span className="truncate" title="Maker of the network card, from the MAC. Often not the device's maker.">· card: {networkCard(r)}</span>}
-        </div>
-        {r.openPorts.length > 0 && <div className="truncate text-[11.5px] text-ink-3" title={r.openPorts.map((p) => `${p} ${serviceName(p)}`).join(', ')}>Open: {r.openPorts.map(serviceName).join(', ')}</div>}
-      </WithPlatform>
-    ) },
+    { key: 'device', header: 'Device', cell: (r) => <DeviceCell r={r} onOpen={onOpen} /> },
     { key: 'register', header: 'Register', cell: (r) => <RegisterCell r={r} /> },
     { key: 'approval', header: 'Approval', hideBelow: 'lg', cell: (r) => (r.deviceId || (r.mac && !r.isPrivateMac) ? <DeviceBadge status={r.deviceStatus} /> : none) },
     { key: 'presence', header: 'Presence', cell: (r) => <Presence online={r.online} firstSeen={r.firstSeen} lastSeen={r.lastSeen} /> },

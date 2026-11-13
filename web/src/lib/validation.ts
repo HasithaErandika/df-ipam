@@ -4,6 +4,7 @@
  * DF-IPAM Lite is IPv4 only.
  */
 import { z } from 'zod'
+import { isoDate } from './format'
 
 export function isIPv4(v: string): boolean {
   const parts = v.split('.')
@@ -55,6 +56,15 @@ export function cidrIssue(v: string): string | undefined {
   return undefined
 }
 
+/** The scanner skips segments with more usable addresses than this (a /20). */
+export const maxScannable = 4096
+
+/** Whether an address is a usable host in the network: not its network or broadcast address. */
+export function isHostAddress(ip: string, cidr: string): boolean {
+  const info = ipv4NetworkInfo(cidr)
+  return Boolean(info && isIPv4(ip) && ipToInt(ip) >= ipToInt(info.firstUsable) && ipToInt(ip) <= ipToInt(info.lastUsable))
+}
+
 /** Whether an IPv4 address is inside a CIDR network. */
 export function inNetwork(ip: string, cidr: string): boolean {
   const [address, prefix] = cidr.split('/')
@@ -86,7 +96,7 @@ export const choose = (what: string) => z.string().min(1, `Choose ${what}.`)
 export const optionalInt = (label: string, min: number, max: number) => z.string().trim()
   .refine((v) => v === '' || (/^-?\d+$/.test(v) && Number(v) >= min && Number(v) <= max), `${label} must be a whole number from ${min} to ${max}.`)
 
-/** An optional YYYY-MM-DD that is today or later. */
-export const futureDate = (label: string) => z.string().refine((v) => v === '' || v >= new Date().toISOString().slice(0, 10), `${label} can't be in the past.`)
+/** An optional YYYY-MM-DD that is today or later, by the person's own calendar. */
+export const futureDate = (label: string) => z.string().refine((v) => v === '' || v >= isoDate(), `${label} can't be in the past.`)
 
 export const toInt = (v: string) => (v.trim() === '' ? null : Number(v))
