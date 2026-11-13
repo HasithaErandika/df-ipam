@@ -571,6 +571,26 @@ BEGIN
   END LOOP;
 END $$;
 
+-- 000014_lite_scan_accuracy.up.sql
+-- Scan accuracy and steadier scanning.
+
+-- When each host was last identified in full (mDNS, UPnP, ports), so a restart
+-- doesn't identify every host on the network again at once.
+ALTER TABLE sightings ADD COLUMN identified_at timestamptz;
+
+-- "Seen recently": answered within two scan intervals, at least 10 minutes.
+-- One definition for the alert rules, Discovery, segments and the dashboard.
+CREATE FUNCTION seen_window() RETURNS interval LANGUAGE sql STABLE AS $$
+  SELECT make_interval(mins => GREATEST(10, 2 * COALESCE(
+    (SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 10)))
+$$;
+REVOKE ALL ON FUNCTION seen_window() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION seen_window() TO dfipam_app;
+
+-- Monitored servers are checked every 5 minutes, not once a day: with three
+-- failures before Down, a daily check took three days to notice an outage.
+UPDATE settings SET value = '300' WHERE key = 'server_check.interval_seconds' AND value = '86400';
+
 -- Seed data
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Production', '#dc2626', 10, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('DR', '#9333ea', 20, 'critical', true, true) ON CONFLICT ((lower(name))) DO NOTHING;
@@ -579,7 +599,7 @@ INSERT INTO environments (name, colour, sort_order, default_severity, default_mo
 INSERT INTO environments (name, colour, sort_order, default_severity, default_monitor, default_critical) VALUES ('Test', '#64748b', 50, 'medium', false, false) ON CONFLICT ((lower(name))) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('scan.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('scan.method', '"ping"'::jsonb) ON CONFLICT (key) DO NOTHING;
-INSERT INTO settings (key, value) VALUES ('server_check.interval_seconds', '86400'::jsonb) ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('server_check.interval_seconds', '300'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('server_check.down_after_failures', '3'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('reservations.reminder_days', '7'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('email.enabled', 'false'::jsonb) ON CONFLICT (key) DO NOTHING;
@@ -588,6 +608,6 @@ INSERT INTO settings (key, value) VALUES ('fortigate.enabled', 'false'::jsonb) O
 INSERT INTO settings (key, value) VALUES ('fortigate.verify_tls', 'true'::jsonb) ON CONFLICT (key) DO NOTHING;
 INSERT INTO settings (key, value) VALUES ('fortigate.interval_minutes', '10'::jsonb) ON CONFLICT (key) DO NOTHING;
 
-INSERT INTO schema_migrations (version, dirty) VALUES (13, false);
+INSERT INTO schema_migrations (version, dirty) VALUES (14, false);
 
 COMMIT;

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"dfipam/api/internal/modules/monitoring"
@@ -83,7 +83,11 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 	}
 	// Evidence is kept for 90 days after a device was last seen. Phones that
 	// change their private MAC would otherwise leave rows behind forever.
+	// Closed alerts are kept for a year, for the Alert history report.
 	if _, err := s.conn.Exec(ctx, `DELETE FROM sightings WHERE last_seen < now() - interval '90 days'`); err != nil {
+		scanErrors = append(scanErrors, err)
+	}
+	if _, err := s.conn.Exec(ctx, `DELETE FROM alerts WHERE status = 'closed' AND closed_at < now() - interval '365 days'`); err != nil {
 		scanErrors = append(scanErrors, err)
 	}
 	return errors.Join(scanErrors...)
@@ -118,72 +122,37 @@ func scanHosts(network string) ([]netip.Addr, error) {
 	return hosts, nil
 }
 
-// scanSegment sweeps one segment. A manual scan identifies every host in full;
-// a scheduled one only those not identified in full lately (see fullEvery).
+// scanSegment sweeps one segment. A manual scan identifies hosts in full more
+// often than a scheduled one (see dueFull).
 func (s *Scanner) scanSegment(ctx context.Context, seg segment, manual bool) (int, error) {
 	hosts, err := scanHosts(seg.network)
 	if err != nil {
 		return 0, err
 	}
-	plan := probePlan{seg: seg, hostGateway: defaultGateway(), portSlots: make(chan struct{}, portSlots),
-		full: func(ip string) bool { return s.dueFull(seg, ip, manual) }}
-	results := make(chan sighting, 64)
-	jobs := make(chan netip.Addr)
-	ticker := time.NewTicker(10 * time.Millisecond) // At most 100 probes per second.
-	defer ticker.Stop()
-	var workers sync.WaitGroup
-	for range 32 {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for ip := range jobs {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-				}
-				if found, ok := identify(ctx, plan, ip); ok {
-					results <- found
-				}
-			}
-		}()
+	icmp, err := newPinger()
+	if err != nil {
+		return 0, err
 	}
-	go func() {
-		defer close(jobs)
-		for _, ip := range hosts {
-			select {
-			case <-ctx.Done():
-				return
-			case jobs <- ip:
-			}
-		}
-	}()
-	go func() { workers.Wait(); close(results) }()
-	found := make([]sighting, 0)
-	for item := range results {
-		found = append(found, item)
-	}
-	// Pinging filled the kernel's neighbour table; where the scanner shares the
-	// network with these hosts, it now knows their MACs.
-	arp, own := arpTable(), ownMACs()
-	for i := range found {
-		if mac, ok := arp[found[i].ip]; ok && found[i].mac == "" {
-			found[i].mac, found[i].source = mac, "arp"
-		} else if mac, ok := own[found[i].ip]; ok && found[i].mac == "" {
-			found[i].mac, found[i].source = mac, "arp"
-		}
-		// The maker named by the MAC's first half made the network card, which
-		// is often not the device's maker (an Intel Wi-Fi card in an ASUS laptop).
-		found[i].nicVendor = macVendor(found[i].mac)
-		if found[i].vendor == "" && found[i].full {
-			found[i].vendor = found[i].nicVendor // only when the device had its say
-		}
-	}
+	defer icmp.Close()
+	tcpTicker := time.NewTicker(tcpEvery)
+	defer tcpTicker.Stop()
+	var sendErrors atomic.Int64
+	var firstError atomic.Value
+	plan := probePlan{seg: seg, hostGateway: defaultGateway(), pinger: icmp, portSlots: make(chan struct{}, portSlots), tcpTick: tcpTicker.C,
+		due: func(ip string) bool { return s.dueFull(seg, ip, manual) }, done: func(ip string) { s.markFull(seg, ip) },
+		sendErrors: &sendErrors, firstError: &firstError}
+	found := sweep(ctx, plan, hosts)
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	if len(found) == 0 {
-		return 0, nil
+	found = addNeighbours(ctx, seg, hosts, found, arpTable(), ownMACs())
+	if len(found) > 0 {
+		if err := s.saveSightings(ctx, seg.id, found); err != nil {
+			return 0, err
+		}
 	}
-	return len(found), s.saveSightings(ctx, seg.id, found)
+	if n := sendErrors.Load(); n > 0 {
+		return len(found), fmt.Errorf("%d pings could not be sent (%v); the results may be incomplete", n, firstError.Load())
+	}
+	return len(found), nil
 }

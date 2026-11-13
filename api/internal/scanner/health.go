@@ -3,7 +3,6 @@ package scanner
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net"
 	"net/netip"
 	"strconv"
@@ -18,89 +17,93 @@ type monitoredIP struct {
 	port   sql.NullInt32
 }
 
+// checkAll checks every monitored address, 32 at a time, then records every
+// result in one update and evaluates the alert rules.
 func (s *Scanner) checkAll(ctx context.Context) error {
-	rows, err := s.conn.Query(ctx, `SELECT id::text,host(ip),check_port FROM ip_addresses WHERE monitor ORDER BY ip`)
+	targets, err := s.monitored(ctx)
+	if err != nil || len(targets) == 0 {
+		return err
+	}
+	icmp, err := newPinger()
 	if err != nil {
-		return err
-	}
-	var targets []monitoredIP
-	for rows.Next() {
-		var item monitoredIP
-		if err := rows.Scan(&item.id, &item.ip, &item.port); err != nil {
-			rows.Close()
-			return err
-		}
-		targets = append(targets, item)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	rows.Close()
-	jobs := make(chan monitoredIP)
-	var workers int
-	if len(targets) < 32 {
-		workers = len(targets)
+		icmp = nil // check ports only; isUp copes
 	} else {
-		workers = 32
+		defer icmp.Close()
 	}
+	ids, results := make([]string, len(targets)), make([]string, len(targets))
+	jobs := make(chan int)
 	var wg sync.WaitGroup
-	errs := make(chan error, len(targets))
-	for i := 0; i < workers; i++ {
+	for range min(len(targets), 32) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for item := range jobs {
-				if ctx.Err() != nil {
-					continue
-				}
-				up := isUp(ctx, item)
-				health := "down"
-				if up {
-					health = "up"
-				}
-				// A failed check only counts towards Down; the server is Down once it has
-				// failed the configured number of checks in a row (docs/new.md).
-				if _, err := s.conn.Exec(ctx, healthSQL, item.id, health); err != nil && ctx.Err() == nil {
-					errs <- err
+			for i := range jobs {
+				ids[i], results[i] = targets[i].id, "down"
+				if isUp(ctx, icmp, targets[i]) {
+					results[i] = "up"
 				}
 			}
 		}()
 	}
-	for _, item := range targets {
-		select {
-		case <-ctx.Done():
-			close(jobs)
-			wg.Wait()
-			return ctx.Err()
-		case jobs <- item:
+	for i := range targets {
+		if ctx.Err() != nil {
+			break
 		}
+		jobs <- i
 	}
 	close(jobs)
 	wg.Wait()
-	close(errs)
-	for err := range errs {
-		return fmt.Errorf("update monitored IP health: %w", err)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// A failed check only counts towards Down; the server is Down once it has
+	// failed the configured number of checks in a row.
+	if _, err := s.conn.Exec(ctx, healthSQL, ids, results); err != nil {
+		return err
 	}
 	return monitoring.New(s.conn).Evaluate(ctx)
 }
 
+func (s *Scanner) monitored(ctx context.Context) ([]monitoredIP, error) {
+	rows, err := s.conn.Query(ctx, `SELECT id::text, host(ip), check_port FROM ip_addresses WHERE monitor ORDER BY ip`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []monitoredIP
+	for rows.Next() {
+		var item monitoredIP
+		if err := rows.Scan(&item.id, &item.ip, &item.port); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// healthSQL records one check per address: $1 the IDs, $2 "up" or "down".
 const healthSQL = `WITH limits AS (
 	SELECT COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'server_check.down_after_failures'), 3) AS n
+), checks AS (
+	SELECT v.id::uuid AS id, v.result FROM unnest($1::text[], $2::text[]) AS v(id, result)
 ), next AS (
-	SELECT i.id, CASE WHEN $2 = 'up' THEN 0 ELSE i.server_check_failures + 1 END AS failures,
-		CASE WHEN $2 = 'up' THEN 'up' WHEN i.server_check_failures + 1 >= (SELECT n FROM limits) THEN 'down' ELSE i.health END AS health
-	FROM ip_addresses i WHERE i.id = $1::uuid
+	SELECT i.id, CASE WHEN c.result = 'up' THEN 0 ELSE i.server_check_failures + 1 END AS failures,
+		CASE WHEN c.result = 'up' THEN 'up' WHEN i.server_check_failures + 1 >= (SELECT n FROM limits) THEN 'down' ELSE i.health END AS health
+	FROM ip_addresses i JOIN checks c ON c.id = i.id
 )
 UPDATE ip_addresses i SET server_check_failures = next.failures, health = next.health,
 	health_changed_at = CASE WHEN i.health IS DISTINCT FROM next.health THEN now() ELSE i.health_changed_at END
 FROM next WHERE i.id = next.id`
 
-func isUp(ctx context.Context, item monitoredIP) bool {
+// isUp pings twice, so one lost packet isn't a failed check, then tries the
+// check port for servers that block ping.
+func isUp(ctx context.Context, icmp *pinger, item monitoredIP) bool {
 	ip, err := netip.ParseAddr(item.ip)
-	if err == nil {
-		if up, pingErr := ping(ctx, ip, 700*time.Millisecond); pingErr == nil && up {
-			return true
+	if err == nil && icmp != nil {
+		for range 2 {
+			if up, _, _ := icmp.ping(ctx, ip, 700*time.Millisecond); up {
+				return true
+			}
 		}
 	}
 	if !item.port.Valid {

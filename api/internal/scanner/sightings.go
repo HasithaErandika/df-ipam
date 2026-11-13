@@ -7,9 +7,15 @@ import (
 	"strings"
 )
 
+// isStatic reports an address outside the DHCP pool. A DHCP network with no
+// pool set can't tell, so nothing on it counts as static (and raises no
+// unregistered-static alerts) until the pool is set.
 func isStatic(seg segment, ip netip.Addr) bool {
-	if seg.kind == "server" || seg.dhcpStart == "" || seg.dhcpEnd == "" {
+	if seg.kind != "dhcp" {
 		return true
+	}
+	if seg.dhcpStart == "" || seg.dhcpEnd == "" {
+		return false
 	}
 	start, e1 := netip.ParseAddr(seg.dhcpStart)
 	end, e2 := netip.ParseAddr(seg.dhcpEnd)
@@ -17,11 +23,16 @@ func isStatic(seg segment, ip netip.Addr) bool {
 }
 
 func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []sighting) error {
+	if err := s.attachMACs(ctx, values); err != nil {
+		return err
+	}
 	n := len(values)
 	ips, macs, names, sources, vendors := make([]string, n), make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	nics, makers, models, kinds, systems := make([]string, n), make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	static, private, gateway, ports := make([]bool, n), make([]bool, n), make([]bool, n), make([]string, n)
+	full := make([]bool, n)
 	for i, v := range values {
+		full[i] = v.full
 		ips[i], macs[i], names[i], sources[i], static[i] = v.ip, strings.ToLower(v.mac), v.hostname, v.source, v.static
 		private[i], gateway[i], vendors[i] = isPrivateMAC(macs[i]), v.gateway, v.vendor
 		nics[i], makers[i], models[i], kinds[i], systems[i] = v.nicVendor, v.maker, v.model, v.kind, v.os
@@ -29,10 +40,11 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 	}
 	// A later scan that can't find a detail keeps the one found before.
 	_, err := s.conn.Exec(ctx, `INSERT INTO sightings(segment_id,ip,mac,hostname,source,is_static,is_private_mac,is_gateway,vendor,
-			nic_vendor,maker,model,device_kind,os_hint,open_ports,first_seen,last_seen)
-		SELECT $1::uuid,ip::inet,NULLIF(mac,'')::macaddr,name,source,static,private,gw,vendor,nic,maker,model,kind,os,COALESCE(NULLIF(ports,'')::integer[],'{}'),now(),now()
+			nic_vendor,maker,model,device_kind,os_hint,open_ports,identified_at,first_seen,last_seen)
+		SELECT $1::uuid,ip::inet,NULLIF(mac,'')::macaddr,name,source,static,private,gw,vendor,nic,maker,model,kind,os,COALESCE(NULLIF(ports,'')::integer[],'{}'),
+			CASE WHEN full THEN now() END,now(),now()
 		FROM unnest($2::text[],$3::text[],$4::text[],$5::text[],$6::boolean[],$7::boolean[],$8::boolean[],$9::text[],
-			$10::text[],$11::text[],$12::text[],$13::text[],$14::text[],$15::text[]) AS v(ip,mac,name,source,static,private,gw,vendor,nic,maker,model,kind,os,ports)
+			$10::text[],$11::text[],$12::text[],$13::text[],$14::text[],$15::text[],$16::boolean[]) AS v(ip,mac,name,source,static,private,gw,vendor,nic,maker,model,kind,os,ports,full)
 		ON CONFLICT (ip,mac) DO UPDATE SET segment_id=EXCLUDED.segment_id,
 			hostname=COALESCE(NULLIF(EXCLUDED.hostname,''),sightings.hostname),
 			vendor=COALESCE(NULLIF(EXCLUDED.vendor,''),sightings.vendor),
@@ -41,8 +53,9 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 			model=COALESCE(NULLIF(EXCLUDED.model,''),sightings.model),
 			device_kind=COALESCE(NULLIF(EXCLUDED.device_kind,''),sightings.device_kind),
 			os_hint=COALESCE(NULLIF(EXCLUDED.os_hint,''),sightings.os_hint),
+			identified_at=COALESCE(EXCLUDED.identified_at,sightings.identified_at),
 			source=EXCLUDED.source,is_static=EXCLUDED.is_static,is_private_mac=EXCLUDED.is_private_mac,is_gateway=EXCLUDED.is_gateway,last_seen=now()`,
-		segmentID, ips, macs, names, sources, static, private, gateway, vendors, nics, makers, models, kinds, systems, ports)
+		segmentID, ips, macs, names, sources, static, private, gateway, vendors, nics, makers, models, kinds, systems, ports, full)
 	if err != nil {
 		return err
 	}
@@ -58,6 +71,45 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 	_, err = s.conn.Exec(ctx, `DELETE FROM sightings o USING unnest($1::text[], $2::text[]) AS v(ip, mac)
 		WHERE v.mac <> '' AND o.mac IS NULL AND o.ip = v.ip::inet`, ips, macs)
 	return err
+}
+
+// attachMACs gives a sighting with no MAC the MAC last seen at its address
+// within a day. NetBIOS sometimes misses its reply on a routed network; the
+// host is the same one, so it shouldn't be listed again without its MAC.
+func (s *Scanner) attachMACs(ctx context.Context, values []sighting) error {
+	var bare []string
+	for _, v := range values {
+		if v.mac == "" {
+			bare = append(bare, v.ip)
+		}
+	}
+	if len(bare) == 0 {
+		return nil
+	}
+	rows, err := s.conn.Query(ctx, `SELECT DISTINCT ON (ip) host(ip), mac::text FROM sightings
+		WHERE ip = ANY($1::inet[]) AND mac IS NOT NULL AND last_seen > now() - interval '1 day' ORDER BY ip, last_seen DESC`, bare)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	known := map[string]string{}
+	for rows.Next() {
+		var ip, mac string
+		if err := rows.Scan(&ip, &mac); err != nil {
+			return err
+		}
+		known[ip] = mac
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range values {
+		if mac, ok := known[values[i].ip]; ok && values[i].mac == "" {
+			values[i].mac = mac
+			values[i].nicVendor = macVendor(mac)
+		}
+	}
+	return nil
 }
 
 // isPrivateMAC reports a locally administered address, as phones and laptops use

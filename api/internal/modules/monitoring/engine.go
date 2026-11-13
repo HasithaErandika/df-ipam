@@ -30,7 +30,16 @@ type candidate struct {
 	typeName, severity, segmentID, ipID, deviceID, ip, mac, message string
 }
 
-func (c candidate) key() string { return fmt.Sprintf("%s:%s:%s", c.typeName, c.ip, c.mac) }
+// deviceAlerts are about a MAC, wherever it is: a device that DHCP moves to
+// another address keeps its one alert instead of raising a new one.
+var deviceAlerts = map[string]bool{"unknown_device": true, "rejected_device": true, "private_mac_device": true}
+
+func (c candidate) key() string {
+	if deviceAlerts[c.typeName] && c.mac != "" {
+		return c.typeName + ":" + c.mac
+	}
+	return fmt.Sprintf("%s:%s:%s", c.typeName, c.ip, c.mac)
+}
 
 func (c candidate) notifies() bool { return c.severity == "high" || c.severity == "critical" }
 
@@ -46,25 +55,55 @@ func (e *Engine) Evaluate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		keys := make([]string, 0, len(found))
-		var fresh []candidate
-		for _, x := range found {
-			keys = append(keys, x.key())
-			var inserted, flapping bool
-			if err := tx.QueryRow(ctx, upsertSQL, x.typeName, x.severity, x.segmentID, x.ipID, x.deviceID, x.ip, x.mac,
-				x.message, x.key()).Scan(&inserted, &flapping); err != nil {
-				return err
-			}
-			if inserted && !flapping {
-				fresh = append(fresh, x)
-			}
+		fresh, err := upsert(ctx, tx, found)
+		if err != nil {
+			return err
 		}
 		if err := announce(ctx, tx, fresh); err != nil {
 			return err
 		}
+		keys := make([]string, len(found))
+		for i, x := range found {
+			keys[i] = x.key()
+		}
 		_, err = tx.Exec(ctx, closeSQL, keys)
 		return err
 	})
+}
+
+// upsert opens or refreshes every alert in one statement and returns the new
+// ones that should be announced, in the rules' order.
+func upsert(ctx context.Context, tx pgx.Tx, found []candidate) ([]candidate, error) {
+	cols := make([][]string, 9)
+	for _, x := range found {
+		for i, v := range []string{x.typeName, x.severity, x.segmentID, x.ipID, x.deviceID, x.ip, x.mac, x.message, x.key()} {
+			cols[i] = append(cols[i], v)
+		}
+	}
+	rows, err := tx.Query(ctx, upsertSQL, cols[0], cols[1], cols[2], cols[3], cols[4], cols[5], cols[6], cols[7], cols[8])
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	announce := map[string]bool{}
+	for rows.Next() {
+		var key string
+		var inserted, flapping bool
+		if err := rows.Scan(&key, &inserted, &flapping); err != nil {
+			return nil, err
+		}
+		announce[key] = inserted && !flapping
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var fresh []candidate
+	for _, x := range found {
+		if announce[x.key()] {
+			fresh = append(fresh, x)
+		}
+	}
+	return fresh, nil
 }
 
 func candidates(ctx context.Context, tx pgx.Tx) ([]candidate, error) {

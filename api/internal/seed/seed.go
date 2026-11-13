@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Environment is a default server environment from docs/new.md.
+// Environment is a default server environment from docs/product/register.md.
 type Environment struct {
 	Name, Colour, Severity string
 	Monitor, Critical      bool
@@ -28,7 +28,7 @@ var Environments = []Environment{
 var Settings = []struct{ Key, Value string }{
 	{"scan.interval_minutes", "10"},
 	{"scan.method", `"ping"`},
-	{"server_check.interval_seconds", "86400"},
+	{"server_check.interval_seconds", "300"},
 	{"server_check.down_after_failures", "3"},
 	{"reservations.reminder_days", "7"},
 	{"email.enabled", "false"}, // email stays off until an Admin turns it on in Settings
@@ -36,6 +36,18 @@ var Settings = []struct{ Key, Value string }{
 	{"fortigate.enabled", "false"}, // optional, read-only; set up in Settings > Integrations
 	{"fortigate.verify_tls", "true"},
 	{"fortigate.interval_minutes", "10"},
+}
+
+// Default is a setting's starting value, as JSON, or "" when the seed has none.
+// The Settings screen shows it while the setting has no row, so what people
+// see always matches what the system uses.
+func Default(key string) string {
+	for _, s := range Settings {
+		if s.Key == key {
+			return s.Value
+		}
+	}
+	return ""
 }
 
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }

@@ -50,9 +50,9 @@ func (h *Handler) status(c *gin.Context) {
 		httpx.Fail(c, errUnavailable)
 		return
 	}
-	out := statusDTO{Status: h.scan.Snapshot(), Method: "ping", IntervalMinutes: 5}
+	out := statusDTO{Status: h.scan.Snapshot(), Method: "ping", IntervalMinutes: int(scanner.DefaultScanInterval.Minutes())}
 	_ = h.conn.QueryRow(c, `SELECT COALESCE((SELECT value #>> '{}' FROM settings WHERE key = 'scan.method'), 'ping'),
-		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 5)`).Scan(&out.Method, &out.IntervalMinutes)
+		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), $1)`, out.IntervalMinutes).Scan(&out.Method, &out.IntervalMinutes)
 	httpx.OK(c, http.StatusOK, out)
 }
 

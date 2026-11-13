@@ -1,15 +1,16 @@
 package monitoring
 
-// candidatesSQL lists every alert cause that is true right now (docs/new.md, section 5).
-// "Recent" follows the scan interval, so alerts don't close between two slow scans.
+// candidatesSQL lists every alert cause that is true right now (docs/product/alerts.md).
+// "Recent" is seen_window(): two scan intervals, so alerts don't close between two slow scans.
+// An address in a DHCP pool is a conflict only when two MACs answered within five
+// minutes (one scan): DHCP often gives an address to another device within the window.
 // Private (randomised) MACs never count as unknown devices. A segment's gateway
 // (set on the segment, or detected) is infrastructure: it never counts as an
 // unregistered static or unknown server address.
 const candidatesSQL = `
-WITH win AS (
- SELECT make_interval(mins => GREATEST(10, 2 * COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 5))) AS w
-), recent AS (
+WITH recent AS (
  SELECT si.*, sg.kind, sg.name AS segment_name, sg.alert_private_macs,
+        max(si.last_seen) FILTER (WHERE si.mac IS NOT NULL) OVER (PARTITION BY si.ip) AS ip_latest,
         (si.is_gateway OR si.ip IS NOT DISTINCT FROM sg.gateway) AS gateway_ip, COALESCE(env.name, '') AS environment_name,
         COALESCE(env.default_severity, 'medium') AS environment_severity, dev.id AS device_id, dev.status AS device_status,
         ipr.id AS register_id, ipr.status AS register_status, ipr.expected_mac, ipr.critical, ipr.assigned_name
@@ -17,7 +18,7 @@ WITH win AS (
  LEFT JOIN devices dev ON dev.mac = si.mac
  LEFT JOIN ip_addresses ipr ON ipr.ip = si.ip
  LEFT JOIN environments env ON env.id = COALESCE(ipr.environment_id, sg.default_environment_id)
- WHERE si.last_seen > now() - (SELECT w FROM win)
+ WHERE si.last_seen > now() - (SELECT seen_window())
 ), rules AS (
  SELECT CASE WHEN r.device_status = 'rejected' THEN 'rejected_device' ELSE 'unknown_device' END AS typ,
         CASE WHEN r.device_status = 'rejected' OR r.kind IN ('server', 'cloud') THEN 'high' ELSE 'medium' END AS severity,
@@ -51,7 +52,8 @@ WITH win AS (
  UNION ALL
  SELECT 'ip_conflict', 'high', (array_agg(segment_id))[1], NULL::uuid, NULL::uuid, host(ip), NULL::text,
         'IP conflict: ' || host(ip) || ' was seen with ' || count(DISTINCT mac) || ' MAC addresses'
- FROM recent WHERE mac IS NOT NULL GROUP BY ip HAVING count(DISTINCT mac) > 1
+ FROM recent WHERE mac IS NOT NULL AND (is_static OR last_seen > ip_latest - interval '5 minutes')
+ GROUP BY ip HAVING count(DISTINCT mac) > 1
  UNION ALL
  SELECT 'server_mac_changed', CASE WHEN r.critical THEN 'critical' ELSE r.environment_severity END, r.segment_id, r.register_id, r.device_id,
         host(r.ip), r.mac::text, 'Server ' || COALESCE(NULLIF(r.assigned_name, ''), host(r.ip)) || ' answered with MAC ' || r.mac || ' instead of ' || r.expected_mac
@@ -77,22 +79,30 @@ const pendingDevicesSQL = `INSERT INTO devices (mac, status, first_seen, last_se
 	ON CONFLICT (mac) DO UPDATE SET first_seen = COALESCE(devices.first_seen, EXCLUDED.first_seen),
 		last_seen = GREATEST(COALESCE(devices.last_seen, EXCLUDED.last_seen), EXCLUDED.last_seen)`
 
-// upsertSQL opens an alert, or refreshes the open one for the same cause. It reports
-// whether it is new, and whether the same cause closed within the last hour: a
-// flapping cause reopens quietly instead of notifying again.
+// upsertSQL opens alerts, or refreshes the open one for the same cause, in one
+// statement. Per key it reports whether it is new, and whether the same cause closed
+// within the last hour: a flapping cause reopens quietly instead of notifying again.
+// A device alert follows its MAC, so its address and segment are refreshed.
 const upsertSQL = `INSERT INTO alerts (alert_type, severity, segment_id, ip_address_id, device_id, ip, mac, message, dedupe_key)
-	VALUES ($1, $2, NULLIF($3, '')::uuid, NULLIF($4, '')::uuid, NULLIF($5, '')::uuid, NULLIF($6, '')::inet, NULLIF($7, '')::macaddr, $8, $9)
-	ON CONFLICT (dedupe_key) WHERE status <> 'closed' DO UPDATE SET last_seen_at = now(), message = EXCLUDED.message, severity = EXCLUDED.severity
-	RETURNING (xmax = 0), EXISTS (SELECT 1 FROM alerts a WHERE a.dedupe_key = $9 AND a.status = 'closed' AND a.closed_at > now() - interval '1 hour')`
+	SELECT typ, sev, NULLIF(seg, '')::uuid, NULLIF(ipid, '')::uuid, NULLIF(dev, '')::uuid, NULLIF(ip, '')::inet, NULLIF(mac, '')::macaddr, msg, key
+	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[])
+		AS v(typ, sev, seg, ipid, dev, ip, mac, msg, key)
+	ON CONFLICT (dedupe_key) WHERE status <> 'closed' DO UPDATE SET last_seen_at = now(), message = EXCLUDED.message,
+		severity = EXCLUDED.severity, ip = EXCLUDED.ip, segment_id = EXCLUDED.segment_id,
+		ip_address_id = EXCLUDED.ip_address_id, device_id = EXCLUDED.device_id
+	RETURNING dedupe_key, (xmax = 0), EXISTS (SELECT 1 FROM alerts a WHERE a.dedupe_key = alerts.dedupe_key
+		AND a.status = 'closed' AND a.closed_at > now() - interval '1 hour')`
 
-// closeSQL closes alerts whose cause is gone, and tells Admins when a server is back.
+// closeSQL closes alerts whose cause is gone, and tells those who handle alerts when a
+// server is back: only when it is still monitored and answering, not when it was
+// released or its monitoring turned off.
 const closeSQL = `WITH closed AS (
 	UPDATE alerts SET status = 'closed', closed_at = now() WHERE status <> 'closed' AND NOT (dedupe_key = ANY($1::text[]))
 	RETURNING alert_type, ip
 ) INSERT INTO notifications (user_id, kind, message, link, email_status)
 SELECT u.id, 'server_up', 'Server ' || COALESCE(NULLIF(i.assigned_name, ''), host(closed.ip)) || ' (' || host(closed.ip) || ') is back up', '/servers',
 	CASE WHEN COALESCE(p.email, true) THEN 'pending' ELSE 'none' END
-FROM closed LEFT JOIN ip_addresses i ON i.ip = closed.ip CROSS JOIN users u
+FROM closed JOIN ip_addresses i ON i.ip = closed.ip AND i.monitor AND i.health = 'up' CROSS JOIN users u
 LEFT JOIN notification_preferences p ON p.user_id = u.id AND p.kind = 'server_up'
 WHERE closed.alert_type = 'server_down' AND u.is_active
 	AND EXISTS (SELECT 1 FROM roles r WHERE r.key = u.role AND (r.full_access OR 'alerts:manage' = ANY(r.permissions)))`

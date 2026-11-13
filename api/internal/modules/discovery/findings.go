@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ type findingDTO struct {
 	PortsChecked   bool      `db:"ports_checked" json:"portsChecked"`
 	Platform       string    `db:"platform" json:"platform"`
 	OpenAlerts     int64     `db:"open_alerts" json:"openAlerts"`
+	Rank           int64     `db:"rn" json:"-"`
 }
 
 const findingFrom = ` FROM sightings v
@@ -63,14 +65,20 @@ const findingColumns = `SELECT v.id::text AS id, host(v.ip) AS ip, v.mac::text A
 	COALESCE(NULLIF(i.owner, ''), NULLIF(d.owner, '')) AS owner,
 	v.nic_vendor, v.maker, v.model, v.device_kind, v.os_hint, v.open_ports, COALESCE(s.check_ports, false) AS ports_checked,
 	COALESCE(` + known + `, false) AS known,
-	CASE WHEN i.id IS NULL THEN (SELECT host(r.ip) FROM ip_addresses r WHERE r.ip <> v.ip AND (r.expected_mac = v.mac OR r.device_id = d.id) ORDER BY r.ip LIMIT 1) END AS home_ip,
-	CASE WHEN i.id IS NULL THEN (SELECT rs.name FROM ip_addresses r JOIN segments rs ON rs.id = r.segment_id
-		WHERE r.ip <> v.ip AND (r.expected_mac = v.mac OR r.device_id = d.id) ORDER BY r.ip LIMIT 1) END AS home_segment,
-	COALESCE(NULLIF(i.platform, ''), d.platform, '') AS platform,
-	(SELECT count(*) FROM alerts a WHERE a.ip = v.ip AND a.status <> 'closed') AS open_alerts`
+	COALESCE(NULLIF(i.platform, ''), d.platform, '') AS platform`
+
+// findingPage adds, to one page of rows that is already sorted and cut, the
+// device's own register entry elsewhere and the open alert count: looked up for
+// the rows shown only, not for every row that matches.
+const findingPage = `SELECT page.*, home.ip AS home_ip, home.segment AS home_segment, COALESCE(al.n, 0) AS open_alerts FROM page
+	LEFT JOIN LATERAL (SELECT host(r.ip) AS ip, rs.name AS segment FROM ip_addresses r JOIN segments rs ON rs.id = r.segment_id
+		WHERE page.register_id IS NULL AND r.ip <> page.ip::inet
+		  AND (r.expected_mac = page.mac::macaddr OR r.device_id = page.device_id::uuid) ORDER BY r.ip LIMIT 1) home ON true
+	LEFT JOIN LATERAL (SELECT count(*) AS n FROM alerts a WHERE a.ip = page.ip::inet AND a.status <> 'closed') al ON true
+	ORDER BY page.rn`
 
 // recent is "answered within two scan intervals", the same window the alert rules use.
-const recent = `make_interval(mins => GREATEST(10, 2 * COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 10)))`
+const recent = db.SeenWindow
 
 // Finding kinds a person can filter by. Each is a constant condition.
 var kinds = map[string]string{
@@ -110,6 +118,10 @@ var findingSorts = map[string]string{"ip": "v.ip", "lastSeen": "v.last_seen", "f
 func findingFilter(c *gin.Context) (db.Where, error) {
 	var w db.Where
 	var v validate.V
+	if id := c.Query("id"); id != "" {
+		v.UUID("id", id, true, "a finding")
+		w.Add("v.id = ?::uuid", id)
+	}
 	if id := c.Query("segmentId"); id != "" {
 		v.UUID("segmentId", id, true, "a segment")
 		w.Add("v.segment_id = ?::uuid", id)
@@ -159,9 +171,16 @@ func (h *Handler) findings(c *gin.Context) {
 		return
 	}
 	page := httpx.ParsePage(c)
-	order := httpx.Sort(c, findingSorts, "v.last_seen DESC")
-	items, total, err := db.ListPage[findingDTO](c, h.conn, findingColumns+findingFrom+w.SQL()+" ORDER BY "+order+", v.ip, v.id",
-		"SELECT count(*)"+findingFrom+w.SQL(), w.Args, page)
+	order := httpx.Sort(c, findingSorts, "v.last_seen DESC") + ", v.ip, v.id"
+	var total int64
+	if err := h.conn.QueryRow(c, "SELECT count(*)"+findingFrom+w.SQL(), w.Args...).Scan(&total); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	n := len(w.Args)
+	query := fmt.Sprintf("WITH page AS (%s, row_number() OVER (ORDER BY %s) AS rn%s%s ORDER BY %s LIMIT $%d OFFSET $%d) %s",
+		findingColumns, order, findingFrom, w.SQL(), order, n+1, n+2, findingPage)
+	items, err := db.All[findingDTO](c, h.conn, query, append(append([]any{}, w.Args...), page.Size, page.Offset())...)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

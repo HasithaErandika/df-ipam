@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,21 +13,38 @@ import (
 // change, so in between a scan only pings, reads ARP and asks DNS and NetBIOS.
 const fullEvery = 6 * time.Hour
 
-// probePlan is what one scan of a segment asks each answering host.
+// probePlan is what one scan of a segment asks each address.
 type probePlan struct {
 	seg         segment
 	hostGateway string
+	pinger      *pinger
 	portSlots   chan struct{}
-	full        func(ip string) bool // whether this host is due a full identification
+	tcpTick     <-chan time.Time // paces every TCP connection attempt in the scan
+	due         func(ip string) bool
+	done        func(ip string)
+	sendErrors  *atomic.Int64
+	firstError  *atomic.Value
 }
 
-// identify pings one host and, if it answers, asks it who it is: reverse DNS and
-// NetBIOS every time; mDNS (name, then model), SSDP/UPnP (maker, model, kind)
-// and common ports when it is due. Every question goes to that host only and
-// changes nothing on it.
+// identify finds out whether one address is in use and, if so, asks it who it
+// is: reverse DNS and NetBIOS every time; mDNS (name, then model), SSDP/UPnP
+// (maker, model, kind) and common ports when it is due. Every question goes to
+// that host only and changes nothing on it.
 func identify(ctx context.Context, p probePlan, ip netip.Addr) (sighting, bool) {
-	alive, ttl, err := pingTTL(ctx, ip, 700*time.Millisecond)
-	if err != nil || !alive {
+	alive, ttl, err := p.pinger.ping(ctx, ip, 700*time.Millisecond)
+	if err != nil {
+		p.sendFailed(err)
+	}
+	var mac, nbName string
+	nbDone := false
+	if !alive {
+		// Windows blocks ping by default, and so do many servers. NetBIOS and a
+		// few TCP ports find them; a refused connection still proves a host.
+		mac, nbName, _ = netbiosStatus(ctx, ip)
+		nbDone = true
+		alive = mac != "" || nbName != "" || answersTCP(ctx, p, ip)
+	}
+	if !alive {
 		return sighting{}, false
 	}
 	name, _ := reverseName(ctx, ip)
@@ -34,7 +52,9 @@ func identify(ctx context.Context, p probePlan, ip netip.Addr) (sighting, bool) 
 	if strings.HasPrefix(name, "_") || name == "localhost" {
 		name = "" // synthetic names from the local resolver, such as _gateway
 	}
-	mac, nbName, _ := netbiosStatus(ctx, ip) // also the MAC on routed networks, so every time
+	if !nbDone {
+		mac, nbName, _ = netbiosStatus(ctx, ip) // also the MAC on routed networks, so every time
+	}
 	if name == "" {
 		name = nbName
 	}
@@ -43,18 +63,31 @@ func identify(ctx context.Context, p probePlan, ip netip.Addr) (sighting, bool) 
 		source = "netbios"
 	}
 	out := sighting{ip: ip.String(), mac: mac, hostname: name, source: source, static: isStatic(p.seg, ip), gateway: gateway, os: osFromTTL(ttl)}
-	if p.full(out.ip) {
+	if p.due(out.ip) {
 		out.full = true
 		deepIdentify(ctx, p, ip, &out)
+		if ctx.Err() == nil {
+			p.done(out.ip) // only a finished identification waits fullEvery
+		}
 	}
 	return out, true
 }
 
+func (p probePlan) sendFailed(err error) {
+	if p.sendErrors.Add(1) == 1 {
+		p.firstError.Store(err.Error())
+	}
+}
+
 // deepIdentify adds what a device says about itself, and its open ports.
 func deepIdentify(ctx context.Context, p probePlan, ip netip.Addr, out *sighting) {
-	if out.hostname == "" {
-		out.hostname = mdnsName(ctx, ip)
-		out.model = mdnsModel(ctx, ip, out.hostname)
+	// Asked even when DNS gave a name: the mDNS name is what the device-info
+	// record (an Apple device's model) is published under.
+	if local := mdnsName(ctx, ip); local != "" {
+		if out.hostname == "" {
+			out.hostname = local
+		}
+		out.model = mdnsModel(ctx, ip, local)
 	}
 	upnp := ssdpDescribe(ctx, ip)
 	if out.hostname == "" {
@@ -65,6 +98,6 @@ func deepIdentify(ctx context.Context, p probePlan, ip netip.Addr, out *sighting
 	}
 	out.vendor, out.maker, out.kind = upnp.Describe(), upnp.Maker, upnp.Kind
 	if p.seg.checkPorts {
-		out.ports, out.portsChecked = openPorts(ctx, ip, p.portSlots), true
+		out.ports, out.portsChecked = openPorts(ctx, ip, p.portSlots, p.tcpTick), true
 	}
 }

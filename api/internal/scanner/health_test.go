@@ -27,28 +27,21 @@ func TestIsUpUsesTheCheckPort(t *testing.T) {
 			_ = c.Close()
 		}
 	}()
+	icmp, _ := newPinger()
+	if icmp != nil {
+		defer icmp.Close()
+	}
 	// 192.0.2.1 is reserved for documentation, so ping never answers there.
-	if isUp(context.Background(), monitoredIP{ip: "192.0.2.1", port: sql.NullInt32{Int32: int32(port), Valid: true}}) {
+	if isUp(context.Background(), icmp, monitoredIP{ip: "192.0.2.1", port: sql.NullInt32{Int32: int32(port), Valid: true}}) {
 		t.Fatal("an address that answers nothing was reported Up")
 	}
-	if !isUp(context.Background(), monitoredIP{ip: "127.0.0.1", port: sql.NullInt32{Int32: int32(port), Valid: true}}) {
+	if !isUp(context.Background(), icmp, monitoredIP{ip: "127.0.0.1", port: sql.NullInt32{Int32: int32(port), Valid: true}}) {
 		t.Fatal("a listening check port was reported Down")
 	}
 	_ = ln.Close()
-	if isUp(context.Background(), monitoredIP{ip: "127.0.0.1", port: sql.NullInt32{Int32: int32(port), Valid: true}}) && !pingWorks() {
+	if isUp(context.Background(), icmp, monitoredIP{ip: "127.0.0.1", port: sql.NullInt32{Int32: int32(port), Valid: true}}) && icmp == nil {
 		t.Fatal("a closed port was reported Up")
 	}
-}
-
-// pingWorks says whether this machine may send ICMP, which decides whether
-// 127.0.0.1 answers ping in the test above.
-func pingWorks() bool {
-	conn, _, err := openICMP()
-	if err != nil {
-		return false
-	}
-	_ = conn.Close()
-	return true
 }
 
 // Down only after the configured failures in a row; one success is Up again.
@@ -80,7 +73,7 @@ func TestHealthNeedsFailuresInARow(t *testing.T) {
 	}
 	step := func(result, want string, failures int) {
 		t.Helper()
-		if _, err := tx.Exec(ctx, healthSQL, id, result); err != nil {
+		if _, err := tx.Exec(ctx, healthSQL, []string{id}, []string{result}); err != nil {
 			t.Fatal(err)
 		}
 		var health string
