@@ -25,11 +25,16 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 - Alerts and server health are written in one statement each, not one per row. Discovery looks up home entries and alert counts for the shown page only. The segment list counts in one pass. "Seen recently" has one definition, `seen_window()`.
 
 **Validation and screens**
-- Gateways and DHCP pools must use host addresses, and the gateway must sit outside the pool (form and API). The form warns when a segment is too large to scan, and segment cards say so first.
+- Gateways and DHCP pools must use host addresses, not the network or broadcast address (form and API). A gateway inside the pool is allowed, with a note in the form, since many DHCP servers lease the whole range and exclude their own address. The form warns when a segment is too large to scan, and segment cards say so first.
 - Dates are checked against the person's own calendar day.
 - Discovery: a details link opens whatever page or filter is showing, the list pauses while a dialog is open, "Not answering · last seen …" replaces "Unavailable since …", and the default sort is labelled "Last seen, newest".
 - The dashboard's network tiles and "All segments" open Discovery › Segments, filtered to that type.
 - The side panel shows the version and build, without the build date.
+- Device icons come from the evidence in order of reliability: what a person recorded, the router mark for a gateway, what the device says it is, its model, DHCP vendor class or name, its open ports, a specific ping TTL (128 Windows, 255 network gear), then its maker. A TTL of 64 no longer shows Android, and the network card's maker is never used.
+- Discovery colours what needs attention: red for open alerts and rejected devices, orange for unknown devices and addresses that should be in the register. An approved device on a DHCP pool address stays plain.
+- Devices found in a segment become pending, and raise their alerts, as soon as that segment is scanned, not after the whole sweep.
+- The Platform field in the approve, device and register forms is a menu with each platform's mark instead of a native list, which some browsers closed or couldn't scroll inside a dialog.
+- The header shows the signed-in person's name from their work email (hasitha.wickramasinghe@… shows as Hasitha Wickramasinghe), with their initials in the avatar.
 
 **Sign-in: Supabase removed**
 - Supabase is gone: its sign-in, bearer tokens, admin client, SQL bundle (`make sql`, `api/sql/`), test targets, settings and the `@supabase/supabase-js` package. PostgreSQL in Docker is the only database, and the API's session cookie is the only way a request is signed in.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { daysUntil, endOfDayDate, formatAgo, formatDate, level, pageWindow, segmentCaption } from './format'
+import { daysUntil, endOfDayDate, formatAgo, formatDate, initialsFromEmail, level, nameFromEmail, pageWindow, segmentCaption } from './format'
 
 describe('level', () => {
   it('grades a percentage', () => {
@@ -41,5 +41,16 @@ describe('segmentCaption', () => {
   it('joins the parts that are set', () => {
     expect(segmentCaption({ floor: 4, vlan: 40, network: '192.168.4.0/24' })).toBe('Floor 4 · VLAN 40 · 192.168.4.0/24')
     expect(segmentCaption({ floor: null, vlan: null, network: '172.16.10.0/24' })).toBe('172.16.10.0/24')
+  })
+})
+
+describe('names from email', () => {
+  it('turns the part before @ into a capitalised name', () => {
+    expect(nameFromEmail('hasitha.wickramasinghe@dialogfinance.lk')).toBe('Hasitha Wickramasinghe')
+    expect(nameFromEmail('NIMAL@dialogfinance.lk')).toBe('Nimal')
+  })
+  it('makes initials from the first two names', () => {
+    expect(initialsFromEmail('hasitha.wickramasinghe@dialogfinance.lk')).toBe('HW')
+    expect(initialsFromEmail('nimal@dialogfinance.lk')).toBe('NI')
   })
 })

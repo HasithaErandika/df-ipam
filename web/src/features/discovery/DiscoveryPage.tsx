@@ -14,7 +14,7 @@ import { ApproveDeviceModal, type DecisionTarget, useRejectDevice } from '../sha
 import { RegisterIPModal, type RegisterPrefill } from '../shared/RegisterIPModal'
 import { DiscoverySummary } from './DiscoverySummary'
 import { FindingDetails } from './FindingDetails'
-import { findingColumns } from './findingColumns'
+import { attentionRow, findingColumns } from './findingColumns'
 import { ScanStatusPanel, ScanSummary } from './ScanSummary'
 import { SegmentsOverview } from './SegmentsOverview'
 
@@ -78,7 +78,7 @@ function Findings() {
         ]} />
       </FilterBar>
       <DiscoverySummary segmentId={f.values.segmentId} seen={seen} kind={f.values.kind} onKind={setKind} />
-      <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
+      <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f} rowClassName={attentionRow}
         empty={seen === 'now'
           ? { title: 'Nothing connected right now', body: 'Devices appear here while they answer scans, and drop off when they leave. Choose 24 h or longer to see recent history, or start a scan.' }
           : { title: 'Nothing seen in this window', body: 'Try a longer time window, or start a scan.' }} />

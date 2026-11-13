@@ -25,6 +25,8 @@ Every question goes to one host's own address and changes nothing on it.
 - **A sighting without a MAC** (NetBIOS missed its reply) is joined to the MAC last seen at that address within a day, so the same host isn't listed twice.
 - **The computer name** is the NetBIOS workstation (0x00) or server (0x20) name, never another unique name such as a signed-in user's (0x03). A DNS name comes first when there is one.
 - **The network card's maker** comes from the MAC's first half, using a built-in copy of the IEEE register (`cmd/ouigen`). It is kept apart from the **device's** maker: an ASUS laptop with an Intel Wi-Fi card shows "ASUS" with "card: Intel". When the device says nothing, its maker is read from its name (ASUS-Q533MJ), and open ports sharpen the guess (RDP means Windows, 9100 means a printer).
+- **The icon** follows the most reliable evidence: what a person recorded, the router mark for a gateway, what the device says it is (printer, TV, camera, router), its model, DHCP vendor class or name, its open ports, a specific ping TTL (128 Windows, 255 network gear; 64 is shared by Linux, Android and Apple, so it picks nothing), then the device's maker. A guess shows faded, with its reason on hover.
+- **Colours:** red for open alerts and rejected devices; orange for unknown devices and addresses that should be in the register (static, on a server or cloud network, or used by an unapproved device). An approved device on a DHCP pool address stays plain.
 - **Platform** is set by people. Forms offer "Use likely platform" from the evidence but never fill it in by themselves.
 
 ## Keeping the network steady

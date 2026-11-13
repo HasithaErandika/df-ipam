@@ -4,7 +4,7 @@ import { ServiceIcons, WithPlatform } from '../../components/PlatformIcon'
 import { Badge, EnvironmentBadge, HealthBadge, none, RegisterBadge, RowMenu, SeenBadge, Stack, type Column } from '../../components/ui'
 import { ipTypes, label } from '../../lib/labels'
 import type { RegisterEntry } from '../../lib/types'
-import { deviceFacts, serviceName } from '../discovery/deviceInfo'
+import { deviceFacts, iconEvidence, serviceName } from '../discovery/deviceInfo'
 
 interface Actions { canEdit: boolean; onOpen: (r: RegisterEntry) => void; onEdit: (r: RegisterEntry) => void; onRelease: (r: RegisterEntry) => void }
 
@@ -54,7 +54,7 @@ export function serverColumns(a: Actions): Column<RegisterEntry>[] {
   return [
     { key: 'health', header: 'Status', cell: (r) => (r.monitor ? <HealthBadge health={r.health} since={r.healthChangedAt} /> : <span className="text-[12.5px] text-ink-3">Not monitored</span>) },
     { key: 'name', header: 'Server', cell: (r) => (
-      <WithPlatform platform={r.platform} type="server">
+      <WithPlatform evidence={iconEvidence(r)} type="server">
         {opener(a.onOpen, r, r.assignedName || r.deviceName || r.ip)}
         <div className="flex items-center gap-2"><span className="font-mono text-[12px] text-ink-3">{r.ip}</span><ServiceIcons list={r.services} /></div>
         {(r.owner || r.department) && <div className="truncate text-[11.5px] text-ink-3">{[r.owner, r.department].filter(Boolean).join(' · ')}</div>}
@@ -78,7 +78,7 @@ export function registerColumns(a: Actions): Column<RegisterEntry>[] {
   return [
     { key: 'ip', header: 'Address', cell: (r) => <Stack mono main={opener(a.onOpen, r, r.ip, true)} sub={<span className="font-sans">{segmentLink(r)}</span>} /> },
     { key: 'status', header: 'Register', cell: (r) => <RegisterBadge status={r.status} /> },
-    { key: 'name', header: 'Assigned to', cell: (r) => <WithPlatform platform={r.platform} type={r.ipType}><Stack main={r.assignedName || none} sub={label(ipTypes, r.ipType)} /></WithPlatform> },
+    { key: 'name', header: 'Assigned to', cell: (r) => <WithPlatform evidence={iconEvidence(r)} type={r.ipType}><Stack main={r.assignedName || none} sub={label(ipTypes, r.ipType)} /></WithPlatform> },
     { key: 'owner', header: 'Owner', hideBelow: 'lg', cell: (r) => <Stack main={r.owner || none} sub={r.department || undefined} /> },
     { key: 'env', header: 'Environment', hideBelow: 'md', cell: (r) => <EnvironmentBadge name={r.environmentName} colour={r.environmentColour} /> },
     { key: 'mac', header: 'Expected MAC', hideBelow: 'xl', cell: (r) => (r.expectedMac

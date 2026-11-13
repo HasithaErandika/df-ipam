@@ -40,10 +40,6 @@ const schema = z.object({
   host('gateway', 'Use a host address, not the network or broadcast address.')
   host('dhcpStart', "The pool can't start at the network address.")
   host('dhcpEnd', "The pool can't include the broadcast address.")
-  if (v.kind === 'dhcp' && isIPv4(v.gateway) && isIPv4(v.dhcpStart) && isIPv4(v.dhcpEnd)
-    && ipToInt(v.gateway) >= ipToInt(v.dhcpStart) && ipToInt(v.gateway) <= ipToInt(v.dhcpEnd)) {
-    ctx.addIssue({ code: 'custom', path: ['gateway'], message: 'The gateway is inside the DHCP pool. Use an address outside it, or narrow the pool.' })
-  }
 })
 type Values = z.infer<typeof schema>
 const fields = Object.keys(schema.shape)
@@ -118,7 +114,8 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
             <Field label="Network" htmlFor="sg-net" error={errors.network?.message} hint="IPv4, /16 to /30. Networks can't overlap.">
               <Input id="sg-net" className="font-mono" placeholder="192.168.4.0/24" {...register('network')} />
             </Field>
-            <Field label="Gateway (optional)" htmlFor="sg-gw" error={errors.gateway?.message}><Input id="sg-gw" className="font-mono" placeholder="192.168.4.1" {...register('gateway')} /></Field>
+            <Field label="Gateway (optional)" htmlFor="sg-gw" error={errors.gateway?.message}
+              hint={kind === 'dhcp' && gatewayInPool ? 'Inside the DHCP pool. Make sure the DHCP server excludes this address from its leases.' : undefined}><Input id="sg-gw" className="font-mono" placeholder="192.168.4.1" {...register('gateway')} /></Field>
             {kind !== 'cloud' && <Field label="Floor (optional)" htmlFor="sg-floor" error={errors.floor?.message}><Input id="sg-floor" inputMode="numeric" {...register('floor')} /></Field>}
             <Field label="VLAN (optional)" htmlFor="sg-vlan" error={errors.vlan?.message}><Input id="sg-vlan" inputMode="numeric" {...register('vlan')} /></Field>
           </div>

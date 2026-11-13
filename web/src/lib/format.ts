@@ -82,3 +82,16 @@ export function pageWindow(page: number, totalPages: number): (number | null)[] 
 export function segmentCaption(s: { floor: number | null; vlan: number | null; network: string }): string {
   return [s.floor !== null ? `Floor ${s.floor}` : null, s.vlan !== null ? `VLAN ${s.vlan}` : null, s.network].filter(Boolean).join(' · ')
 }
+
+/** A person's name from a work email: hasitha.wickramasinghe@… gives "Hasitha Wickramasinghe". */
+export function nameFromEmail(email: string): string {
+  const parts = email.split('@')[0].split('.').filter(Boolean)
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ') || email
+}
+
+/** Initials for an avatar: the first letter of the first two names (HW), or the first two letters of a single name. */
+export function initialsFromEmail(email: string): string {
+  const parts = email.split('@')[0].split('.').filter(Boolean)
+  const letters = parts.length > 1 ? (parts[0][0] ?? '') + (parts[1][0] ?? '') : (parts[0] ?? '').slice(0, 2)
+  return letters.toUpperCase() || '?'
+}

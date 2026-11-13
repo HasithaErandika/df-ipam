@@ -5,7 +5,29 @@ import { Button, DeviceBadge, GatewayBadge, none, PrivateMacBadge, RegisterBadge
 import { formatAgo, formatDateTime } from '../../lib/format'
 import { label, sources } from '../../lib/labels'
 import type { Finding } from '../../lib/types'
-import { deviceLine, networkCard, serviceName } from './deviceInfo'
+import { deviceLine, iconEvidence, networkCard, serviceName } from './deviceInfo'
+
+/** A MAC nobody has approved yet. Private MACs aren't devices to decide on. */
+export const isUnknown = (r: { mac: string | null; isPrivateMac?: boolean | null; deviceStatus: string | null }) =>
+  Boolean(r.mac) && !r.isPrivateMac && r.deviceStatus !== 'approved'
+
+/**
+ * An address that should be in the register but isn't: static, on a server or
+ * cloud network, or used by a device nobody approved. An approved device on a
+ * DHCP pool address is expected to be unregistered: its address changes.
+ */
+export function needsRegister(r: { registerId: string | null; isGateway: boolean; isStatic: boolean | null; segmentKind?: string | null; inPool?: boolean; deviceStatus: string | null; homeIp?: string | null }): boolean {
+  if (r.registerId || r.isGateway || r.homeIp) return false
+  const dhcpClient = (r.segmentKind ? r.segmentKind === 'dhcp' : r.inPool) && !r.isStatic
+  return !dhcpClient || r.deviceStatus !== 'approved'
+}
+
+/** Row colour in Discovery: red for open alerts or a rejected device, orange for an unknown device or a missing register entry. */
+export function attentionRow(r: Parameters<typeof needsRegister>[0] & { mac: string | null; isPrivateMac?: boolean | null; openAlerts?: number }): string | undefined {
+  if ((r.openAlerts ?? 0) > 0 || r.deviceStatus === 'rejected') return 'bg-danger-soft/50 [&>td:first-child]:shadow-[inset_3px_0_0_var(--color-danger)]'
+  if (isUnknown(r) || needsRegister(r)) return 'bg-warn-soft/50 [&>td:first-child]:shadow-[inset_3px_0_0_var(--color-warn)]'
+  return undefined
+}
 
 /** First discovered within the last hour: a device that just joined. */
 export const isNew = (firstSeen: string | null) => Boolean(firstSeen) && Date.now() - new Date(firstSeen!).getTime() < 3_600_000
@@ -22,7 +44,7 @@ export function RegisterCell({ r }: { r: Finding }) {
     return <Stack main={<StateBadge tone="accent" title={`Registered at ${r.homeIp} on ${r.homeSegment}`}>Registered elsewhere</StateBadge>}
       sub={<span>at <span className="font-mono">{r.homeIp}</span> · {r.homeSegment}</span>} />
   }
-  return <Stack main={<RegisterBadge status={r.registerStatus} />} sub={r.owner ? `Owner: ${r.owner}` : (r.assignedName ?? undefined)} />
+  return <Stack main={<RegisterBadge status={r.registerStatus} attention={needsRegister(r)} />} sub={r.owner ? `Owner: ${r.owner}` : (r.assignedName ?? undefined)} />
 }
 
 /** First seen, last seen, and how long it has been silent once it stops answering. */
@@ -43,7 +65,7 @@ function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void })
   const line = deviceLine(r)
   const card = networkCard(r)
   return (
-    <WithPlatform platform={r.platform} vendor={line} hostname={r.hostname || r.deviceName} gateway={r.isGateway}>
+    <WithPlatform evidence={iconEvidence(r)}>
       <div className="flex items-center gap-2 truncate text-ink">
         <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
           {r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}

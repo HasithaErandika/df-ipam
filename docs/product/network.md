@@ -20,7 +20,7 @@ Per segment, off by default:
 ### Rules
 
 - Networks are IPv4, `/16` to `/30`, written as their network address, and never overlap.
-- The gateway and the DHCP pool use host addresses: never the network or broadcast address. The gateway sits outside the pool.
+- The gateway and the DHCP pool use host addresses: never the network or broadcast address. The gateway may sit inside the pool, where the DHCP server leases the whole range and excludes its own address.
 - A segment can't be moved away from the register entries and reservations inside it, and only an empty segment can be deleted.
 - **A swept segment with more than 4,096 usable addresses (larger than a /20) is never scanned.** The form warns, and the segment card says "Too large to scan". Split it.
 - **A DHCP network without a pool** can't tell static from DHCP addresses, so nothing on it counts as static and it raises no unregistered-static alerts. Its card says "No DHCP pool set".

@@ -52,7 +52,7 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On ano
 
 `make test-db` checks these on a throwaway `dfipam_test` database.
 
-- Segment networks never overlap. A DHCP pool sits inside its network, and only `dhcp` segments have one. (The API also keeps the gateway and pool off the network and broadcast addresses, and the gateway outside the pool.)
+- Segment networks never overlap. A DHCP pool sits inside its network, and only `dhcp` segments have one. (The API also keeps the gateway and pool off the network and broadcast addresses.)
 - Register IPs and reservations sit inside their segment, and a segment can't be moved away from them.
 - One IP appears once in the register; one MAC once in devices.
 - A rejected request needs a reason; a decided request needs who decided and when.

@@ -27,7 +27,7 @@ const byHostname: [RegExp, string][] = [
 ]
 
 /** Device kinds read from UPnP descriptions, and makers read from the MAC or UPnP. Guesses only, never saved. */
-export const kinds: Record<string, string> = { tv: 'TV or media player', printer: 'Printer', router: 'Router', camera: 'Camera', media: 'Media server' }
+export const kinds: Record<string, string> = { tv: 'TV or media player', printer: 'Printer', router: 'Router', camera: 'Camera', media: 'Media server', network: 'Network device' }
 
 export const makers: Record<string, string> = {
   apple: 'Apple', samsung: 'Samsung', lg: 'LG', sony: 'Sony', xiaomi: 'Xiaomi', huawei: 'Huawei', dell: 'Dell', lenovo: 'Lenovo',
@@ -97,3 +97,57 @@ export const knownPlatform = (p: string | null | undefined) => (p && p in platfo
 
 /** A readable name for any platform, kind or maker code. */
 export const platformName = (code: string) => platforms[code] ?? kinds[code] ?? makers[code] ?? code
+
+/** Everything known about a device that can say what icon it gets. */
+export interface IconEvidence {
+  recorded?: string | null
+  gateway?: boolean
+  kind?: string | null
+  model?: string | null
+  dhcpClass?: string | null
+  hostname?: string | null
+  openPorts?: number[]
+  osHint?: string | null
+  maker?: string | null
+}
+
+/** An icon and why it was chosen. A guess shows faded, with its reason. */
+export interface IconChoice { code: string; guessed: boolean; reason: string }
+
+const first = (table: [RegExp, string][], value: string | null | undefined) => (value ? table.find(([re]) => re.test(value))?.[1] : undefined)
+
+/**
+ * The icon for a device, from the most reliable evidence down: what a person
+ * recorded; the gateway; what the device says it is; its model, DHCP vendor
+ * class or name; its open ports; the ping TTL where it is specific (128 is
+ * Windows, 255 network gear; 64 could be Linux, Android or Apple, so it picks
+ * nothing); then its maker. The network card's maker is never used: it names
+ * the card, not the device.
+ */
+export function deviceIcon(e: IconEvidence): IconChoice | null {
+  if (e.recorded) return { code: e.recorded, guessed: false, reason: platformName(e.recorded) }
+  if (e.gateway) return { code: 'router', guessed: false, reason: 'Gateway: the router for this network' }
+  const steps: [string | undefined, string][] = [
+    [first(byKind, e.kind), 'it says what it is'],
+    [first(byModel, e.model), 'its model'],
+    [first(byVendorClass, e.dhcpClass), 'its DHCP vendor class'],
+    [first(byHostname, e.hostname), 'its name'],
+    [portsIcon(e.openPorts), 'its open ports'],
+    [ttlIcon(e.osHint), 'its ping reply'],
+    [first(byMaker, e.maker) ?? makerFromName(e.hostname) ?? undefined, 'its maker'],
+  ]
+  for (const [code, from] of steps) if (code) return { code, guessed: true, reason: `Likely ${platformName(code)}, from ${from}` }
+  return null
+}
+
+function portsIcon(ports: number[] = []): string | undefined {
+  if (ports.some((p) => [9100, 515, 631].includes(p))) return 'printer'
+  if (ports.some((p) => [3389, 135, 5985].includes(p))) return 'windows'
+  return undefined
+}
+
+function ttlIcon(hint: string | null | undefined): string | undefined {
+  if (hint?.startsWith('Windows')) return 'windows'
+  if (hint?.startsWith('Network device')) return 'network'
+  return undefined
+}

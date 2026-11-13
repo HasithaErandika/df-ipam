@@ -4,7 +4,8 @@ import { WithPlatform } from '../../components/PlatformIcon'
 import { knownPlatform, likelyPlatform } from '../../lib/platforms'
 import type { SegmentAddress } from '../../lib/types'
 import type { RegisterPrefill } from '../shared/RegisterIPModal'
-import { Presence } from './findingColumns'
+import { iconEvidence } from './deviceInfo'
+import { attentionRow, needsRegister, Presence } from './findingColumns'
 
 const states = [
   { value: '', text: 'All' }, { value: 'unregistered', text: 'Not registered' }, { value: 'registered', text: 'Registered' },
@@ -18,9 +19,9 @@ export function SegmentAddresses({ segmentId, onRegister }: { segmentId: string;
   const recent = (iso: string | null) => Boolean(iso && Date.now() - new Date(iso).getTime() < 30 * 60_000)
   const columns: Column<SegmentAddress>[] = [
     { key: 'ip', header: 'Address', cell: (r) => <div className="flex items-center gap-2"><span className="font-mono text-[12.5px]">{r.ip}</span>{r.inPool && <Badge>DHCP pool</Badge>}</div> },
-    { key: 'register', header: 'Register', cell: (r) => <Stack main={<RegisterBadge status={r.registerStatus} />} sub={[r.assignedName, r.owner].filter(Boolean).join(' · ') || undefined} /> },
+    { key: 'register', header: 'Register', cell: (r) => <Stack main={<RegisterBadge status={r.registerStatus} attention={Boolean(r.mac || r.lastSeen) && needsRegister(r)} />} sub={[r.assignedName, r.owner].filter(Boolean).join(' · ') || undefined} /> },
     { key: 'device', header: 'Seen as', cell: (r) => (r.mac || r.hostname
-      ? <WithPlatform platform={r.platform} vendor={r.vendor} hostname={r.hostname ?? r.deviceName} gateway={r.isGateway}><div className="flex items-center gap-2 truncate">{r.deviceName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name</span>)}{r.isGateway && <GatewayBadge />}</div>
+      ? <WithPlatform evidence={iconEvidence({ ...r, nicVendor: '', source: r.source ?? '' })}><div className="flex items-center gap-2 truncate">{r.deviceName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name</span>)}{r.isGateway && <GatewayBadge />}</div>
         <div className="flex items-center gap-2 font-mono text-[11.5px] text-ink-3">{r.mac ?? ''}{r.isPrivateMac && <PrivateMacBadge />}</div></WithPlatform>
       : none) },
     { key: 'approval', header: 'Approval', hideBelow: 'lg', cell: (r) => (r.mac && !r.isPrivateMac ? <DeviceBadge status={r.deviceStatus} /> : none) },
@@ -34,7 +35,7 @@ export function SegmentAddresses({ segmentId, onRegister }: { segmentId: string;
       <FilterBar active={f.active} onClear={f.clear} end={<Segmented label="Show" value={f.values.state} onChange={(v) => f.set('state', v)} options={states} />}>
         <SearchInput value={f.values.q} onChange={(v) => f.set('q', v)} placeholder="Search IP, MAC, name" />
       </FilterBar>
-      <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.ip} meta={meta} paging={paging} filtered={f}
+      <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.ip} meta={meta} paging={paging} filtered={f} rowClassName={(r) => (r.lastSeen ? attentionRow(r) : undefined)}
         empty={{ title: 'No addresses yet', body: 'Addresses appear here once they are registered or seen by a scan.' }} />
     </Card>
   )

@@ -11,7 +11,7 @@ import { useCan } from '../../lib/session'
 import { useRouteTab } from '../../lib/tabs'
 import type { Device } from '../../lib/types'
 import { WithPlatform } from '../../components/PlatformIcon'
-import { deviceLine, networkCard, serviceName } from '../discovery/deviceInfo'
+import { deviceLine, iconEvidence, networkCard, serviceName } from '../discovery/deviceInfo'
 import { Presence } from '../discovery/findingColumns'
 import { useDialogParam } from '../../lib/dialogParam'
 import { DeviceDetails } from './DeviceDetails'
@@ -35,7 +35,7 @@ export function DevicesPage() {
 
   const columns: Column<Device>[] = [
     { key: 'device', header: 'Device', cell: (d) => (
-      <WithPlatform platform={d.platform} vendor={deviceLine(d)} hostname={d.hostname ?? d.name} type={d.deviceType}>
+      <WithPlatform evidence={iconEvidence(d)} type={d.deviceType}>
         <button type="button" onClick={() => setOpen(d.id)} title="Show details" className="block max-w-full cursor-pointer truncate text-left font-medium text-ink hover:text-accent hover:underline">
           {d.name || d.hostname || <span className="font-normal text-ink-3">Unnamed</span>}
         </button>
