@@ -1,6 +1,6 @@
 package reports
 
-// Report is one downloadable report from docs/new.md, section 10. Every column
+// Report is one downloadable report from docs/product/screens.md#reports. Every column
 // is selected as text, so any report renders the same way. Queries are constants;
 // only the date range and environment are bound, as $1, $2 and $3.
 type Report struct {

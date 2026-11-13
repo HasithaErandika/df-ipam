@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// maxRange keeps a reservation to "a small range" (docs/new.md, section 8).
+// maxRange keeps a reservation to "a small range" (docs/product/register.md).
 const maxRange = 256
 
 type reservationDTO struct {

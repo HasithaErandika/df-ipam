@@ -34,7 +34,7 @@ func TestSQLIsRepeatable(t *testing.T) {
 	}
 }
 
-// Email starts off: the plan is to test with it disabled (docs/new.md, section 9).
+// Email starts off: the plan is to test with it disabled (docs/product/alerts.md).
 func TestEmailStartsDisabled(t *testing.T) {
 	for _, s := range Settings {
 		if s.Key == "email.enabled" {

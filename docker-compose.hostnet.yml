@@ -1,4 +1,4 @@
-# Option A (docs/new.md) on one Linux machine: the backend shares the host's
+# Option A (docs/product/discovery.md#mac-addresses) on one Linux machine: the backend shares the host's
 # network, so the scanner reads MAC addresses from the host's ARP table and sees
 # the real default gateway. Turn it on with HOST_NETWORK=true in api/.env; make
 # adds this file after docker-compose.dev.yml.

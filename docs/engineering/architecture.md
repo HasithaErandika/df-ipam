@@ -8,9 +8,9 @@
 | `backend` | One Go process: the API, the scanner, server checks, the FortiGate reader and the email outbox | `web` only |
 | `db` | PostgreSQL 16, volume `df-ipam-lite-db-data` | `backend` only |
 
-A `migrate` step applies migrations and the seed, then exits. Supabase provides sign-in only; all data stays in PostgreSQL.
+A `migrate` step applies migrations and the seed, then exits. People sign in with Microsoft Entra ID (or the development sign-in); all data stays in PostgreSQL.
 
-Instead of the `web` container, Apache on the host can serve the app and proxy the API: `deploy/apache/df-ipam.conf`, `docker-compose.apache.yml`, `make apache-up` and `make apache-web` (see [setup.md](setup.md#run-it-behind-apache)).
+Instead of the `web` container, Apache on the host can serve the app and proxy the API: `deploy/apache/df-ipam.conf`, `docker-compose.apache.yml`, `make apache-up` and `make apache-web` (see [setup.md](../operations/setup.md#run-it-behind-apache)).
 
 Compose files: `docker-compose.yml` (always), `docker-compose.dev.yml` (local ports), `docker-compose.prod.yml` (publishes 80 and 443 with TLS), `docker-compose.apache.yml` (backend on localhost for Apache), and `docker-compose.hostnet.yml` (with `HOST_NETWORK=true`: the backend on the host's network, to read MAC addresses). Always start them with `make`, which loads the env files.
 
@@ -20,13 +20,13 @@ All inside the backend, cancelled cleanly on shutdown.
 
 | Loop | Runs | Does |
 | --- | --- | --- |
-| Discovery | Every `scan.interval_minutes` (default 10), or on Scan now | Sweeps each segment, saves sightings, evaluates alerts, removes sightings older than 90 days |
-| Server checks | Every `server_check.interval_seconds` (default once a day) | Pings monitored entries, or their check port; updates health; evaluates alerts |
+| Discovery | Every `scan.interval_minutes` (default 10), or on Scan now | Sweeps each segment, saves sightings, evaluates alerts, removes sightings unseen for 90 days and alerts closed for a year |
+| Server checks | Every `server_check.interval_seconds` (default 5 minutes) | Pings monitored entries twice, or their check port; records all results in one update; evaluates alerts |
 | FortiGate | Every `fortigate.interval_minutes`, when switched on | Reads ARP, DHCP leases and VPN sessions; evaluates alerts |
 | Email outbox | Every 5 seconds | Sends queued emails when email is on and SMTP is set, at most 20 an hour per person; hourly, removes read notifications older than 90 days |
 | Reservation reminders | Every 6 hours | Queues one reminder per reservation in the week before it expires |
 
-Alert evaluation takes a database advisory lock, so two loops never evaluate at once. See [new.md](new.md#discovery) for what the scanner sends and its limits.
+Alert evaluation takes a database advisory lock, so two loops never evaluate at once. See [discovery.md](../product/discovery.md) for what the scanner sends and its limits.
 
 ## Backend (`api/`)
 
@@ -71,7 +71,7 @@ web/src/
 ├── app/           # router (lazy screens), navigation, shell, query client
 ├── components/    # ui/ design system, platform icons, subnet map, charts
 ├── features/      # one folder per screen
-├── lib/           # API client, auth (the only Supabase file), formats, types
+├── lib/           # API client, auth (the only sign-in file), formats, types
 └── index.css      # colour tokens
 ```
 
@@ -81,5 +81,4 @@ web/src/
 | --- | --- |
 | `make test` | Go unit tests and web tests |
 | `make test-db` | The schema rules and every API route, as `dfipam_app`, on a throwaway `dfipam_test` database |
-| `make test-db-supabase` | The same on the Supabase test database, rolled back |
 | `make lint` | `gofmt`, `go vet`, and web type checks |

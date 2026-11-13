@@ -1,6 +1,44 @@
 # Changelog
 
-What changed, day by day, on branch `lite`. Newest first. The specification is [new.md](new.md); what is and isn't built is in [development_phase.md](development_phase.md).
+What changed, day by day, on branch `lite`. Newest first. The specification is in [product/](product/overview.md); what is and isn't built is in [status.md](status.md).
+
+## 2026-11-13 · v0.2.0
+
+**Finding devices**
+- Hosts that block ping (Windows by default, many servers) are found through NetBIOS and a TCP check of ports 445, 3389 and 22, and from the ARP table when nothing else answers.
+- The ARP MAC wins over the NetBIOS one, which on hosts with several network cards is often another card's. This stops false "IP conflict" and "Server MAC changed" alerts.
+- A sighting whose NetBIOS reply was missed joins the MAC last seen at that address, instead of being listed again without one.
+- The NetBIOS computer name is chosen by name type, never a signed-in user's name. mDNS is asked even when DNS gives a name, so Apple models are found.
+
+**Steadier scanning**
+- One ICMP socket per scan, replies matched by sequence number and sender; failed sends are reported on the segment.
+- At most 100 TCP connections a second across a scan. Scan now identifies a host in full at most every 15 minutes, and full identification is remembered across restarts (migration 000014).
+
+**Alerts and monitoring**
+- On DHCP pool addresses, an IP conflict needs both MACs within one scan; DHCP handing an address on is no longer a conflict.
+- Device alerts follow the MAC: a device that DHCP moves keeps its one alert.
+- Server checks run every 5 minutes by default instead of once a day, with two pings before a failure counts. "Server back up" is sent only when it really is.
+- A FortiGate DHCP lease counts as seen only when the firewall's ARP table confirms it.
+- A DHCP network with no pool no longer marks every address static. Closed alerts are removed after a year.
+
+**Efficiency**
+- Alerts and server health are written in one statement each, not one per row. Discovery looks up home entries and alert counts for the shown page only. The segment list counts in one pass. "Seen recently" has one definition, `seen_window()`.
+
+**Validation and screens**
+- Gateways and DHCP pools must use host addresses, and the gateway must sit outside the pool (form and API). The form warns when a segment is too large to scan, and segment cards say so first.
+- Dates are checked against the person's own calendar day.
+- Discovery: a details link opens whatever page or filter is showing, the list pauses while a dialog is open, "Not answering · last seen …" replaces "Unavailable since …", and the default sort is labelled "Last seen, newest".
+- The dashboard's network tiles and "All segments" open Discovery › Segments, filtered to that type.
+- The side panel shows the version and build, without the build date.
+
+**Sign-in: Supabase removed**
+- Supabase is gone: its sign-in, bearer tokens, admin client, SQL bundle (`make sql`, `api/sql/`), test targets, settings and the `@supabase/supabase-js` package. PostgreSQL in Docker is the only database, and the API's session cookie is the only way a request is signed in.
+- Microsoft Entra ID is the way in. A person's first Microsoft sign-in takes over a pending account made for their email, keeping its role.
+- Development sign-in (`AUTH_BYPASS`, `AUTH_BYPASS_EMAIL`) for while there is no Entra ID app registration: one button, one named person, made an Administrator the first time. The API refuses it with `APP_ENV=production`, which the server compose files now fix, and every screen shows a warning while it is on.
+- `make admin EMAIL=…` makes someone an Administrator, before or after their first sign-in. Audited.
+
+**Documentation**
+- Reorganised into `product/` (the specification), `engineering/`, `operations/`, `status.md` and this changelog. `new.md` is split across `product/`, and `plan.md` is retired now that Supabase is removed.
 
 ## 2026-11-12
 

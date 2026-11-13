@@ -2,20 +2,52 @@
 
 **DF-IPAM Lite** is the Dialog Finance IP address management system: it scans the network, keeps the official IP register, watches servers and raises alerts. It is read-only towards the network.
 
+## Where to start
+
+| You want to | Read |
+| --- | --- |
+| Know what the system does | [product/overview.md](product/overview.md) |
+| Run it, or deploy it | [operations/setup.md](operations/setup.md) |
+| Change the code | [engineering/architecture.md](engineering/architecture.md), then the document for the part you touch |
+| Know what is built and what isn't | [status.md](status.md) |
+
+## Product: what it does
+
+The specification. What is described here is built.
+
 | Document | Covers |
 | --- | --- |
-| [new.md](new.md) | **The specification**: what the system does, discovery, alerts, screens, what isn't built |
-| [setup.md](setup.md) | **Run it on your machine, and deploy it to a server** |
-| [architecture.md](architecture.md) | Containers, code layout, background loops |
-| [database.md](database.md) | Tables, schema rules, migrations |
-| [api.md](api.md) | REST conventions and limits |
-| [authentication.md](authentication.md) | Sign-in (Supabase for now), roles and permissions |
-| [frontend.md](frontend.md) | Screens, design and UI rules |
-| [security.md](security.md) | Threat model and release checklist |
-| [runbooks.md](runbooks.md) | Recovery procedures |
-| [development_phase.md](development_phase.md) | What is done, what isn't, and what waits on others |
-| [changelog.md](changelog.md) | What changed, day by day |
-| [plan.md](plan.md) | Plan, not built: company sign-in in place of Supabase |
+| [overview.md](product/overview.md) | Purpose, scope, words used, data model, questions before go-live |
+| [network.md](product/network.md) | Segments, import from text, gateways, environments, departments |
+| [discovery.md](product/discovery.md) | What the scanner asks, identifying devices, keeping the network steady, FortiGate |
+| [register.md](product/register.md) | IP register, servers and checks, devices, requests and reservations |
+| [alerts.md](product/alerts.md) | Alert rules, one alert per cause, notifications |
+| [screens.md](product/screens.md) | Screens, reports, settings and roles |
+
+## Engineering: how it is built
+
+| Document | Covers |
+| --- | --- |
+| [architecture.md](engineering/architecture.md) | Containers, code layout, background loops, tests |
+| [database.md](engineering/database.md) | Tables, schema rules, migrations |
+| [api.md](engineering/api.md) | REST conventions and limits |
+| [authentication.md](engineering/authentication.md) | Sign-in (Microsoft Entra ID, the development sign-in), roles and permissions |
+| [frontend.md](engineering/frontend.md) | Design and UI rules |
+| [security.md](engineering/security.md) | Threat model and release checklist |
+
+## Operations: running it
+
+| Document | Covers |
+| --- | --- |
+| [setup.md](operations/setup.md) | Run it on your machine, deploy it to a server, Apache, upgrades |
+| [runbooks.md](operations/runbooks.md) | Recovery procedures |
+
+## Project
+
+| Document | Covers |
+| --- | --- |
+| [status.md](status.md) | What is built, what isn't, what waits on others. Update it when a feature changes status |
+| [changelog.md](changelog.md) | What changed, day by day. Add to today's entry when you finish a change |
 
 ## Rules that always hold
 

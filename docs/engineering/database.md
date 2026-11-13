@@ -1,12 +1,12 @@
 # Database
 
-PostgreSQL 16 in Docker (`docker-compose.yml`, volume `df-ipam-lite-db-data`). Supabase's database is for testing only, through `SUPABASE_DATABASE_URL` and `SUPABASE_MIGRATION_DATABASE_URL`.
+PostgreSQL 16 in Docker (`docker-compose.yml`, volume `df-ipam-lite-db-data`). It is the only database.
 
 ## Rules
 
 - **IPv4 only.** Addresses are `inet`, networks `cidr`. Read them back with `host()` or `network::text`: plain `inet::text` adds `/32`.
 - **Schema changes** go in a new numbered `.up.sql` and `.down.sql` pair in `api/migrations/`, followed by `make sql`. Never edit an applied migration.
-- **Every table** has `ENABLE ROW LEVEL SECURITY`, a `dfipam_app_all` policy for `dfipam_app`, and explicit least-privilege grants. `anon` and `authenticated` have no grants, so Supabase's Data API reads nothing.
+- **Every table** has `ENABLE ROW LEVEL SECURITY`, a `dfipam_app_all` policy for `dfipam_app`, and explicit least-privilege grants. Row level security stays as a second layer if the app role is ever misused (migration 000001 also revokes everything from `anon` and `authenticated`, roles left from the Supabase days, where they exist).
 - **The audit row** is written in the same transaction as the change.
 - **All SQL is parameterised;** sort and filter fields are allowlisted. Never one query per row.
 
@@ -25,7 +25,7 @@ PostgreSQL 16 in Docker (`docker-compose.yml`, volume `df-ipam-lite-db-data`). S
 | `audit_logs` | `SELECT`, `INSERT` | Append-only; a trigger also blocks updates, deletes and truncation |
 | Every other table | `SELECT`, `INSERT`, `UPDATE`, `DELETE` | |
 
-In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Supabase the first migration creates it without login; enable it once with `ALTER ROLE dfipam_app WITH LOGIN PASSWORD '<password>';`.
+In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On another PostgreSQL the first migration creates it without login; enable it once with `ALTER ROLE dfipam_app WITH LOGIN PASSWORD '<password>';`.
 
 ## Tables
 
@@ -52,7 +52,7 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Sup
 
 `make test-db` checks these on a throwaway `dfipam_test` database.
 
-- Segment networks never overlap. A DHCP pool sits inside its network, and only `dhcp` segments have one.
+- Segment networks never overlap. A DHCP pool sits inside its network, and only `dhcp` segments have one. (The API also keeps the gateway and pool off the network and broadcast addresses, and the gateway outside the pool.)
 - Register IPs and reservations sit inside their segment, and a segment can't be moved away from them.
 - One IP appears once in the register; one MAC once in devices.
 - A rejected request needs a reason; a decided request needs who decided and when.
@@ -60,7 +60,9 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Sup
 - The audit log is append-only.
 - Numeric settings hold numbers and the email switch a boolean. Their ranges, such as a scan interval of 5 to 1,440 minutes, are checked by the API.
 
-`sightings` is upserted on (IP, MAC), so it stays about as large as the number of devices. Rows unseen for 90 days are deleted after each scan.
+`sightings` is upserted on (IP, MAC), so it stays about as large as the number of devices. Rows unseen for 90 days, and alerts closed for a year, are deleted after each scan.
+
+`seen_window()` is the one definition of "seen recently" (two scan intervals, at least 10 minutes), used by the alert rules, Discovery, segments and the dashboard. Go code uses it as `db.SeenWindow`, a subquery, so it is worked out once per query.
 
 ## Migrations
 
@@ -79,5 +81,6 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On Sup
 | 000011 | Per-segment port checks, open ports, register lookup by MAC and device |
 | 000012 | Roles that administrators set up, with six starting roles; `users.role` refers to them |
 | 000013 | Sessions for Microsoft Entra ID sign-in |
+| 000014 | `sightings.identified_at`; the `seen_window()` function; server checks every 5 minutes instead of once a day |
 
-`api/sql/supabase-setup.sql` is every migration and the seed as one file, for the Supabase SQL editor. Regenerate it with `make sql`. The seed (`make seed`, safe to repeat) loads the five environments and default settings.
+The seed (`make seed`, safe to repeat) loads the five environments and default settings.

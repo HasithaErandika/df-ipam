@@ -73,6 +73,6 @@ The key protects only the FortiGate token. Rotate on a schedule, and at once if 
 
 Stop the backend: `sudo bash -c 'set -a; . api/.env; set +a; docker compose stop backend'`. This stops the scanner, server checks and the API together. Before starting it again, raise the scan interval in System, or remove the segment in Network setup. Turning off **Check common ports** on a segment stops port checks from its next scan.
 
-## Supabase or the internet is down
+## Microsoft sign-in or the internet is down
 
-Nobody can sign in, but data is safe on the server, and open sessions keep working until their tokens expire. Discovery, server checks and alerts carry on.
+Nobody new can sign in, but data is safe on the server, and open sessions keep working until they end (10 hours, or the idle timeout). Discovery, server checks and alerts carry on. Don't turn on `AUTH_BYPASS` on a server to get round it: the API refuses it in production, by design. If an administrator must get in, wait for Microsoft, or reach the database with `make db-shell` for what can't wait (audited changes go through the app, so note anything done there).

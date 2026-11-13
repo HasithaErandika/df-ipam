@@ -1,6 +1,6 @@
 # Setup, Run and Deploy
 
-How to run DF-IPAM on your machine, and deploy it to a server. What runs is described in [architecture.md](architecture.md).
+How to run DF-IPAM on your machine, and deploy it to a server. What runs is described in [architecture.md](../engineering/architecture.md).
 
 ## Run it on your machine
 
@@ -8,7 +8,7 @@ How to run DF-IPAM on your machine, and deploy it to a server. What runs is desc
 
 - Docker with the Compose plugin
 - Go 1.26.10+, and Node 24 with pnpm, for tests and commands outside Docker
-- A Supabase project for sign-in (URL and keys under **Project Settings, API**). Turn public sign-ups off
+- For sign-in, an Entra ID app registration ([authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id)). Until you have one, use the development sign-in
 
 ### First run
 
@@ -20,14 +20,14 @@ Fill in `api/.env`:
 
 | Setting | Value |
 | --- | --- |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | From your Supabase project |
 | `POSTGRES_PASSWORD`, `DFIPAM_APP_PASSWORD` | `openssl rand -hex 24` each. They take effect when the database is first created |
 | `DATABASE_URL`, `MIGRATION_DATABASE_URL` | As in the example, with those passwords |
 | `SECRET_ENCRYPTION_KEY` | `openssl rand -base64 32`. Needed to store a FortiGate token |
-| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | From the Entra ID app registration, for Microsoft sign-in. See [authentication.md](authentication.md#setting-it-up-in-entra-id) |
+| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | From the Entra ID app registration, for Microsoft sign-in. See [authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id) |
+| `AUTH_BYPASS`, `AUTH_BYPASS_EMAIL` | Until Entra ID is set up: `true` and your work email, for the [development sign-in](../engineering/authentication.md#development-sign-in). Never on a server |
 | `HOST_NETWORK` | `true` on Linux to let the scanner read MAC addresses (see below) |
 
-Fill in `web/.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, and leave `VITE_API_URL` empty. **The `service_role` key never goes in `web/.env`.**
+Leave `VITE_API_URL` empty in `web/.env`, so the app and the API share one address and the session cookie is sent. Never put secrets in `web/.env`: it ends up in the browser.
 
 ```bash
 make env-check   # lists anything missing
@@ -44,15 +44,9 @@ Everything is published on localhost only.
 
 ### Make yourself an Admin
 
-1. In Supabase, **Authentication, Users**: add a user with a password and auto-confirm on.
-2. Sign in to DF-IPAM. You see "Waiting for access".
-3. In `make db-shell`:
-
-   ```sql
-   UPDATE users SET role = 'admin' WHERE lower(email) = lower('<your email>');
-   ```
-
-4. Press **Check again**. Give others roles in Users and roles.
+1. `make admin EMAIL=<you>@dialogfinance.lk`. It promotes your account if you have signed in, or adds a pending one that your first sign-in takes over.
+2. Sign in: **Sign in with Microsoft**, or **Continue with development sign-in** while `AUTH_BYPASS` is on. (The development sign-in also makes its person an Administrator the first time, so step 1 is optional there.)
+3. Give others roles in Users and roles.
 
 ### First data
 
@@ -83,7 +77,7 @@ Nothing here has been rehearsed on a real server yet. Try it on a test system fi
 
 ### 1. The server
 
-One Ubuntu Server in a management VLAN, able to reach every floor and server segment. 2 vCPU, 4 GB of memory and 50 GB of SSD is plenty for one building (an estimate). For MAC addresses on every floor it needs to sit on those VLANs (see [new.md](new.md#not-built)).
+One Ubuntu Server in a management VLAN, able to reach every floor and server segment. 2 vCPU, 4 GB of memory and 50 GB of SSD is plenty for one building (an estimate). For MAC addresses on every floor it needs to sit on those VLANs (see [status.md](../status.md#not-built)).
 
 Install Docker Engine with the Compose plugin from Docker's apt repository, then `sudo apt install -y make gnupg git`. Anyone in the `docker` group is effectively root, so keep it to administrators.
 
@@ -91,13 +85,13 @@ Install Docker Engine with the Compose plugin from Docker's apt repository, then
 
 | Direction | To or from | Port |
 | --- | --- | --- |
-| Out | `<project>.supabase.co` | 443/tcp |
+| Out | `login.microsoftonline.com` (Entra ID) | 443/tcp |
 | Out | Mail server | 587/tcp |
 | Out | The FortiGate's management address, if used | 443/tcp or its admin port |
 | Out | Floors and server segments | ICMP; UDP 53, 137, 1900, 5353; TCP 80 for UPnP descriptions; the check ports of monitored servers; the common ports, where port checks are on |
 | In | Office and VPN ranges | 443/tcp, and 80/tcp for the redirect |
 
-Browsers also need `<project>.supabase.co` on 443, because sign-in happens in the browser.
+Browsers also need `login.microsoftonline.com` on 443, because people sign in to Microsoft in the browser.
 
 ### 3. Configure
 
@@ -111,14 +105,15 @@ In `api/.env`, as on your machine, plus:
 
 | Setting | Value |
 | --- | --- |
-| `APP_ENV` | `production` |
+| `APP_ENV` | `production` (also fixed by `docker-compose.prod.yml`). The development sign-in can't run with it |
+| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | Required on a server: Microsoft sign-in is the only way in. `AUTH_BYPASS` stays `false` |
 | `COMPOSE_FILE` | `docker-compose.yml:docker-compose.prod.yml`. **Without it nothing is published on 80 and 443** |
 | `CORS_ALLOWED_ORIGINS`, `APP_BASE_URL` | `https://<host name>` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | Your mail server. Empty `SMTP_HOST` keeps email off |
 | `BACKUP_GPG_RECIPIENT` | See step 6 |
 | `DOCKER_SUBNET`, `DOCKER_GATEWAY` | Change only if `172.30.0.0/24` is in use |
 
-Store `SECRET_ENCRYPTION_KEY` in your vault, apart from backups. In Supabase, set the site URL to `https://<host name>`.
+Store `SECRET_ENCRYPTION_KEY` and `ENTRA_CLIENT_SECRET` in your vault, apart from backups. In Entra ID, add the redirect URI `https://<host name>/api/v1/auth/microsoft/callback`.
 
 ### 4. Certificates and access list
 
@@ -167,7 +162,7 @@ It runs `make db-backup` daily at 01:00 into `/var/backups/df-ipam`, checks the 
 
 ### 7. Go-live
 
-Run the checklist in [security.md](security.md), and make a second Admin straight away.
+Run the checklist in [security.md](../engineering/security.md), and make a second Admin straight away.
 
 ## Run it behind Apache
 
@@ -197,7 +192,7 @@ Use this when the server already runs Apache, or Apache is the standard. Apache 
    sudo rsync -a --delete web/dist/ /var/www/df-ipam/
    ```
 
-5. **Add the site.** Copy the site file, then edit the host name, the certificate paths, your office and VPN ranges (both `Require ip` lines; don't leave `10.0.0.0/8`), and `<project-ref>` in the Content Security Policy while Supabase sign-in runs.
+5. **Add the site.** Copy the site file, then edit the host name, the certificate paths, your office and VPN ranges (both `Require ip` lines; don't leave `10.0.0.0/8`).
 
    ```bash
    sudo cp deploy/apache/df-ipam.conf /etc/apache2/sites-available/
@@ -212,7 +207,7 @@ The site file matches the web container: HTTPS only with HSTS, the same Content 
 
 **Upgrade with Apache:** `git pull`, then `sudo make apache-up`, `make apache-web` and the `rsync` line again. Migrations run on `apache-up`.
 
-For Microsoft sign-in, register `https://<host name>/api/v1/auth/microsoft/callback` in Entra ID (see [authentication.md](authentication.md#setting-it-up-in-entra-id)).
+For Microsoft sign-in, register `https://<host name>/api/v1/auth/microsoft/callback` in Entra ID (see [authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id)).
 
 ## Upgrade
 
@@ -229,7 +224,9 @@ This rebuilds the images, runs new migrations and the seed, and restarts what ch
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| The page loads, sign-in fails | The browser can't reach Supabase, or `VITE_` values were wrong at build | Fix `web/.env`, then `make docker-up` |
+| The page loads, sign-in fails | Entra ID settings or redirect URI don't match `APP_BASE_URL`, or the browser can't reach `login.microsoftonline.com` | See [authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id); the reason is shown on the sign-in page |
+| "No way to sign in is set up" | Neither Entra ID nor `AUTH_BYPASS` is set | Set one in `api/.env`, then `make docker-up` |
+| The API won't start: `AUTH_BYPASS can't be used with APP_ENV=production` | The development sign-in is on on a server | Set `AUTH_BYPASS=false` and use Microsoft sign-in |
 | "Waiting for access" | Signed in with no role | An Admin assigns one |
 | `required variable ... is missing` | Compose run directly | Use the `make` commands |
 | Nothing on 443 | `COMPOSE_FILE` not set | See step 3 |

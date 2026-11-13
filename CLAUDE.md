@@ -2,21 +2,22 @@
 
 Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web/`, design docs in `docs/`, Docker in `docker-compose.yml`. Run `make help` for commands. Before finishing a change, run `make lint test`.
 
-**On branch `lite`, `docs/new.md` overrides everything below and the other docs.** Lite is one building, IPv4 only, one routing table, roles that administrators set up from fixed permissions (`admin` has full access), and 16 tables. Sign-in is Microsoft Entra ID (`@dialogfinance.lk`) alongside Supabase until Supabase is removed. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
+**On branch `lite`, the product documents in `docs/product/` are the specification and override everything below.** Lite is one building, IPv4 only, one routing table, roles that administrators set up from fixed permissions (`admin` has full access), and 16 tables. Sign-in is Microsoft Entra ID (`@dialogfinance.lk`), with a development sign-in (`AUTH_BYPASS`) until the app registration exists. There is no Supabase. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
 
 ## Read first
 
-- `docs/README.md` for the non-negotiable rules
-- `docs/database.md` before changing the schema
-- `docs/new.md` for scope, what is built, what isn't, and open questions
-- `docs/development_phase.md` for what is done: update it when a feature changes status
+- `docs/README.md` for the map of the docs and the non-negotiable rules
+- `docs/product/` for what the system does (start at `overview.md`)
+- `docs/engineering/database.md` before changing the schema
+- `docs/status.md` for what is built, what isn't and what waits on others: update it when a feature changes status
 - `docs/changelog.md`: add to today's entry when you finish a change
 
 ## Hard rules
 
-- **The Supabase `service_role` key stays in `api/.env`,** used only by `api/internal/auth/supabase_admin.go`. Never put it in `web/`, logs or responses.
-- **PostgreSQL runs locally in Docker,** with the backend and web containers, through `docker-compose.yml`. Supabase provides sign-in. Its database is for testing only, through `SUPABASE_DATABASE_URL` and `SUPABASE_MIGRATION_DATABASE_URL`.
-- **Every table stays closed to the Supabase Data API,** because Supabase is still used for testing. The browser never queries tables through `supabase-js`; all data goes through the Go API.
+- **Secrets stay in `api/.env`** (`ENTRA_CLIENT_SECRET`, `SECRET_ENCRYPTION_KEY`, database passwords). Never put them in `web/`, logs or responses.
+- **PostgreSQL runs in Docker,** with the backend and web containers, through `docker-compose.yml`. It is the only database.
+- **All data goes through the Go API.** The browser never queries tables, and holds no token: the API's `HttpOnly` session cookie signs every request.
+- **The development sign-in (`AUTH_BYPASS`) never reaches a server.** Config refuses it with `APP_ENV=production`; keep it that way.
 - **Env files are `api/.env` and `web/.env` only, none at the root.** Don't commit them, and don't put secrets in code, logs or API responses.
 - **Discovery never changes allocation state or ownership.** Evidence stays separate from inventory, and people approve authoritative changes.
 - **IPs are unique per routing domain,** never globally. Every subnet and IP query must respect routing context.
@@ -42,7 +43,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 
 ## Auth
 
-Supabase is temporary and will be replaced by company auth. Only `api/internal/auth/supabase*.go` and `web/src/lib/auth.ts` may know about Supabase. Authorisation stays in DF-IPAM's own tables.
+Sign-in is Microsoft Entra ID (`api/internal/auth/entra.go`, `api/internal/modules/signin`), plus the development sign-in while there is no app registration. Both end in the same session cookie (`sessions.go`); there are no bearer tokens. In the browser only `web/src/lib/auth.ts` knows how people sign in. Authorisation stays in DF-IPAM's own tables. The first Administrator comes from `make admin EMAIL=…`.
 
 ## Frontend conventions
 
