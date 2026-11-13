@@ -19,10 +19,6 @@ x-backend-env: &backend-env
   APP_ENV:
   LOG_LEVEL:
   CORS_ALLOWED_ORIGINS:
-  SUPABASE_URL:
-  SUPABASE_ANON_KEY:
-  SUPABASE_SERVICE_ROLE_KEY:
-  AUTH_AUDIENCE:
   APP_BASE_URL:
   ENTRA_TENANT_ID:
   ENTRA_CLIENT_ID:
@@ -30,6 +26,8 @@ x-backend-env: &backend-env
   ENTRA_AUTHORITY:
   ENTRA_REDIRECT_URL:
   AUTH_ALLOWED_EMAIL_DOMAINS:
+  AUTH_BYPASS:
+  AUTH_BYPASS_EMAIL:
   SMTP_HOST:
   SMTP_PORT:
   SMTP_USERNAME:
@@ -102,8 +100,6 @@ services:
     build:
       context: ./web
       args:
-        VITE_SUPABASE_URL:
-        VITE_SUPABASE_ANON_KEY:
         APP_COMMIT:
     restart: unless-stopped
     read_only: true
@@ -113,8 +109,8 @@ services:
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
     environment:
-      SUPABASE_URL:
-      NGINX_ENVSUBST_FILTER: ^SUPABASE_URL$
+      # Only DFIPAM_ variables are put into the Nginx templates, so Nginx's own $variables stay as they are.
+      NGINX_ENVSUBST_FILTER: ^DFIPAM_
     networks:
       default:
         ipv4_address: ${WEB_ADDRESS:-172.30.0.10}

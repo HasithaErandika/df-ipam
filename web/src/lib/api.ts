@@ -1,5 +1,3 @@
-import { getAccessToken } from './auth'
-
 interface FieldIssue { field: string; issue: string }
 
 export class ApiError extends Error {
@@ -68,10 +66,8 @@ export async function parseFailure(res: Response): Promise<ApiError> {
 }
 
 async function send(path: string, init: RequestInit = {}): Promise<Response> {
-  const token = await getAccessToken()
   const headers = new Headers(init.headers)
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  // With a Microsoft session the cookie signs the request; this header proves it came from this app.
+  // The session cookie signs the request; this header proves it came from this app.
   headers.set('X-Requested-With', 'DF-IPAM')
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   let res: Response

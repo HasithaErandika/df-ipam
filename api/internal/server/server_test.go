@@ -17,28 +17,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type stubVerifier struct{}
+// stubSessions signs in the cookie "good" with the given permissions, and
+// nobody else.
+type stubSessions struct{ permissions map[string]bool }
 
-func (stubVerifier) Verify(context.Context, string) (auth.Identity, error) {
-	return auth.Identity{Subject: "u", Email: "u@example.com"}, nil
-}
-
-type stubResolver struct{ permissions map[string]bool }
-
-func (s stubResolver) Resolve(context.Context, auth.Identity) (*auth.Principal, error) {
+func (s stubSessions) Resolve(_ context.Context, token string) (*auth.Principal, error) {
+	if token != "good" {
+		return nil, auth.ErrNoSession
+	}
 	return &auth.Principal{UserID: "u", Permissions: s.permissions}, nil
-}
-
-// stubSessions knows no session: a cookie alone never signs anyone in here.
-type stubSessions struct{}
-
-func (stubSessions) Resolve(context.Context, string) (*auth.Principal, error) {
-	return nil, auth.ErrNoSession
 }
 
 func engine(perms map[string]bool) (*gin.Engine, *auth.Guard) {
 	gin.SetMode(gin.TestMode)
-	return New(Deps{Verifier: stubVerifier{}, Resolver: stubResolver{perms}, Sessions: stubSessions{}, SignIn: signin.New(nil, nil, &auth.Sessions{}, "http://localhost")})
+	return New(Deps{Sessions: stubSessions{perms}, SignIn: signin.New(nil, nil, &auth.Sessions{}, "http://localhost")})
 }
 
 // Fails when a route is added without going through the permission guard.
@@ -87,7 +79,7 @@ func TestEveryRouteIsInOpenAPI(t *testing.T) {
 	}
 }
 
-func TestRequestsWithoutTokenAreRejected(t *testing.T) {
+func TestRequestsWithoutSessionAreRejected(t *testing.T) {
 	r, _ := engine(nil)
 	for i, route := range r.Routes() {
 		if !strings.HasPrefix(route.Path, "/api/") || slices.Contains(signin.Paths, route.Method+" "+route.Path) {
@@ -108,7 +100,7 @@ func TestMissingPermissionIsForbidden(t *testing.T) {
 	r, guard := engine(map[string]bool{})
 	guard.Handle(http.MethodGet, "/probe", func(c *gin.Context) { c.Status(http.StatusOK) }, auth.InventoryView)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/probe", nil)
-	req.Header.Set("Authorization", "Bearer token")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookiePlain, Value: "good"})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), `"FORBIDDEN"`) {
@@ -131,7 +123,7 @@ func TestGuardRefusesRoutesWithoutPermission(t *testing.T) {
 
 func TestCORS(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	r, _ := New(Deps{Verifier: stubVerifier{}, Resolver: stubResolver{}, Origins: []string{"http://localhost:5173"}})
+	r, _ := New(Deps{Sessions: stubSessions{}, Origins: []string{"http://localhost:5173"}})
 	preflight := func(origin string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodOptions, "/api/v1/auth/me", nil)
 		req.Header.Set("Origin", origin)
@@ -142,7 +134,7 @@ func TestCORS(t *testing.T) {
 	}
 	ok := preflight("http://localhost:5173")
 	if ok.Code != http.StatusNoContent || ok.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5173" ||
-		!strings.Contains(ok.Header().Get("Access-Control-Allow-Headers"), "Authorization") {
+		!strings.Contains(ok.Header().Get("Access-Control-Allow-Headers"), "X-Requested-With") {
 		t.Fatalf("allowed origin: %d %v", ok.Code, ok.Header())
 	}
 	if got := preflight("https://evil.example").Header().Get("Access-Control-Allow-Origin"); got != "" {
@@ -164,7 +156,7 @@ func TestSecurityHeaders(t *testing.T) {
 func TestCookieChangesNeedTheCSRFHeader(t *testing.T) {
 	r, _ := engine(map[string]bool{"inventory:edit": true})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", strings.NewReader(`{}`))
-	req.AddCookie(&http.Cookie{Name: auth.SessionCookiePlain, Value: "anything"})
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookiePlain, Value: "good"})
 	req.RemoteAddr = "10.200.0.1:1234"
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

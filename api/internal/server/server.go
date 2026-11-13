@@ -36,11 +36,9 @@ var importPaths = map[string]int64{
 }
 
 type Deps struct {
-	Conn     db.Conn
-	Ready    func(context.Context) error
-	Verifier auth.Verifier
-	Resolver auth.PrincipalResolver
-	Origins  []string
+	Conn    db.Conn
+	Ready   func(context.Context) error
+	Origins []string
 	// TrustedProxies may set the client address through forwarding headers. Nginx
 	// reaches the API container from the Docker gateway, not from localhost.
 	TrustedProxies []string
@@ -52,7 +50,7 @@ type Deps struct {
 	FortiGate *fortigate.Syncer
 	// SMTPConfigured says whether api/.env has a mail server, shown in Settings.
 	SMTPConfigured bool
-	// Sessions resolves Microsoft sign-in cookies. Nil leaves bearer tokens only.
+	// Sessions resolves sign-in cookies, the only way in. Nil refuses every request.
 	Sessions auth.SessionResolver
 	// SignIn serves the public sign-in routes. Nil in tests that don't need them.
 	SignIn *signin.Handler
@@ -90,7 +88,7 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	if d.SignIn != nil {
 		d.SignIn.Register(r)
 	}
-	v1 := r.Group("/api/v1", auth.Authenticate(d.Verifier, d.Resolver, d.Sessions), perUser)
+	v1 := r.Group("/api/v1", auth.Authenticate(d.Sessions), perUser)
 	guard := auth.NewGuard(v1)
 	account.NewHandler(d.Conn).Register(guard)
 	inventory.NewHandler(d.Conn).Register(guard)

@@ -1,6 +1,10 @@
 # Production. Set COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml in api/.env.
 # Only the web container is published, and the lists it mounts decide who gets in.
 services:
+  backend:
+    environment:
+      # Fixed here, so the development sign-in (AUTH_BYPASS) can never start on a server.
+      APP_ENV: production
   web:
     ports:
       - 80:8080

@@ -1,16 +1,8 @@
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
-import { z } from 'zod'
 import { SubnetMap } from '../../components/SubnetMap'
-import { Button, Field, FormError, Input, Notice } from '../../components/ui'
-import { authStatus, signIn, signInWithMicrosoft, type AuthStatus } from '../../lib/auth'
+import { Button, FormError, Notice } from '../../components/ui'
+import { authStatus, signInWithBypass, signInWithMicrosoft, type AuthStatus } from '../../lib/auth'
 import { takeSignOutReason } from '../../lib/idle'
-
-const schema = z.object({
-  email: z.email('Enter a valid email address.'),
-  password: z.string().min(1, 'Enter your password.'),
-})
 
 /** Why Microsoft sign-in sent the person back, from /?signin_error=. */
 const refused: Record<string, string> = {
@@ -45,24 +37,25 @@ export function SignIn() {
   const [refusal] = useState(takeRefusal)
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [leaving, setLeaving] = useState(false)
-  const [passwordOpen, setPasswordOpen] = useState(false)
   useEffect(() => { void authStatus().then(setStatus) }, [])
   const [error, setError] = useState<unknown>(null)
+  const [bypassing, setBypassing] = useState(false)
   const [reason] = useState(takeSignOutReason)
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({ resolver: zodResolver(schema) })
 
-  const submit = handleSubmit(async ({ email, password }) => {
+  const bypass = async () => {
     setError(null)
+    setBypassing(true)
     try {
-      await signIn(email, password)
+      await signInWithBypass()
     } catch (e) {
       setError(e)
+      setBypassing(false)
     }
-  })
+  }
 
   const msReady = status?.microsoft === true
   const msOff = status !== null && !status.microsoft
-  const showForm = passwordOpen || msOff
+  const nothing = msOff && !status.bypass
 
   return (
     <div className="flex h-full">
@@ -97,26 +90,15 @@ export function SignIn() {
             {!leaving && status !== null && <MicrosoftMark />}Sign in with Microsoft
           </Button>
           {msReady && <p className="mt-2 text-center text-[12.5px] text-ink-3">Only <strong className="font-medium text-ink-2">@dialogfinance.lk</strong> accounts can sign in.</p>}
-          {msOff && <p className="mt-2 text-[12.5px] text-ink-3">Microsoft sign-in isn't set up on this server yet. An administrator adds the Entra ID settings to <code className="font-mono">api/.env</code>; until then, use email and password.</p>}
+          {msOff && status.bypass && <p className="mt-2 text-[12.5px] text-ink-3">Microsoft sign-in isn't set up on this server yet.</p>}
+          {nothing && <div className="mt-4"><Notice tone="warn">No way to sign in is set up. An administrator adds the Entra ID settings to <code className="font-mono">api/.env</code>, or turns on the development sign-in with <code className="font-mono">AUTH_BYPASS</code>.</Notice></div>}
 
-          {!msOff && (
-            <button type="button" onClick={() => setPasswordOpen((o) => !o)} aria-expanded={passwordOpen}
-              className="mt-6 flex w-full cursor-pointer items-center gap-3 text-[12.5px] text-ink-3 hover:text-ink">
-              <span className="h-px flex-1 bg-line" />{passwordOpen ? 'Hide email and password' : 'Use email and password instead'}<span className="h-px flex-1 bg-line" />
-            </button>
-          )}
-          {showForm && (
-            <form onSubmit={submit} noValidate className="mt-5 space-y-4">
-              <Field label="Email" htmlFor="email" error={errors.email?.message}>
-                <Input id="email" type="email" autoComplete="username" autoFocus={msOff} {...register('email')} />
-              </Field>
-              <Field label="Password" htmlFor="password" error={errors.password?.message}>
-                <Input id="password" type="password" autoComplete="current-password" {...register('password')} />
-              </Field>
+          {status?.bypass && (
+            <div className="mt-6 rounded-md border border-warn/40 bg-warn-soft p-3.5">
+              <p className="text-[12.5px] text-warn"><strong className="font-semibold">Development sign-in.</strong> Signs in as the person set in <code className="font-mono">api/.env</code>, without a password. For use until Microsoft sign-in works.</p>
+              <Button variant={msReady ? 'secondary' : 'primary'} className="mt-3 w-full" busy={bypassing} onClick={() => void bypass()}>Continue with development sign-in</Button>
               <FormError error={error} />
-              <Button type="submit" variant={msOff ? 'primary' : 'secondary'} busy={isSubmitting} className="w-full">Sign in with email</Button>
-              <p className="text-[12px] text-ink-3">Email and password accounts are temporary and are added by an administrator.</p>
-            </form>
+            </div>
           )}
 
           <div className="mt-8 rounded-md border border-line bg-surface-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-ink-2">

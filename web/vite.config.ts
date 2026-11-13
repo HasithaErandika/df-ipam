@@ -30,7 +30,6 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             { name: 'react', test: /node_modules[\\/].*[\\/](react|react-dom|react-router|scheduler)[\\/]/ },
-            { name: 'supabase', test: /node_modules[\\/].*[\\/]@supabase[\\/]/ },
             { name: 'forms', test: /node_modules[\\/].*[\\/](zod|react-hook-form|@hookform)[\\/]/ },
           ],
         },

@@ -1,6 +1,7 @@
-// Package signin runs Microsoft Entra ID sign-in: the redirect to Microsoft,
-// the callback that checks the result and starts a session, and sign-out.
-// These routes are public by nature: they are how a person becomes signed in.
+// Package signin runs sign-in: Microsoft Entra ID (the redirect to Microsoft,
+// and the callback that checks the result and starts a session), the
+// development sign-in while Entra ID isn't set up, and sign-out. These routes
+// are public by nature: they are how a person becomes signed in.
 package signin
 
 import (
@@ -36,6 +37,7 @@ type Microsoft interface {
 type Handler struct {
 	conn     db.Conn
 	ms       Microsoft // nil when Microsoft sign-in isn't set up
+	bypass   string    // AUTH_BYPASS_EMAIL; empty when the development sign-in is off
 	sessions *auth.Sessions
 	base     string // APP_BASE_URL: where the app is, and where people return to
 	secure   bool   // served over HTTPS, so cookies are Secure and __Host-
@@ -50,25 +52,27 @@ func New(conn db.Conn, ms Microsoft, sessions *auth.Sessions, baseURL string) *H
 }
 
 // Paths are the public routes, for the route guard test.
-var Paths = []string{"GET /api/v1/auth/status", "GET /api/v1/auth/microsoft/login", "GET /api/v1/auth/microsoft/callback", "POST /api/v1/auth/logout"}
+var Paths = []string{"GET /api/v1/auth/status", "GET /api/v1/auth/microsoft/login", "GET /api/v1/auth/microsoft/callback",
+	"POST /api/v1/auth/bypass", "POST /api/v1/auth/logout"}
 
 func (h *Handler) Register(r gin.IRouter) {
 	g := r.Group("/api/v1/auth", httpx.RateLimit(2, 20))
 	g.GET("/status", h.status)
 	g.GET("/microsoft/login", h.login)
 	g.GET("/microsoft/callback", h.callback)
+	g.POST("/bypass", h.bypassSignIn)
 	g.POST("/logout", h.logout)
 }
 
 // status tells the sign-in page which ways in exist, and whether this browser
-// already holds a Microsoft session.
+// already holds a session.
 func (h *Handler) status(c *gin.Context) {
 	session := false
 	if token := cookieToken(c); token != "" {
 		_, err := h.sessions.Resolve(c, token)
 		session = err == nil
 	}
-	c.JSON(http.StatusOK, gin.H{"microsoft": h.ms != nil, "password": true, "session": session})
+	c.JSON(http.StatusOK, gin.H{"microsoft": h.ms != nil, "bypass": h.bypass != "", "session": session})
 }
 
 func (h *Handler) login(c *gin.Context) {
@@ -81,34 +85,6 @@ func (h *Handler) login(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(attemptCookie, a.State, int(attemptTTL.Seconds()), "/api/v1/auth/microsoft", "", h.secure, true)
 	c.Redirect(http.StatusFound, h.ms.AuthCodeURL(a))
-}
-
-func (h *Handler) remember(a auth.LoginAttempt) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for k, v := range h.attempts {
-		if time.Since(v.Started) > attemptTTL || len(h.attempts) >= maxAttempts {
-			delete(h.attempts, k)
-		}
-	}
-	h.attempts[a.State] = a
-}
-
-// take returns the attempt for state once, and only while it is fresh.
-func (h *Handler) take(state string) (auth.LoginAttempt, bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	a, ok := h.attempts[state]
-	delete(h.attempts, state)
-	return a, ok && time.Since(a.Started) <= attemptTTL
-}
-
-// safeReturn keeps the return address inside the app.
-func safeReturn(p string) string {
-	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") || strings.HasPrefix(p, "/api/") {
-		return "/"
-	}
-	return p
 }
 
 func (h *Handler) fail(c *gin.Context, reason string) {
@@ -137,7 +113,7 @@ func (h *Handler) callback(c *gin.Context) {
 		h.refuse(c, u, err)
 		return
 	}
-	token, err := h.start(c, u)
+	token, err := h.startMicrosoft(c, u)
 	if errors.Is(err, errDisabled) {
 		h.fail(c, "disabled")
 		return
@@ -166,37 +142,8 @@ func (h *Handler) refuse(c *gin.Context, u auth.EntraUser, err error) {
 	}
 }
 
-var errDisabled = errors.New("account disabled")
-
-// start finds or adds the person by their Microsoft object ID and starts a
-// session. A new person has no role: an administrator gives one.
-func (h *Handler) start(c *gin.Context, u auth.EntraUser) (string, error) {
-	var token string
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var id string
-		var active bool
-		if err := tx.QueryRow(c, `INSERT INTO users (email, display_name, auth_provider, auth_subject, last_login_at)
-			VALUES ($1, $2, $3, $4, now())
-			ON CONFLICT (auth_provider, auth_subject) DO UPDATE SET email = EXCLUDED.email, last_login_at = now(),
-				display_name = CASE WHEN users.display_name = '' THEN EXCLUDED.display_name ELSE users.display_name END
-			RETURNING id::text, is_active`, u.Email, u.Name, auth.ProviderEntra, u.ObjectID).Scan(&id, &active); err != nil {
-			return err
-		}
-		if !active {
-			return errDisabled
-		}
-		var err error
-		if token, err = h.sessions.Create(c, tx, id, c.ClientIP(), c.Request.UserAgent()); err != nil {
-			return err
-		}
-		return audit.Write(c, tx, audit.Entry{ActorID: id, Action: "login", ObjectType: "session", New: map[string]string{"provider": "microsoft", "email": u.Email}})
-	})
-	return token, err
-}
-
 func (h *Handler) logout(c *gin.Context) {
-	if c.GetHeader(auth.CSRFHeader) != "DF-IPAM" {
-		httpx.Fail(c, httpx.NewError(http.StatusForbidden, "CSRF", "This request is missing its safety header."))
+	if !csrfOK(c) {
 		return
 	}
 	if token := cookieToken(c); token != "" {

@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strings"
 
@@ -14,12 +13,7 @@ import (
 
 const principalKey = "principal"
 
-// PrincipalResolver is the part of Resolver the middleware needs.
-type PrincipalResolver interface {
-	Resolve(ctx context.Context, id Identity) (*Principal, error)
-}
-
-// SessionResolver finds the user behind a session cookie (Microsoft sign-in).
+// SessionResolver finds the user behind a session cookie.
 type SessionResolver interface {
 	Resolve(ctx context.Context, token string) (*Principal, error)
 }
@@ -28,18 +22,16 @@ type SessionResolver interface {
 // site can't add it without a CORS preflight this API refuses.
 const CSRFHeader = "X-Requested-With"
 
-// Authenticate accepts a Supabase bearer token or, when sessions is set, a
-// Microsoft sign-in session cookie. The user is loaded on every request, so
-// deactivating someone takes effect immediately.
-func Authenticate(v Verifier, r PrincipalResolver, sessions SessionResolver) gin.HandlerFunc {
+// Authenticate signs a request in by its session cookie. The user is loaded on
+// every request, so deactivating someone takes effect immediately.
+func Authenticate(sessions SessionResolver) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.GetHeader("Authorization") == "" && sessions != nil {
-			if token := sessionToken(c); token != "" {
-				bySession(c, sessions, token)
-				return
-			}
+		token := sessionToken(c)
+		if token == "" || sessions == nil {
+			httpx.Fail(c, httpx.ErrUnauthenticated)
+			return
 		}
-		byBearer(c, v, r)
+		bySession(c, sessions, token)
 	}
 }
 
@@ -64,35 +56,6 @@ func bySession(c *gin.Context, sessions SessionResolver, token string) {
 	p, err := sessions.Resolve(c.Request.Context(), token)
 	if errors.Is(err, ErrNoSession) {
 		httpx.Fail(c, httpx.ErrUnauthenticated)
-		return
-	}
-	if err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	c.Set(principalKey, p)
-	c.Next()
-}
-
-func byBearer(c *gin.Context, v Verifier, r PrincipalResolver) {
-	scheme, token, ok := strings.Cut(c.GetHeader("Authorization"), " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") || token == "" {
-		httpx.Fail(c, httpx.ErrUnauthenticated)
-		return
-	}
-	id, err := v.Verify(c.Request.Context(), token)
-	if err != nil {
-		if !errors.Is(err, ErrInvalidToken) {
-			slog.Error("token verification unavailable", "error", err)
-			httpx.Fail(c, httpx.NewError(http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "Sign-in checks are unavailable. Try again shortly."))
-			return
-		}
-		httpx.Fail(c, httpx.ErrUnauthenticated)
-		return
-	}
-	p, err := r.Resolve(c.Request.Context(), id)
-	if errors.Is(err, ErrInactive) {
-		httpx.Fail(c, httpx.NewError(http.StatusForbidden, "ACCOUNT_DISABLED", "This account has been deactivated."))
 		return
 	}
 	if err != nil {

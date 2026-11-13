@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	jwksTTL        = 10 * time.Minute // Supabase and Microsoft advise against caching longer
+	jwksTTL        = 10 * time.Minute // Microsoft advises against caching longer
 	jwksMinRefetch = 30 * time.Second // limits refetches caused by unknown key IDs
 )
 
