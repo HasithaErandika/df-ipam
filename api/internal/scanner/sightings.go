@@ -42,9 +42,9 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 	_, err := s.conn.Exec(ctx, `INSERT INTO sightings(segment_id,ip,mac,hostname,source,is_static,is_private_mac,is_gateway,vendor,
 			nic_vendor,maker,model,device_kind,os_hint,open_ports,identified_at,first_seen,last_seen)
 		SELECT $1::uuid,ip::inet,NULLIF(mac,'')::macaddr,name,source,static,private,gw,vendor,nic,maker,model,kind,os,COALESCE(NULLIF(ports,'')::integer[],'{}'),
-			CASE WHEN full THEN now() END,now(),now()
+			CASE WHEN identified THEN now() END,now(),now()
 		FROM unnest($2::text[],$3::text[],$4::text[],$5::text[],$6::boolean[],$7::boolean[],$8::boolean[],$9::text[],
-			$10::text[],$11::text[],$12::text[],$13::text[],$14::text[],$15::text[],$16::boolean[]) AS v(ip,mac,name,source,static,private,gw,vendor,nic,maker,model,kind,os,ports,full)
+			$10::text[],$11::text[],$12::text[],$13::text[],$14::text[],$15::text[],$16::boolean[]) AS v(ip,mac,name,source,static,private,gw,vendor,nic,maker,model,kind,os,ports,identified)
 		ON CONFLICT (ip,mac) DO UPDATE SET segment_id=EXCLUDED.segment_id,
 			hostname=COALESCE(NULLIF(EXCLUDED.hostname,''),sightings.hostname),
 			vendor=COALESCE(NULLIF(EXCLUDED.vendor,''),sightings.vendor),

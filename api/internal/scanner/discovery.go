@@ -77,6 +77,13 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 			scanErrors = append(scanErrors, fmt.Errorf("segment %q: %w", x.name, err))
 		}
 		s.record(result)
+		// Devices found here become pending and raise their alerts now, rather
+		// than after the slowest segments in the sweep.
+		if err == nil && found > 0 {
+			if err := monitoring.New(s.conn).Evaluate(ctx); err != nil {
+				scanErrors = append(scanErrors, err)
+			}
+		}
 	}
 	if err := monitoring.New(s.conn).Evaluate(ctx); err != nil {
 		scanErrors = append(scanErrors, err)

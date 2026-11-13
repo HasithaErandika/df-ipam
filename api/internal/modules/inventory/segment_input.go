@@ -61,7 +61,8 @@ func (in *segmentInput) validate() error {
 }
 
 // hostAddresses checks that the gateway and the DHCP pool use host addresses:
-// not the network or broadcast address, and the gateway outside the pool.
+// not the network or broadcast address. A gateway inside the pool is allowed:
+// many DHCP servers lease the whole range and exclude their own address.
 func hostAddresses(v *validate.V, p netip.Prefix, gw, start, end netip.Addr) {
 	if !p.IsValid() {
 		return
@@ -76,8 +77,5 @@ func hostAddresses(v *validate.V, p netip.Prefix, gw, start, end netip.Addr) {
 	}
 	if end.IsValid() && p.Contains(end) && !usable(end) {
 		v.Add("dhcpEnd", "The pool can't include the broadcast address.")
-	}
-	if gw.IsValid() && start.IsValid() && end.IsValid() && !gw.Less(start) && !end.Less(gw) {
-		v.Add("gateway", "The gateway is inside the DHCP pool. Use an address outside it, or narrow the pool.")
 	}
 }
