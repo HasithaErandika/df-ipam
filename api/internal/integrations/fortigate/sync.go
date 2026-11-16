@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -139,52 +137,6 @@ func (s *Syncer) read(ctx context.Context, cfg Config) (Counts, string, error) {
 		return counts, name, err
 	}
 	return counts, name, monitoring.New(s.conn).Evaluate(ctx)
-}
-
-// save records entries as sightings. ARP and DHCP evidence is kept only inside a
-// known segment, so WAN neighbours don't appear; VPN clients are kept regardless.
-// A DHCP lease is never static; an ARP entry is static outside the floor's pool.
-func save(ctx context.Context, conn db.Conn, entries []Entry) error {
-	merged := map[string]Entry{}
-	for _, e := range entries {
-		e.MAC = strings.ToLower(e.MAC)
-		if hw, err := net.ParseMAC(e.MAC); err == nil {
-			e.MAC = hw.String()
-		} else {
-			e.MAC = ""
-		}
-		key := e.IP + "|" + e.MAC
-		if old, ok := merged[key]; ok && old.Source == "dhcp" {
-			continue // a lease says more than the ARP entry for the same pair
-		}
-		merged[key] = e
-	}
-	n := len(merged)
-	ips, macs, names, vendors, sources := make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n), make([]string, 0, n)
-	private := make([]bool, 0, n)
-	for _, e := range merged {
-		ips, macs, names, vendors, sources = append(ips, e.IP), append(macs, e.MAC), append(names, e.Hostname), append(vendors, e.Vendor), append(sources, e.Source)
-		hw, _ := net.ParseMAC(e.MAC)
-		private = append(private, len(hw) > 0 && hw[0]&0x02 != 0)
-	}
-	if n == 0 {
-		return nil
-	}
-	_, err := conn.Exec(ctx, `INSERT INTO sightings (segment_id, ip, mac, hostname, vendor, source, is_static, is_private_mac, first_seen, last_seen)
-		SELECT s.id, x.ip::inet, NULLIF(x.mac, '')::macaddr, x.name, x.vendor, x.source,
-			CASE WHEN x.source IN ('dhcp', 'vpn') THEN false
-			     WHEN s.kind <> 'dhcp' OR s.dhcp_start IS NULL THEN true
-			     ELSE NOT (x.ip::inet BETWEEN s.dhcp_start AND s.dhcp_end) END,
-			x.private, now(), now()
-		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::boolean[]) AS x(ip, mac, name, vendor, source, private)
-		LEFT JOIN segments s ON x.ip::inet << s.network
-		WHERE s.id IS NOT NULL OR x.source = 'vpn'
-		ON CONFLICT (ip, mac) DO UPDATE SET segment_id = EXCLUDED.segment_id,
-			hostname = COALESCE(NULLIF(EXCLUDED.hostname, ''), sightings.hostname),
-			vendor = COALESCE(NULLIF(EXCLUDED.vendor, ''), sightings.vendor),
-			source = EXCLUDED.source, is_static = EXCLUDED.is_static, is_private_mac = EXCLUDED.is_private_mac, last_seen = now()`,
-		ips, macs, names, vendors, sources, private)
-	return err
 }
 
 func (s *Syncer) fail(err error) {

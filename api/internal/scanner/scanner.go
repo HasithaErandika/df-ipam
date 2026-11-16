@@ -53,26 +53,6 @@ type Scanner struct {
 	lastFull   map[string]fullMark // segment and IP → last full identification
 }
 
-type fullMark struct {
-	at    time.Time
-	ports bool // whether that identification checked ports
-}
-
-// dueFull reports whether a host should be identified in full now, and if so
-// records that it was. It is due on a manual scan, after fullEvery, or when its
-// segment has just started checking ports.
-func (s *Scanner) dueFull(seg segment, ip string, manual bool) bool {
-	key := seg.id + "|" + ip
-	s.fullMu.Lock()
-	defer s.fullMu.Unlock()
-	last, seen := s.lastFull[key]
-	if seen && !manual && time.Since(last.at) < fullEvery && (last.ports || !seg.checkPorts) {
-		return false
-	}
-	s.lastFull[key] = fullMark{at: time.Now(), ports: seg.checkPorts}
-	return true
-}
-
 func New(conn db.Conn) *Scanner {
 	return &Scanner{conn: conn, trigger: make(chan request, 1), status: Status{Segments: []SegmentResult{}}, lastFull: map[string]fullMark{}}
 }
@@ -114,6 +94,7 @@ func (s *Scanner) Snapshot() Status {
 
 func (s *Scanner) scanLoop(ctx context.Context) {
 	next := request{by: "startup"}
+	s.loadFullMarks(ctx)
 	if !s.waitForStartup(ctx, &next) {
 		return
 	}
@@ -121,7 +102,7 @@ func (s *Scanner) scanLoop(ctx context.Context) {
 		if err := s.scanAll(ctx, next); err != nil && ctx.Err() == nil {
 			slog.ErrorContext(ctx, "network scan failed", "error", err)
 		}
-		wait := interval(ctx, s.conn, "scan.interval_minutes", 5*time.Minute)
+		wait := interval(ctx, s.conn, "scan.interval_minutes", DefaultScanInterval)
 		at := time.Now().Add(wait)
 		s.mu.Lock()
 		s.status.NextScanAt = &at
@@ -148,7 +129,7 @@ func (s *Scanner) waitForStartup(ctx context.Context, next *request) bool {
 	if err := s.conn.QueryRow(ctx, `SELECT max(last_seen) FROM sightings WHERE source IN ('ping', 'arp', 'netbios')`).Scan(&last); err != nil || last == nil {
 		return true
 	}
-	wait := time.Until(last.Add(interval(ctx, s.conn, "scan.interval_minutes", 5*time.Minute)))
+	wait := time.Until(last.Add(interval(ctx, s.conn, "scan.interval_minutes", DefaultScanInterval)))
 	if wait <= 0 {
 		return true
 	}
@@ -173,7 +154,7 @@ func (s *Scanner) checkLoop(ctx context.Context) {
 		if err := s.checkAll(ctx); err != nil && ctx.Err() == nil {
 			slog.ErrorContext(ctx, "server checks failed", "error", err)
 		}
-		timer := time.NewTimer(interval(ctx, s.conn, "server_check.interval_seconds", time.Minute))
+		timer := time.NewTimer(interval(ctx, s.conn, "server_check.interval_seconds", defaultCheckInterval))
 		select {
 		case <-ctx.Done():
 			timer.Stop()

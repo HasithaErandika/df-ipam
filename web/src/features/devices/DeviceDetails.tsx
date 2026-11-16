@@ -42,7 +42,7 @@ export function DeviceDetails({ device: d, canEdit, onClose, onApprove, onReject
         <Section title="On the network">
           <Details items={[
             ['Now', d.online ? <StateBadge tone="ok">Online</StateBadge> : <StateBadge tone="neutral">Not seen in the last 30 minutes</StateBadge>],
-            ['Last address', d.lastIp ? <span className="font-mono">{d.lastIp}</span> : null],
+            ['Last seen address', d.lastIp ? <span><span className="font-mono">{d.lastIp}</span><span className="block text-ink-3">Observed by discovery; may change with DHCP.</span></span> : null],
             ['Segment', d.segmentId ? <Link className="hover:text-accent hover:underline" to={`/segments/${d.segmentId}`} onClick={onClose}>{d.segmentName}</Link> : null],
             ['Addresses seen', d.addresses ? `${d.addresses}${d.addresses > 1 ? ' (it has moved between addresses or networks)' : ''}` : null],
             ['Register entry', d.registeredIp ? <span className="font-mono">{d.registeredIp}</span> : d.registered ? 'Its last address is registered' : 'Not registered'],

@@ -7,9 +7,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
 COPY . .
-# The anon key is public by design. The API shares this origin, so it needs no URL.
-ARG VITE_SUPABASE_URL
-ARG VITE_SUPABASE_ANON_KEY
+# The API shares this origin, so the app needs no URL for it.
 # The commit this image was built from, shown under the menu. make passes it.
 ARG APP_COMMIT=""
 ENV VITE_API_URL="" APP_COMMIT=$APP_COMMIT

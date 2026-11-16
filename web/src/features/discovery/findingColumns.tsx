@@ -5,7 +5,29 @@ import { Button, DeviceBadge, GatewayBadge, none, PrivateMacBadge, RegisterBadge
 import { formatAgo, formatDateTime } from '../../lib/format'
 import { label, sources } from '../../lib/labels'
 import type { Finding } from '../../lib/types'
-import { deviceLine, networkCard, serviceName } from './deviceInfo'
+import { deviceLine, iconEvidence, networkCard, serviceName } from './deviceInfo'
+
+/** A MAC nobody has approved yet. Private MACs aren't devices to decide on. */
+export const isUnknown = (r: { mac: string | null; isPrivateMac?: boolean | null; deviceStatus: string | null }) =>
+  Boolean(r.mac) && !r.isPrivateMac && r.deviceStatus !== 'approved'
+
+/**
+ * An address that should be in the register but isn't: static, on a server or
+ * cloud network, or used by a device nobody approved. An approved device on a
+ * DHCP pool address is expected to be unregistered: its address changes.
+ */
+export function needsRegister(r: { registerId: string | null; isGateway: boolean; isStatic: boolean | null; segmentKind?: string | null; inPool?: boolean; deviceStatus: string | null; homeIp?: string | null }): boolean {
+  if (r.registerId || r.isGateway || r.homeIp) return false
+  const dhcpClient = (r.segmentKind ? r.segmentKind === 'dhcp' : r.inPool) && !r.isStatic
+  return !dhcpClient || r.deviceStatus !== 'approved'
+}
+
+/** Row colour in Discovery: red for open alerts or a rejected device, orange for an unknown device or a missing register entry. */
+export function attentionRow(r: Parameters<typeof needsRegister>[0] & { mac: string | null; isPrivateMac?: boolean | null; openAlerts?: number }): string | undefined {
+  if ((r.openAlerts ?? 0) > 0 || r.deviceStatus === 'rejected') return 'bg-danger-soft/50 [&>td:first-child]:shadow-[inset_3px_0_0_var(--color-danger)]'
+  if (isUnknown(r) || needsRegister(r)) return 'bg-warn-soft/50 [&>td:first-child]:shadow-[inset_3px_0_0_var(--color-warn)]'
+  return undefined
+}
 
 /** First discovered within the last hour: a device that just joined. */
 export const isNew = (firstSeen: string | null) => Boolean(firstSeen) && Date.now() - new Date(firstSeen!).getTime() < 3_600_000
@@ -22,19 +44,42 @@ export function RegisterCell({ r }: { r: Finding }) {
     return <Stack main={<StateBadge tone="accent" title={`Registered at ${r.homeIp} on ${r.homeSegment}`}>Registered elsewhere</StateBadge>}
       sub={<span>at <span className="font-mono">{r.homeIp}</span> · {r.homeSegment}</span>} />
   }
-  return <Stack main={<RegisterBadge status={r.registerStatus} />} sub={r.owner ? `Owner: ${r.owner}` : (r.assignedName ?? undefined)} />
+  return <Stack main={<RegisterBadge status={r.registerStatus} attention={needsRegister(r)} />} sub={r.owner ? `Owner: ${r.owner}` : (r.assignedName ?? undefined)} />
 }
 
 /** First seen, last seen, and how long it has been silent once it stops answering. */
-export function Presence({ online, firstSeen, lastSeen }: { online: boolean; firstSeen: string | null; lastSeen: string | null }) {
+export function Presence({ online, firstSeen, lastSeen, showFirstSeen = true }: { online: boolean; firstSeen: string | null; lastSeen: string | null; showFirstSeen?: boolean }) {
   if (!lastSeen) return none
   return (
     <div className="min-w-0">
       {online
         ? <StateBadge tone="ok" title={`Last answered ${formatDateTime(lastSeen)}`}>Online</StateBadge>
-        : <StateBadge tone="neutral" title={`Last answered ${formatDateTime(lastSeen)}`}>Unavailable since {formatAgo(lastSeen)}</StateBadge>}
-      {firstSeen && <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink-3" title={formatDateTime(firstSeen)}>First discovered {formatAgo(firstSeen)}{isNew(firstSeen) && <StateBadge tone="accent">New</StateBadge>}</div>}
+        : <StateBadge tone="neutral" title={`Last answered ${formatDateTime(lastSeen)}`}>Not answering · last seen {formatAgo(lastSeen)}</StateBadge>}
+      {showFirstSeen && firstSeen && <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink-3" title={formatDateTime(firstSeen)}>First discovered {formatAgo(firstSeen)}{isNew(firstSeen) && <StateBadge tone="accent">New</StateBadge>}</div>}
     </div>
+  )
+}
+
+/** Name, what the device says about itself, its MAC and network card, and open ports. */
+function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void }) {
+  const line = deviceLine(r)
+  const card = networkCard(r)
+  return (
+    <WithPlatform evidence={iconEvidence(r)}>
+      <div className="flex items-center gap-2 truncate text-ink">
+        <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
+          {r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}
+        </button>
+        {r.isGateway && <GatewayBadge />}
+      </div>
+      {(r.deviceName || r.assignedName) && r.hostname && r.hostname !== (r.deviceName || r.assignedName) && <div className="truncate text-[11.5px] text-ink-3" title="Hostname the device reported">{r.hostname}</div>}
+      {line && <div className="truncate text-[12px] text-ink-2" title="What the device says about itself">{line}</div>}
+      <div className="flex items-center gap-2 truncate text-[11.5px] text-ink-3">
+        <span className="font-mono">{r.mac ?? 'MAC not visible'}</span>{r.isPrivateMac && <PrivateMacBadge />}
+        {card && <span className="truncate" title="Maker of the network card, from the MAC. Often not the device's maker.">· card: {card}</span>}
+      </div>
+      {r.openPorts.length > 0 && <div className="truncate text-[11.5px] text-ink-3" title={r.openPorts.map((p) => `${p} ${serviceName(p)}`).join(', ')}>Open: {r.openPorts.map(serviceName).join(', ')}</div>}
+    </WithPlatform>
   )
 }
 
@@ -55,23 +100,7 @@ export function findingColumns({ canEdit, onOpen, onRegister, onApprove, onRejec
 }): Column<Finding>[] {
   return [
     { key: 'ip', header: 'Address', cell: (r) => <Stack mono main={<button type="button" className="cursor-pointer hover:text-accent hover:underline" onClick={() => onOpen(r)} title="Show details">{r.ip}</button>} sub={r.segmentId ? <Link className="font-sans hover:text-accent hover:underline" to={`/segments/${r.segmentId}`}>{r.segmentName}</Link> : 'No segment'} /> },
-    { key: 'device', header: 'Device', cell: (r) => (
-      <WithPlatform platform={r.platform} vendor={deviceLine(r)} hostname={r.hostname || r.deviceName} gateway={r.isGateway}>
-        <div className="flex items-center gap-2 truncate text-ink">
-          <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
-            {r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}
-          </button>
-          {r.isGateway && <GatewayBadge />}
-        </div>
-        {(r.deviceName || r.assignedName) && r.hostname && r.hostname !== (r.deviceName || r.assignedName) && <div className="truncate text-[11.5px] text-ink-3" title="Hostname the device reported">{r.hostname}</div>}
-        {deviceLine(r) && <div className="truncate text-[12px] text-ink-2" title="What the device says about itself">{deviceLine(r)}</div>}
-        <div className="flex items-center gap-2 truncate text-[11.5px] text-ink-3">
-          <span className="font-mono">{r.mac ?? 'MAC not visible'}</span>{r.isPrivateMac && <PrivateMacBadge />}
-          {networkCard(r) && <span className="truncate" title="Maker of the network card, from the MAC. Often not the device's maker.">· card: {networkCard(r)}</span>}
-        </div>
-        {r.openPorts.length > 0 && <div className="truncate text-[11.5px] text-ink-3" title={r.openPorts.map((p) => `${p} ${serviceName(p)}`).join(', ')}>Open: {r.openPorts.map(serviceName).join(', ')}</div>}
-      </WithPlatform>
-    ) },
+    { key: 'device', header: 'Device', cell: (r) => <DeviceCell r={r} onOpen={onOpen} /> },
     { key: 'register', header: 'Register', cell: (r) => <RegisterCell r={r} /> },
     { key: 'approval', header: 'Approval', hideBelow: 'lg', cell: (r) => (r.deviceId || (r.mac && !r.isPrivateMac) ? <DeviceBadge status={r.deviceStatus} /> : none) },
     { key: 'presence', header: 'Presence', cell: (r) => <Presence online={r.online} firstSeen={r.firstSeen} lastSeen={r.lastSeen} /> },

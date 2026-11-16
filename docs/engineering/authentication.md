@@ -1,11 +1,11 @@
 # Authentication and Authorisation
 
-Two ways to sign in run side by side:
+DF-IPAM holds no passwords. There are two ways in, and both end in the same session cookie:
 
-- **Microsoft Entra ID** (the company's sign-in), for `@dialogfinance.lk` accounts. This is the way forward.
-- **Supabase email and password**, kept until it is removed (see [plan.md](plan.md)).
+- **Microsoft Entra ID**, for `@dialogfinance.lk` accounts. This is the way in.
+- **Development sign-in** (`AUTH_BYPASS`), for while Entra ID isn't set up: one button that signs in as one named person, without a password. Never in production.
 
-Authorisation stays entirely in DF-IPAM's own `users` and `roles` tables, whichever way a person signed in.
+Authorisation stays entirely in DF-IPAM's own `users` and `roles` tables, whichever way a person signed in. Every `/api/v1` request is signed in by its session cookie; there are no bearer tokens.
 
 ## Microsoft Entra ID
 
@@ -30,66 +30,35 @@ A session ends after 10 hours, after the idle timeout in System (default 30 minu
 
 For local use, leave `VITE_API_URL` empty in `web/.env`, so the app and API share one address and the cookie is sent.
 
-### Your account
+### Pending accounts
 
-Signing in with Microsoft creates a new DF-IPAM user (a different identity from any Supabase account). Sign in once, then give that user a role from an existing administrator account, or in `make db-shell`:
+An account can be made before its person first signs in: `make admin EMAIL=…`, and the development sign-in, add one with `auth_provider = 'entra'` and `auth_subject = 'pending:<email>'`. **Their first Microsoft sign-in with a verified email matching it takes that account over** (once), so the role and history given beforehand stay with them.
 
-```sql
-UPDATE users SET role = 'admin' WHERE auth_provider = 'entra' AND lower(email) = lower('<you>@dialogfinance.lk');
-```
+## Development sign-in
 
-## Supabase email and password
-
-1. The web app signs the person in with `supabase-js`, which holds and refreshes the session.
-2. The app sends `Authorization: Bearer <access_token>` on each API call.
-3. The API verifies the token, finds the `users` row by its subject, checks it is active, and checks the route's permission.
-
-The browser never reads tables through `supabase-js`. The `service_role` key is read only by `api/internal/auth/supabase_admin.go`, which checks at startup that Supabase is reachable.
-
-### Token checks
-
-| Check | Expected |
-| --- | --- |
-| Signature | Against `https://<project>.supabase.co/auth/v1/.well-known/jwks.json`, cached at most 10 minutes, refetched once on an unknown `kid` |
-| `alg` | ES256 or RS256 only |
-| `iss` | `https://<project>.supabase.co/auth/v1` |
-| `aud` | `authenticated` |
-| `exp` | Not expired |
-| `sub` | An active `users` row |
+For while the Entra ID app registration isn't ready. In `api/.env`:
 
 ```bash
-# api/.env
-SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=      # backend only, never in web/
-CORS_ALLOWED_ORIGINS=http://localhost:5173
-# web/.env
-VITE_SUPABASE_URL=https://<project>.supabase.co
-VITE_SUPABASE_ANON_KEY=
-VITE_API_URL=http://127.0.0.1:8080
+AUTH_BYPASS=true
+AUTH_BYPASS_EMAIL=<you>@dialogfinance.lk
 ```
 
-### Supabase project
-
-- **Turn off public sign-ups.** Add people in the Supabase dashboard with a password and auto-confirm on. DF-IPAM has no screen to set a password.
-- Use asymmetric signing keys: the JWKS URL above must return a key.
-- Set the site URL to the address people use.
+- The sign-in page shows **Continue with development sign-in**. It calls `POST /api/v1/auth/bypass` (with the `X-Requested-With` header), which starts an ordinary session as `AUTH_BYPASS_EMAIL`: the same cookie, idle timeout, deactivation check and audit (`provider: bypass`) as Microsoft sign-in.
+- The first time, that person is added as a pending **Administrator**, so they can set everything up; their later Microsoft sign-in takes the same account over. An existing account with that email is used as it is, and a deactivated one is refused.
+- **Anyone who can open the site signs in as that person.** Use it only on a trusted network. Every screen shows a warning banner while it is on, and the API logs a warning at start.
+- **The API refuses to start with it when `APP_ENV=production`**, and `docker-compose.prod.yml` and `docker-compose.apache.yml` fix `APP_ENV=production`. Turn it off (`AUTH_BYPASS=false`) once Microsoft sign-in works.
 
 ## People and roles
 
-A valid token with no `users` row creates one with **no role**: the person sees "Waiting for access" until someone who may manage users gives them a role in **Users and roles**. Deactivating someone blocks them on their next request.
+A first Microsoft sign-in with no matching account creates one with **no role**: the person sees "Waiting for access" until someone who may manage users gives them a role in **Users and roles**. Deactivating someone blocks them on their next request.
 
-Make the first administrator after they have signed in once, in `make db-shell`:
-
-```sql
-UPDATE users SET role = 'admin' WHERE lower(email) = lower('<their email>');
-```
+Make the first administrator with `make admin EMAIL=<their email>`: it promotes an existing account, or adds a pending one that their first sign-in takes over. Audited.
 
 Nobody can change their own role or deactivate themselves, and no change (to a person or to a role) may leave nobody active who can manage users.
 
 ### Roles
 
-Roles live in the `roles` table: a key, a name, a description and a list of permissions. A role with `full_access` holds every permission, including ones added later; the starting Administrator role is the only one, and it can't be limited or deleted. Others are set up in Users and roles > Roles, and a role nobody holds can be deleted. The starting roles are listed in [new.md](new.md#roles).
+Roles live in the `roles` table: a key, a name, a description and a list of permissions. A role with `full_access` holds every permission, including ones added later; the starting Administrator role is the only one, and it can't be limited or deleted. Others are set up in Users and roles > Roles, and a role nobody holds can be deleted. The starting roles are listed in [screens.md](../product/screens.md#roles).
 
 ### Permissions
 
@@ -112,14 +81,12 @@ Defined in `api/internal/auth/permissions.go` and described for people in `web/s
 
 `web/src/app/nav.ts` hides what a person can't open, for clarity only: the API does the real check.
 
-## Keeping the swap easy
+## Where it lives
 
-Only `api/internal/auth/supabase*.go` and the Supabase half of `web/src/lib/auth.ts` know about Supabase; Microsoft sign-in lives in `api/internal/auth/entra.go`, `sessions.go` and `api/internal/modules/signin`. Removing Supabase means deleting its files and half, its settings, and the bearer path in `auth.Authenticate`.
-
-## Limits of Supabase sign-in
-
-- Tokens live in browser storage, so an XSS bug could steal one. The Content Security Policy reduces this.
-- Signing out doesn't cancel an issued token until it expires (1 hour by default).
-- Sign-in depends on an internet service: the server and browsers need to reach `<project>.supabase.co`.
-- No multi-factor authentication.
-- Idle sign-out after `session.idle_timeout_minutes` (default 30) limits unattended sessions.
+| Part | Files |
+| --- | --- |
+| Sessions and the cookie check | `api/internal/auth/sessions.go`, `middleware.go` |
+| Microsoft Entra ID | `api/internal/auth/entra.go`, `keycache.go`, `token.go` |
+| Pending accounts | `api/internal/auth/accounts.go`, `api/cmd/admin` |
+| Sign-in routes, development sign-in | `api/internal/modules/signin` |
+| Browser | `web/src/lib/auth.ts` only; the API client sends the cookie and the `X-Requested-With` header |

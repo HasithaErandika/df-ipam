@@ -30,7 +30,7 @@ export interface DecisionTarget {
 
 /**
  * Approves a device, naming it, and can add the address it was seen on to the
- * register in the same step (docs/new.md, section 4).
+ * register in the same step (docs/product/register.md).
  */
 export function ApproveDeviceModal({ target, onClose }: { target: DecisionTarget | null; onClose: () => void }) {
   const refresh = useInvalidate(...inventoryKeys)

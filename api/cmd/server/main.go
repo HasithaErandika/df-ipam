@@ -1,5 +1,5 @@
 // Command server is the DF-IPAM Lite backend: the HTTP API, the built-in scanner,
-// server checks, alert rules and the email outbox, in one process (docs/new.md).
+// server checks, alert rules and the email outbox, in one process (docs/engineering/architecture.md).
 package main
 
 import (
@@ -75,12 +75,6 @@ func run() error {
 	firewall := fortigate.NewSyncer(pool, keys)
 	go firewall.Run(ctx)
 
-	admin := auth.NewSupabaseAdmin(cfg.SupabaseURL, cfg.SupabaseAnonKey, cfg.SupabaseServiceKey)
-	if err := admin.Check(ctx); err != nil {
-		slog.Warn("supabase auth is not reachable", "error", err)
-	}
-	verifier := auth.NewSupabaseVerifier(cfg.SupabaseURL+"/auth/v1", cfg.AuthAudience, cfg.SupabaseURL+"/auth/v1/.well-known/jwks.json")
-	resolver := &auth.Resolver{Pool: pool, Provider: verifier.Provider()}
 	sessions := &auth.Sessions{Conn: pool}
 	var microsoft signin.Microsoft
 	if entra := (auth.EntraConfig{Authority: cfg.EntraAuthority, TenantID: cfg.EntraTenantID, ClientID: cfg.EntraClientID,
@@ -88,7 +82,15 @@ func run() error {
 		microsoft = auth.NewEntra(entra)
 		slog.Info("microsoft sign-in is on", "tenant", cfg.EntraTenantID, "domains", cfg.AllowedEmailDomains, "redirect", cfg.EntraRedirectURL)
 	}
-	deps := server.Deps{Sessions: sessions, SignIn: signin.New(pool, microsoft, sessions, cfg.AppBaseURL), Conn: pool, Ready: pool.Ping, Verifier: verifier, Resolver: resolver, Origins: cfg.AllowedOrigins,
+	signIn := signin.New(pool, microsoft, sessions, cfg.AppBaseURL)
+	if cfg.AuthBypass {
+		signIn.WithBypass(cfg.AuthBypassEmail)
+		slog.Warn("DEVELOPMENT SIGN-IN IS ON: anyone who can open the site signs in without a password. Turn AUTH_BYPASS off once Microsoft sign-in works",
+			"email", cfg.AuthBypassEmail)
+	} else if microsoft == nil {
+		slog.Warn("no way to sign in: set the ENTRA_* settings, or AUTH_BYPASS for development")
+	}
+	deps := server.Deps{Sessions: sessions, SignIn: signIn, Conn: pool, Ready: pool.Ping, Origins: cfg.AllowedOrigins,
 		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 

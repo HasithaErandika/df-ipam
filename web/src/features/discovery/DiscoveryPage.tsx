@@ -1,6 +1,8 @@
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { Card, DataTable, FilterBar, FilterSelect, PageHeader, PathTabs, SearchInput, Segmented } from '../../components/ui'
+import { list } from '../../lib/api'
 import { useFilters, usePagedList } from '../../lib/listing'
 import { useSegments } from '../../lib/queries'
 import { useCan } from '../../lib/session'
@@ -12,7 +14,7 @@ import { ApproveDeviceModal, type DecisionTarget, useRejectDevice } from '../sha
 import { RegisterIPModal, type RegisterPrefill } from '../shared/RegisterIPModal'
 import { DiscoverySummary } from './DiscoverySummary'
 import { FindingDetails } from './FindingDetails'
-import { findingColumns } from './findingColumns'
+import { attentionRow, findingColumns } from './findingColumns'
 import { ScanStatusPanel, ScanSummary } from './ScanSummary'
 import { SegmentsOverview } from './SegmentsOverview'
 
@@ -32,12 +34,22 @@ function Findings() {
   const canEdit = useCan('inventory:edit')
   const f = useFilters(['segmentId', 'kind', 'source', 'seen', 'q', 'sort'] as const)
   const seen = f.values.seen || 'now'
-  const { query, rows, meta, paging } = usePagedList<Finding>('/discovery/findings', { ...f.values, seen }, { refetchInterval: 30_000 })
   const [prefill, setPrefill] = useState<RegisterPrefill | null>(null)
   const [approve, setApprove] = useState<DecisionTarget | null>(null)
   const reject = useRejectDevice()
   const [params, setParams] = useSearchParams()
   const openId = params.get('finding')
+  // The list stops refreshing while a dialog is open, so rows don't move under it.
+  const busy = Boolean(openId || prefill || approve)
+  const { query, rows, meta, paging } = usePagedList<Finding>('/discovery/findings', { ...f.values, seen }, { refetchInterval: busy ? undefined : 30_000 })
+  // The open finding is fetched on its own: a shared link works whatever page or
+  // filter is showing, and the dialog stays open if the device stops answering.
+  const opened = useQuery({
+    queryKey: ['/discovery/findings', 'one', openId],
+    queryFn: () => list<Finding>(`/discovery/findings?seen=all&id=${encodeURIComponent(openId!)}`),
+    enabled: Boolean(openId),
+    placeholderData: () => { const row = rows.find((r) => r.id === openId); return row ? { data: [row], meta: { page: 1, pageSize: 1, total: 1, totalPages: 1, hasNext: false, hasPrev: false } } : undefined },
+  })
   const setOpen = (id: string | null) => setParams((prev) => {
     const next = new URLSearchParams(prev)
     if (id) next.set('finding', id)
@@ -61,18 +73,18 @@ function Findings() {
         <FilterSelect label="Segment" value={f.values.segmentId} onChange={(v) => f.set('segmentId', v)} options={(segments.data ?? []).map((s) => ({ value: s.id, text: s.name }))} />
         <FilterSelect label="Finding" value={f.values.kind} onChange={setKind} options={kinds} anyLabel="All findings" />
         <FilterSelect label="Source" value={f.values.source} onChange={(v) => f.set('source', v)} options={options(sources)} />
-        <FilterSelect label="Sort" value={f.values.sort} onChange={(v) => f.set('sort', v)} anyLabel="Newest first" options={[
+        <FilterSelect label="Sort" value={f.values.sort} onChange={(v) => f.set('sort', v)} anyLabel="Last seen, newest" options={[
           { value: 'ip', text: 'By IP' }, { value: '-firstSeen', text: 'First seen, newest' }, { value: 'firstSeen', text: 'First seen, oldest' }, { value: 'hostname', text: 'By hostname' }, { value: 'segment', text: 'By segment' },
         ]} />
       </FilterBar>
       <DiscoverySummary segmentId={f.values.segmentId} seen={seen} kind={f.values.kind} onKind={setKind} />
-      <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
+      <DataTable columns={columns} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f} rowClassName={attentionRow}
         empty={seen === 'now'
           ? { title: 'Nothing connected right now', body: 'Devices appear here while they answer scans, and drop off when they leave. Choose 24 h or longer to see recent history, or start a scan.' }
           : { title: 'Nothing seen in this window', body: 'Try a longer time window, or start a scan.' }} />
       <RegisterIPModal open={prefill !== null} prefill={prefill ?? undefined} onClose={() => setPrefill(null)} />
       <ApproveDeviceModal target={approve} onClose={() => setApprove(null)} />
-      <FindingDetails row={rows.find((r) => r.id === openId) ?? null} {...handlers} onClose={() => setOpen(null)} />
+      <FindingDetails row={openId ? opened.data?.data[0] ?? null : null} {...handlers} onClose={() => setOpen(null)} />
     </Card>
   )
 }

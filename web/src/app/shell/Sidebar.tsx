@@ -81,11 +81,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       </nav>
 
       <div className={cx('shrink-0 border-t border-side-border py-2.5 text-[11px] leading-snug text-side-ink-3', collapsed ? 'text-center' : 'px-4')}
-        title={`DF-IPAM ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}, built ${__APP_BUILT__}`}>
+        title={`DF-IPAM ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}`}>
         {collapsed ? <span className="tabular-nums">v{__APP_VERSION__}</span> : (
           <>
             <div><span className="font-medium text-side-ink-2">DF-IPAM Lite</span> <span className="tabular-nums">v{__APP_VERSION__}</span></div>
-            <div className="tabular-nums">{__APP_COMMIT__ ? `Build ${__APP_COMMIT__} · ` : ''}{__APP_BUILT__}</div>
+            {__APP_COMMIT__ && <div className="tabular-nums">Build {__APP_COMMIT__}</div>}
           </>
         )}
       </div>

@@ -6,7 +6,7 @@ REST under `/api/v1`. The contract is `api/openapi.yaml`; a test fails if a rout
 
 | Topic | Rule |
 | --- | --- |
-| Auth | `Authorization: Bearer <token>` on every `/api/v1` route. `/health` and `/ready` are open |
+| Auth | The session cookie on every `/api/v1` route, and `X-Requested-With: DF-IPAM` on every change. `/auth/*` sign-in routes, `/health` and `/ready` are open |
 | Permissions | Every route is registered with its permissions through the route guard. A test fails on an unprotected route |
 | Lists | `?page=1&pageSize=25`, at most 200. Ordering always ends in a unique column, so pages never overlap |
 | Sorting and filters | Named query parameters, allowlisted per endpoint |

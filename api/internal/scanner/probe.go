@@ -7,67 +7,126 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 )
 
-func ping(ctx context.Context, ip netip.Addr, timeout time.Duration) (bool, error) {
-	alive, _, err := pingTTL(ctx, ip, timeout)
-	return alive, err
+// pinger sends echo requests over one ICMP socket and hands each reply to the
+// probe waiting for it, matched by sequence number and sender. One socket per
+// scan, instead of one per address, so raw sockets don't each receive every
+// reply on the machine.
+type pinger struct {
+	conn    *icmp.PacketConn
+	p4      *ipv4.PacketConn
+	raw     bool // ip4:icmp: the echo ID is ours to check; on udp4 the kernel filters
+	withTTL bool
+	id      int
+	mu      sync.Mutex
+	seq     uint16
+	waiting map[uint16]waiter
 }
 
-// pingTTL also returns the TTL of the reply, or 0 when the system won't say. The
-// starting TTL hints at the operating system (see osFromTTL).
-func pingTTL(ctx context.Context, ip netip.Addr, timeout time.Duration) (bool, int, error) {
+type waiter struct {
+	ip    netip.Addr
+	reply chan int // the reply's TTL
+}
+
+func newPinger() (*pinger, error) {
 	conn, network, err := openICMP()
 	if err != nil {
-		return false, 0, err
+		return nil, err
 	}
-	defer conn.Close()
-	message := icmp.Message{Type: ipv4.ICMPTypeEcho, Body: &icmp.Echo{ID: os.Getpid() & 0xffff, Seq: int(time.Now().UnixNano() & 0xffff), Data: []byte("df-ipam")}}
-	packet, err := message.Marshal(nil)
-	if err != nil {
-		return false, 0, err
-	}
-	var dst net.Addr = &net.IPAddr{IP: ip.AsSlice()}
-	if network == "udp4" {
-		dst = &net.UDPAddr{IP: ip.AsSlice()}
-	}
-	if _, err := conn.WriteTo(packet, dst); err != nil {
-		return false, 0, nil
-	}
-	deadline := time.Now().Add(timeout)
-	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
-		deadline = ctxDeadline
-	}
-	_ = conn.SetReadDeadline(deadline)
-	p4 := conn.IPv4PacketConn()
-	withTTL := p4 != nil && p4.SetControlMessage(ipv4.FlagTTL, true) == nil
+	p := &pinger{conn: conn, raw: network == "ip4:icmp", id: os.Getpid() & 0xffff, waiting: map[uint16]waiter{}}
+	p.p4 = conn.IPv4PacketConn()
+	p.withTTL = p.p4 != nil && p.p4.SetControlMessage(ipv4.FlagTTL, true) == nil
+	go p.read()
+	return p, nil
+}
+
+func (p *pinger) Close() { _ = p.conn.Close() }
+
+// read hands replies to their waiters until the socket is closed.
+func (p *pinger) read() {
 	buf := make([]byte, 1500)
 	for {
-		n, ttl, peer, err := readReply(conn, p4, withTTL, buf)
+		n, ttl, peer, err := p.readOne(buf)
 		if err != nil {
-			return false, 0, nil
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			continue
 		}
 		msg, err := icmp.ParseMessage(1, buf[:n])
-		if err == nil && msg.Type == ipv4.ICMPTypeEchoReply && peerIs(peer, ip) {
-			return true, ttl, nil
+		if err != nil || msg.Type != ipv4.ICMPTypeEchoReply {
+			continue
+		}
+		echo, ok := msg.Body.(*icmp.Echo)
+		if !ok || (p.raw && echo.ID != p.id) {
+			continue
+		}
+		p.mu.Lock()
+		w, found := p.waiting[uint16(echo.Seq)]
+		p.mu.Unlock()
+		if found && peerIs(peer, w.ip) {
+			select {
+			case w.reply <- ttl:
+			default:
+			}
 		}
 	}
 }
 
-func readReply(conn *icmp.PacketConn, p4 *ipv4.PacketConn, withTTL bool, buf []byte) (int, int, net.Addr, error) {
-	if !withTTL {
-		n, peer, err := conn.ReadFrom(buf)
+func (p *pinger) readOne(buf []byte) (int, int, net.Addr, error) {
+	if !p.withTTL {
+		n, peer, err := p.conn.ReadFrom(buf)
 		return n, 0, peer, err
 	}
-	n, cm, peer, err := p4.ReadFrom(buf)
+	n, cm, peer, err := p.p4.ReadFrom(buf)
 	if cm == nil {
 		return n, 0, peer, err
 	}
 	return n, cm.TTL, peer, err
+}
+
+// ping sends one echo and waits for its reply. It returns the reply's TTL, or 0
+// when the system won't say; the starting TTL hints at the system (osFromTTL).
+// An error means the request could not be sent, not that the host is down.
+func (p *pinger) ping(ctx context.Context, ip netip.Addr, timeout time.Duration) (bool, int, error) {
+	w := waiter{ip: ip, reply: make(chan int, 1)}
+	p.mu.Lock()
+	p.seq++
+	seq := p.seq
+	p.waiting[seq] = w
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		delete(p.waiting, seq)
+		p.mu.Unlock()
+	}()
+	packet, err := (&icmp.Message{Type: ipv4.ICMPTypeEcho, Body: &icmp.Echo{ID: p.id, Seq: int(seq), Data: []byte("df-ipam")}}).Marshal(nil)
+	if err != nil {
+		return false, 0, err
+	}
+	var dst net.Addr = &net.IPAddr{IP: ip.AsSlice()}
+	if !p.raw {
+		dst = &net.UDPAddr{IP: ip.AsSlice()}
+	}
+	if _, err := p.conn.WriteTo(packet, dst); err != nil {
+		return false, 0, err
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case ttl := <-w.reply:
+		return true, ttl, nil
+	case <-timer.C:
+		return false, 0, nil
+	case <-ctx.Done():
+		return false, 0, nil
+	}
 }
 
 // osFromTTL names the likely system family from a reply's TTL. Systems start at

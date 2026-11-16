@@ -31,11 +31,11 @@ export function formatDate(value: string): string {
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { dateStyle: 'medium', timeZone: 'UTC' })
 }
 
-/** Today as YYYY-MM-DD in UTC, plus a number of days. */
+/** Today as YYYY-MM-DD by the person's own calendar, plus a number of days. */
 export function isoDate(addDays = 0): string {
   const d = new Date()
-  d.setUTCDate(d.getUTCDate() + addDays)
-  return d.toISOString().slice(0, 10)
+  d.setDate(d.getDate() + addDays)
+  return d.toLocaleDateString('en-CA')
 }
 
 /** Whole days from now until an instant; negative once it has passed. */
@@ -81,4 +81,17 @@ export function pageWindow(page: number, totalPages: number): (number | null)[] 
 /** "Floor 4 · VLAN 40" style segment captions. */
 export function segmentCaption(s: { floor: number | null; vlan: number | null; network: string }): string {
   return [s.floor !== null ? `Floor ${s.floor}` : null, s.vlan !== null ? `VLAN ${s.vlan}` : null, s.network].filter(Boolean).join(' · ')
+}
+
+/** A person's name from a work email: hasitha.wickramasinghe@… gives "Hasitha Wickramasinghe". */
+export function nameFromEmail(email: string): string {
+  const parts = email.split('@')[0].split('.').filter(Boolean)
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ') || email
+}
+
+/** Initials for an avatar: the first letter of the first two names (HW), or the first two letters of a single name. */
+export function initialsFromEmail(email: string): string {
+  const parts = email.split('@')[0].split('.').filter(Boolean)
+  const letters = parts.length > 1 ? (parts[0][0] ?? '') + (parts[1][0] ?? '') : (parts[0] ?? '').slice(0, 2)
+  return letters.toUpperCase() || '?'
 }

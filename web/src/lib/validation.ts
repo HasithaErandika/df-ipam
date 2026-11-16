@@ -4,6 +4,7 @@
  * DF-IPAM Lite is IPv4 only.
  */
 import { z } from 'zod'
+import { isoDate } from './format'
 
 export function isIPv4(v: string): boolean {
   const parts = v.split('.')
@@ -16,6 +17,33 @@ export function ipToInt(v: string): number {
 
 export const intToIP = (n: number) => [24, 16, 8, 0].map((s) => Math.floor(n / 2 ** s) % 256).join('.')
 
+export interface IPv4NetworkInfo {
+  network: string
+  prefixLength: number
+  mask: string
+  broadcast: string
+  firstUsable: string
+  lastUsable: string
+  totalAddresses: number
+  usableAddresses: number
+}
+
+/** Subnet facts for the /16–/30 networks accepted by segment setup. */
+export function ipv4NetworkInfo(cidr: string): IPv4NetworkInfo | null {
+  if (cidrIssue(cidr)) return null
+  const [address, prefixText] = cidr.trim().split('/')
+  const prefixLength = Number(prefixText)
+  const size = 2 ** (32 - prefixLength)
+  const network = ipToInt(address)
+  const broadcast = network + size - 1
+  return {
+    network: intToIP(network), prefixLength,
+    mask: intToIP(0xffffffff - size + 1), broadcast: intToIP(broadcast),
+    firstUsable: intToIP(network + 1), lastUsable: intToIP(broadcast - 1),
+    totalAddresses: size, usableAddresses: size - 2,
+  }
+}
+
 /** A network written as its network address with a /16 to /30 prefix. */
 export function cidrIssue(v: string): string | undefined {
   const [address, prefix, extra] = v.trim().split('/')
@@ -26,6 +54,15 @@ export function cidrIssue(v: string): string | undefined {
   const start = ipToInt(address)
   if (start % size !== 0) return `Use the network address: ${intToIP(start - (start % size))}/${bits}.`
   return undefined
+}
+
+/** The scanner skips segments with more usable addresses than this (a /20). */
+export const maxScannable = 4096
+
+/** Whether an address is a usable host in the network: not its network or broadcast address. */
+export function isHostAddress(ip: string, cidr: string): boolean {
+  const info = ipv4NetworkInfo(cidr)
+  return Boolean(info && isIPv4(ip) && ipToInt(ip) >= ipToInt(info.firstUsable) && ipToInt(ip) <= ipToInt(info.lastUsable))
 }
 
 /** Whether an IPv4 address is inside a CIDR network. */
@@ -59,7 +96,7 @@ export const choose = (what: string) => z.string().min(1, `Choose ${what}.`)
 export const optionalInt = (label: string, min: number, max: number) => z.string().trim()
   .refine((v) => v === '' || (/^-?\d+$/.test(v) && Number(v) >= min && Number(v) <= max), `${label} must be a whole number from ${min} to ${max}.`)
 
-/** An optional YYYY-MM-DD that is today or later. */
-export const futureDate = (label: string) => z.string().refine((v) => v === '' || v >= new Date().toISOString().slice(0, 10), `${label} can't be in the past.`)
+/** An optional YYYY-MM-DD that is today or later, by the person's own calendar. */
+export const futureDate = (label: string) => z.string().refine((v) => v === '' || v >= isoDate(), `${label} can't be in the past.`)
 
 export const toInt = (v: string) => (v.trim() === '' ? null : Number(v))

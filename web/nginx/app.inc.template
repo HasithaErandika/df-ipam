@@ -26,7 +26,7 @@ include /etc/nginx/rules/access.conf;
 
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "no-referrer" always;
-add_header Content-Security-Policy "default-src 'self'; connect-src 'self' ${SUPABASE_URL}; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" always;
+add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" always;
 
 # Most requests are small. The routes that take files set their own limit below.
 client_max_body_size 2m;

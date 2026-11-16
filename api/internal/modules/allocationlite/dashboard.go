@@ -57,7 +57,7 @@ type severityCount struct {
 }
 
 // "Seen" means answered within the last two scan intervals, at least ten minutes.
-const recentSeen = `make_interval(mins => GREATEST(10, 2 * COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 10)))`
+const recentSeen = db.SeenWindow
 
 const floorsSQL = `SELECT s.id::text AS id, s.name, s.floor, s.vlan, s.network::text AS network,
 	(SELECT count(*) FROM ip_addresses i WHERE i.segment_id = s.id) AS registered,

@@ -33,16 +33,25 @@ type addressDTO struct {
 	Platform       string     `db:"platform" json:"platform"`
 	Vendor         string     `db:"vendor" json:"vendor"`
 	InPool         bool       `db:"in_pool" json:"inPool"`
+	// What the device said about itself, for its icon.
+	Maker      string  `db:"maker" json:"maker"`
+	Model      string  `db:"model" json:"model"`
+	DeviceKind string  `db:"device_kind" json:"deviceKind"`
+	OSHint     string  `db:"os_hint" json:"osHint"`
+	OpenPorts  []int32 `db:"open_ports" json:"openPorts"`
 }
 
 const addressBase = `WITH seen AS (
-	SELECT DISTINCT ON (ip) ip, mac, hostname, vendor, is_static, is_private_mac, is_gateway, source, first_seen, last_seen
+	SELECT DISTINCT ON (ip) ip, mac, hostname, vendor, is_static, is_private_mac, is_gateway, source, first_seen, last_seen,
+		maker, model, device_kind, os_hint, open_ports
 	FROM sightings WHERE segment_id = $1::uuid ORDER BY ip, last_seen DESC
 ), merged AS (
 	SELECT COALESCE(r.ip, v.ip) AS addr, host(COALESCE(r.ip, v.ip)) AS ip, r.id::text AS register_id, r.status AS register_status,
 		r.assigned_name, r.owner, v.mac::text AS mac, NULLIF(v.hostname, '') AS hostname, v.is_static, v.is_private_mac, (COALESCE(v.is_gateway, false) OR COALESCE(r.ip, v.ip) IS NOT DISTINCT FROM s.gateway) AS is_gateway, v.source,
 		v.first_seen, v.last_seen, d.id::text AS device_id, d.status AS device_status, NULLIF(d.name, '') AS device_name, COALESCE(NULLIF(r.platform, ''), d.platform, '') AS platform, COALESCE(v.vendor, '') AS vendor,
-		(s.dhcp_start IS NOT NULL AND COALESCE(r.ip, v.ip) BETWEEN s.dhcp_start AND s.dhcp_end) AS in_pool
+		(s.dhcp_start IS NOT NULL AND COALESCE(r.ip, v.ip) BETWEEN s.dhcp_start AND s.dhcp_end) AS in_pool,
+		COALESCE(v.maker, '') AS maker, COALESCE(v.model, '') AS model, COALESCE(v.device_kind, '') AS device_kind,
+		COALESCE(v.os_hint, '') AS os_hint, COALESCE(v.open_ports, '{}') AS open_ports
 	FROM (SELECT * FROM ip_addresses WHERE segment_id = $1::uuid) r
 	FULL JOIN seen v ON v.ip = r.ip
 	JOIN segments s ON s.id = $1::uuid
@@ -50,7 +59,7 @@ const addressBase = `WITH seen AS (
 ) `
 
 const addressColumns = `SELECT ip, register_id, register_status, assigned_name, owner, mac, hostname, is_static, is_private_mac, is_gateway, source,
-	first_seen, last_seen, device_id, device_status, device_name, platform, vendor, in_pool FROM merged`
+	first_seen, last_seen, device_id, device_status, device_name, platform, vendor, in_pool, maker, model, device_kind, os_hint, open_ports FROM merged`
 
 // addresses lists every address in a segment that is registered or has been seen.
 // state narrows it: unregistered (seen, not in the register), registered, static

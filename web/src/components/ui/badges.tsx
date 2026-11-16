@@ -27,8 +27,9 @@ export function HealthBadge({ health, since }: { health: string; since?: string 
 }
 
 /** The register side of an address. Never mixed with what the scanner saw. */
-export function RegisterBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <Badge>Not registered</Badge>
+/** attention marks an address that should be in the register but isn't. */
+export function RegisterBadge({ status, attention }: { status: string | null | undefined; attention?: boolean }) {
+  if (!status) return <Badge tone={attention ? 'warn' : 'neutral'}>Not registered</Badge>
   return <Badge tone={registerTone[status]}>{label(registerStatuses, status)}</Badge>
 }
 
@@ -40,7 +41,7 @@ export function SeenBadge({ lastSeen }: { lastSeen: string | null | undefined })
 }
 
 export function DeviceBadge({ status }: { status: string | null | undefined }) {
-  if (!status) return <Badge>Unknown MAC</Badge>
+  if (!status) return <Badge tone="warn">Unknown MAC</Badge>
   return <Badge tone={deviceTone[status]}>{label(deviceStatuses, status)}</Badge>
 }
 

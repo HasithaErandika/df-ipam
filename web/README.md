@@ -4,7 +4,7 @@ The React frontend: TypeScript, Vite, Tailwind CSS, React Router and TanStack Qu
 
 ## Setup
 
-Copy `.env.example` to `.env` and fill in the Supabase URL and anon key. `VITE_API_URL` points at the API, which must list this app's origin in `CORS_ALLOWED_ORIGINS`.
+Copy `.env.example` to `.env`. Leave `VITE_API_URL` empty, so the app and the API share one address and the session cookie is sent.
 
 ## Layout
 
@@ -18,16 +18,16 @@ web/src/
 └── main.tsx
 ```
 
-Every screen in [docs/new.md](../docs/new.md#screens) is built and works against the API. Navigation and who sees what are in `src/app/nav.ts`.
+Every screen in [docs/product/screens.md](../docs/product/screens.md#screens) is built and works against the API. Navigation and who sees what are in `src/app/nav.ts`.
 
 ## Rules
 
-- Keep Supabase inside `src/lib/auth.ts`, so moving to company sign-in stays a small change.
+- Keep sign-in inside `src/lib/auth.ts`. The browser never holds a token: the API's cookie signs every request.
 - Show register state and evidence as separate badges. Say "Available candidate", never "Free".
 - Light theme only; keep the colour tokens in `index.css`.
 - No fake data: screens show real records or say what is missing.
 
-See [docs/frontend.md](../docs/frontend.md) for design and UI rules.
+See [docs/frontend.md](../docs/engineering/frontend.md) for design and UI rules.
 
 ## Container
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -29,9 +30,10 @@ type apiEnv struct {
 	n      int
 }
 
-type adminResolver struct{ id string }
+// adminSessions signs every request in as the test Admin.
+type adminSessions struct{ id string }
 
-func (a adminResolver) Resolve(context.Context, auth.Identity) (*auth.Principal, error) {
+func (a adminSessions) Resolve(context.Context, string) (*auth.Principal, error) {
 	return auth.NewPrincipal(a.id, "admin@example.com", "admin", nil, true), nil
 }
 
@@ -56,7 +58,7 @@ func newAPI(t *testing.T) *apiEnv {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
-	r, _ := New(Deps{Conn: tx, Verifier: stubVerifier{}, Resolver: adminResolver{uid}})
+	r, _ := New(Deps{Conn: tx, Sessions: adminSessions{uid}})
 	return &apiEnv{t: t, ctx: ctx, tx: tx, router: r}
 }
 
@@ -70,7 +72,8 @@ func (e *apiEnv) call(method, path string, body any, want int) map[string]any {
 		_ = json.NewEncoder(&buf).Encode(body)
 	}
 	req := httptest.NewRequest(method, "/api/v1"+path, &buf)
-	req.Header.Set("Authorization", "Bearer token")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookiePlain, Value: "test"})
+	req.Header.Set(auth.CSRFHeader, "DF-IPAM")
 	req.Header.Set("Content-Type", "application/json")
 	e.n++
 	req.RemoteAddr = fmt.Sprintf("10.9.%d.%d:1000", e.n/250, e.n%250+1)

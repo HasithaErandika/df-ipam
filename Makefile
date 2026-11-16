@@ -1,6 +1,6 @@
 # DF-IPAM developer commands. Run `make help` to list them.
 # Settings come from api/.env and web/.env (see their .env.example files). PostgreSQL, the backend and the web
-# app run in Docker. Supabase provides sign-in, and its database is for testing only.
+# app run in Docker. People sign in with Microsoft Entra ID (or the development sign-in while it isn't set up).
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -13,9 +13,9 @@ COMPOSE := docker compose
 
 .PHONY: help setup env-check dev backend web apache-up apache-web \
         docker-build docker-up docker-down docker-restart docker-logs docker-ps docker-migrate \
-        db-up db-down db-shell db-reset db-backup test-db-supabase migrate-supabase \
+        db-up db-down db-shell db-reset db-backup admin \
         migrate-up migrate-down migrate-version seed db-setup \
-        build build-api build-web test test-api test-db sql test-web lint lint-api lint-web vuln fmt clean
+        build build-api build-web test test-api test-db test-web lint lint-api lint-web vuln fmt clean
 
 help: ## List available commands
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -27,7 +27,7 @@ setup: ## Install dependencies and create env files if missing
 	cd web && pnpm install
 
 env-check: ## Show which required settings are missing
-	@$(LOAD_ENV) ok=1; for v in POSTGRES_PASSWORD DFIPAM_APP_PASSWORD DATABASE_URL MIGRATION_DATABASE_URL SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY; do \
+	@$(LOAD_ENV) ok=1; for v in POSTGRES_PASSWORD DFIPAM_APP_PASSWORD DATABASE_URL MIGRATION_DATABASE_URL; do \
 	  [ -n "$${!v}" ] || { echo "missing: $$v"; ok=0; }; done; \
 	[ -f web/.env ] || { echo "missing: web/.env"; ok=0; }; \
 	[ $$ok = 1 ] && echo "All required settings are present" || exit 1
@@ -104,6 +104,9 @@ seed: ## Load default environments and settings (safe to repeat)
 
 db-setup: migrate-up seed ## Migrate, then seed
 
+admin: ## Make someone an Administrator by work email: make admin EMAIL=name@dialogfinance.lk
+	@$(LOAD_ENV) cd api && go run ./cmd/admin -email "$(EMAIL)"
+
 
 
 
@@ -126,15 +129,6 @@ test-db: ## Run database tests on a throwaway dfipam_test database (dropped afte
 	cd api && MIGRATION_DATABASE_URL="$$owner" go run ./cmd/migrate up && MIGRATION_DATABASE_URL="$$owner" go run ./cmd/seed && \
 	TEST_DATABASE_URL="$$owner" TEST_APP_DATABASE_URL="$$app" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/scanner; \
 	status=$$?; cd .. && $(COMPOSE) exec -T db psql -q -U postgres -c 'DROP DATABASE IF EXISTS dfipam_test'; exit $$status
-
-test-db-supabase: ## Run database tests on Supabase. Every test rolls back
-	@$(LOAD_ENV) cd api && TEST_DATABASE_URL="$$SUPABASE_MIGRATION_DATABASE_URL" TEST_APP_DATABASE_URL="$$SUPABASE_DATABASE_URL" TEST_DB_MAX_CONNS=10 go test -p 1 -count=1 -v ./internal/dbrules ./internal/server
-
-migrate-supabase: ## Apply migrations and seed to the Supabase test database
-	@$(LOAD_ENV) cd api && MIGRATION_DATABASE_URL="$$SUPABASE_MIGRATION_DATABASE_URL" go run ./cmd/migrate up && MIGRATION_DATABASE_URL="$$SUPABASE_MIGRATION_DATABASE_URL" go run ./cmd/seed
-
-sql: ## Regenerate api/sql/supabase-setup.sql from the migrations and seed
-	cd api && go run ./cmd/sqlbundle > sql/supabase-setup.sql
 
 test-web: ## Run web tests
 	cd web && pnpm test

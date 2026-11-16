@@ -195,6 +195,11 @@ export interface SegmentAddress {
   platform: string
   vendor: string
   inPool: boolean
+  maker: string
+  model: string
+  deviceKind: string
+  osHint: string
+  openPorts: number[]
 }
 
 export interface AddressStatus {

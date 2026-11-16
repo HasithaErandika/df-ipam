@@ -6,6 +6,7 @@ import { label, segmentKinds } from '../../lib/labels'
 import { useFilters } from '../../lib/listing'
 import { useSegments } from '../../lib/queries'
 import type { Segment } from '../../lib/types'
+import { tooLargeToScan } from '../network/segmentList'
 import { ScanButton } from '../shared/ScanButton'
 
 const groups = [{ kind: 'dhcp', title: 'DHCP networks (floors and Wi-Fi)' }, { kind: 'server', title: 'Server networks' }, { kind: 'cloud', title: 'Cloud networks' }] as const
@@ -52,8 +53,8 @@ function SegmentCard({ s }: { s: Segment }) {
         <Figure label="Alerts" value={s.openAlerts} tone="danger" to={`/alerts?segmentId=${s.id}`} />
       </dl>
       <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-[12px]">
-        <span className="text-ink-3">
-          {s.kind === 'cloud' ? 'Not swept from the building' : s.lastSeen ? `Last answer ${formatAgo(s.lastSeen)}` : 'Nothing seen yet'}
+        <span className={tooLargeToScan(s) ? 'font-medium text-warn' : 'text-ink-3'}>
+          {s.kind === 'cloud' ? 'Not swept from the building' : tooLargeToScan(s) ? 'Too large to scan: split it' : s.lastSeen ? `Last answer ${formatAgo(s.lastSeen)}` : 'Nothing seen yet'}
         </span>
         <div className="flex items-center gap-1.5">
           {s.kind !== 'cloud' && <ScanButton segmentId={s.id} label="Scan" />}

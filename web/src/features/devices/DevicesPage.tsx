@@ -11,7 +11,7 @@ import { useCan } from '../../lib/session'
 import { useRouteTab } from '../../lib/tabs'
 import type { Device } from '../../lib/types'
 import { WithPlatform } from '../../components/PlatformIcon'
-import { deviceLine, networkCard, serviceName } from '../discovery/deviceInfo'
+import { deviceLine, iconEvidence, networkCard, serviceName } from '../discovery/deviceInfo'
 import { Presence } from '../discovery/findingColumns'
 import { useDialogParam } from '../../lib/dialogParam'
 import { DeviceDetails } from './DeviceDetails'
@@ -35,7 +35,7 @@ export function DevicesPage() {
 
   const columns: Column<Device>[] = [
     { key: 'device', header: 'Device', cell: (d) => (
-      <WithPlatform platform={d.platform} vendor={deviceLine(d)} hostname={d.hostname ?? d.name} type={d.deviceType}>
+      <WithPlatform evidence={iconEvidence(d)} type={d.deviceType}>
         <button type="button" onClick={() => setOpen(d.id)} title="Show details" className="block max-w-full cursor-pointer truncate text-left font-medium text-ink hover:text-accent hover:underline">
           {d.name || d.hostname || <span className="font-normal text-ink-3">Unnamed</span>}
         </button>
@@ -46,14 +46,15 @@ export function DevicesPage() {
     ) },
     { key: 'type', header: 'Type', hideBelow: 'md', cell: (d) => label(deviceTypes, d.deviceType) },
     { key: 'owner', header: 'Owner', hideBelow: 'lg', cell: (d) => <Stack main={d.owner || none} sub={d.department || undefined} /> },
-    { key: 'ip', header: 'Last address', cell: (d) => (d.lastIp
+    { key: 'ip', header: 'Last seen address', cell: (d) => (d.lastIp
       ? <Stack mono main={d.lastIp} sub={<span className="font-sans">
           {d.segmentId ? <Link className="hover:text-accent hover:underline" to={`/segments/${d.segmentId}`}>{d.segmentName}</Link> : null}
-          {d.registeredIp ? <span className="block text-ok">Registered {d.registeredIp === d.lastIp ? 'here' : `at ${d.registeredIp}`}</span> : null}
+          <span className="block text-ink-3">Observed address; DHCP may assign a different one.</span>
+          {d.registeredIp ? <span className="block text-ok">Register entry at {d.registeredIp}</span> : null}
           {d.addresses > 1 ? <span className="block">{d.addresses} addresses seen</span> : null}
         </span>} />
       : none) },
-    { key: 'presence', header: 'Presence', cell: (d) => <Presence online={d.online} firstSeen={d.firstSeen} lastSeen={d.lastSeen} /> },
+    { key: 'presence', header: 'Presence', cell: (d) => <Presence online={d.online} firstSeen={d.firstSeen} lastSeen={d.lastSeen} showFirstSeen={false} /> },
     { key: 'status', header: 'Status', cell: (d) => <DeviceBadge status={d.status} /> },
     { key: 'alerts', header: '', className: 'w-8', cell: (d) => (d.openAlerts > 0
       ? <Link to={`/alerts?q=${encodeURIComponent(d.mac)}`} title={`${d.openAlerts} open alert${d.openAlerts > 1 ? 's' : ''}`} className="text-warn"><AlertTriangle size={15} aria-label="Open alerts" /></Link>
@@ -75,7 +76,7 @@ export function DevicesPage() {
 
   return (
     <>
-      <PageHeader title="Devices" description="Known MAC addresses. New ones found on the network wait in Pending until someone approves or rejects them."
+      <PageHeader title="Devices" description="Known MAC addresses. The last-seen address is scanner evidence and may change with DHCP; the IP register records intentional assignments. New devices wait in Pending for review."
         actions={<>
           <ExportMenu path="/devices/export" name="devices" />
           {canEdit && <ImportButton path="/devices/import" title="Import devices" keyLabel="MAC" required="mac" columns={['mac', 'name', 'owner', 'department', 'deviceType', 'notes']} refreshKeys={inventoryKeys} />}

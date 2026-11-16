@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Connect opens a pool. DB_MAX_CONNS caps it, because Supabase's session pooler
-// allows only 15 clients across the API and worker together.
+// Connect opens a pool. DB_MAX_CONNS caps it, so the database's connection
+// limit holds across every process that uses it.
 func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {

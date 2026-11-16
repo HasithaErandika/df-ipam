@@ -1,6 +1,6 @@
 # Frontend
 
-React, TypeScript, Vite, Tailwind CSS, Radix primitives, React Router and TanStack Query. Forms use React Hook Form with Zod, or the shared checks in `lib/validation.ts`. Charts are hand-built SVG. `supabase-js` is used only in `web/src/lib/auth.ts`.
+React, TypeScript, Vite, Tailwind CSS, Radix primitives, React Router and TanStack Query. Forms use React Hook Form with Zod, or the shared checks in `lib/validation.ts`. Charts are hand-built SVG. Sign-in lives only in `web/src/lib/auth.ts`; the browser never holds a token, only the API's `HttpOnly` cookie.
 
 ## Design
 
@@ -15,14 +15,14 @@ The register and the evidence are always **separate badges**.
 | Group | Values |
 | --- | --- |
 | Register | Assigned, Reserved, Blocked, Not registered, Registered elsewhere |
-| Evidence | Online, Unavailable since …, New |
+| Evidence | Online, Not answering · last seen …, New |
 | Device decision | Pending, Approved, Rejected |
 
 Say **Available candidate**, never "Free".
 
 ## Screens
 
-One folder per screen in `web/src/features/`: `dashboard`, `discovery`, `servers`, `devices`, `alerts`, `requests`, `reservations`, `reports`, `audit`, `network` (Network setup), `access` (Users and roles), `system`, plus `auth` and `shared`. What each screen holds is in [new.md](new.md#screens). Screens not built say so, and no screen shows sample data.
+One folder per screen in `web/src/features/`: `dashboard`, `discovery`, `servers`, `devices`, `alerts`, `requests`, `reservations`, `reports`, `audit`, `network` (Network setup), `access` (Users and roles), `system`, plus `auth` and `shared`. What each screen holds is in [screens.md](../product/screens.md#screens). Screens not built say so, and no screen shows sample data.
 
 ## Patterns
 

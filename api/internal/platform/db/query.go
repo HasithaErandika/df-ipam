@@ -43,6 +43,11 @@ func (w *Where) SQL() string {
 	return " WHERE " + strings.Join(w.parts, " AND ")
 }
 
+// SeenWindow is "seen recently" in SQL: answered within two scan intervals, at
+// least 10 minutes (the seen_window() function, migration 000014). Wrapped in a
+// subquery so it is worked out once per query, not once per row.
+const SeenWindow = "(SELECT seen_window())"
+
 // ListPage runs one page of a list and its total. query must select columns named
 // like T's db tags and end with ORDER BY; LIMIT and OFFSET are appended here.
 func ListPage[T any](ctx context.Context, conn Conn, query, count string, args []any, p httpx.Page) ([]T, int64, error) {

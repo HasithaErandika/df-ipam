@@ -50,7 +50,7 @@ func TestMicrosoftSignInAgainstDatabase(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ms := &fakeMicrosoft{user: auth.EntraUser{ObjectID: "obj-42", Email: "nimal@dialogfinance.lk", Name: "Nimal"}}
 	sessions := &auth.Sessions{Conn: tx}
-	r, _ := New(Deps{Conn: tx, Verifier: stubVerifier{}, Resolver: adminResolver{}, Sessions: sessions,
+	r, _ := New(Deps{Conn: tx, Sessions: sessions,
 		SignIn: signin.New(tx, ms, sessions, "https://ipam.example")})
 
 	n := 0

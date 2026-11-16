@@ -9,21 +9,20 @@ import (
 )
 
 type Config struct {
-	Env                string
-	ListenAddr         string
-	LogLevel           string
-	DatabaseURL        string
-	AllowedOrigins     []string
-	SupabaseURL        string
-	SupabaseAnonKey    string
-	SupabaseServiceKey string
-	AuthAudience       string
-	TrustedProxies     []string
-	MaxInFlight        int
-	AppBaseURL         string
+	Env            string
+	ListenAddr     string
+	LogLevel       string
+	DatabaseURL    string
+	AllowedOrigins []string
+	TrustedProxies []string
+	MaxInFlight    int
+	AppBaseURL     string
 	// Microsoft Entra ID sign-in. Off until the tenant, client ID and secret are set.
 	EntraAuthority, EntraTenantID, EntraClientID, EntraClientSecret, EntraRedirectURL string
 	AllowedEmailDomains                                                               []string
+	// Development sign-in: no password, for while Entra ID isn't set up. Never in production.
+	AuthBypass      bool
+	AuthBypassEmail string
 }
 
 func get(key, fallback string) string {
@@ -46,21 +45,17 @@ func splitList(value string) []string {
 // Load reads the API settings and reports every missing value at once.
 func Load() (Config, error) {
 	c := Config{
-		Env:                get("APP_ENV", "development"),
-		ListenAddr:         get("API_LISTEN_ADDR", "127.0.0.1:8080"),
-		LogLevel:           get("LOG_LEVEL", "info"),
-		DatabaseURL:        get("DATABASE_URL", ""),
-		AllowedOrigins:     splitList(get("CORS_ALLOWED_ORIGINS", "")),
-		SupabaseURL:        strings.TrimRight(get("SUPABASE_URL", ""), "/"),
-		SupabaseAnonKey:    get("SUPABASE_ANON_KEY", ""),
-		SupabaseServiceKey: get("SUPABASE_SERVICE_ROLE_KEY", ""),
-		AuthAudience:       get("AUTH_AUDIENCE", "authenticated"),
-		TrustedProxies:     splitList(get("TRUSTED_PROXIES", "127.0.0.1,::1")),
-		AppBaseURL:         strings.TrimRight(get("APP_BASE_URL", "http://localhost:5173"), "/"),
-		EntraAuthority:     strings.TrimRight(get("ENTRA_AUTHORITY", "https://login.microsoftonline.com"), "/"),
-		EntraTenantID:      get("ENTRA_TENANT_ID", ""),
-		EntraClientID:      get("ENTRA_CLIENT_ID", ""),
-		EntraClientSecret:  get("ENTRA_CLIENT_SECRET", ""),
+		Env:               get("APP_ENV", "development"),
+		ListenAddr:        get("API_LISTEN_ADDR", "127.0.0.1:8080"),
+		LogLevel:          get("LOG_LEVEL", "info"),
+		DatabaseURL:       get("DATABASE_URL", ""),
+		AllowedOrigins:    splitList(get("CORS_ALLOWED_ORIGINS", "")),
+		TrustedProxies:    splitList(get("TRUSTED_PROXIES", "127.0.0.1,::1")),
+		AppBaseURL:        strings.TrimRight(get("APP_BASE_URL", "http://localhost:5173"), "/"),
+		EntraAuthority:    strings.TrimRight(get("ENTRA_AUTHORITY", "https://login.microsoftonline.com"), "/"),
+		EntraTenantID:     get("ENTRA_TENANT_ID", ""),
+		EntraClientID:     get("ENTRA_CLIENT_ID", ""),
+		EntraClientSecret: get("ENTRA_CLIENT_SECRET", ""),
 	}
 	c.EntraRedirectURL = get("ENTRA_REDIRECT_URL", c.AppBaseURL+"/api/v1/auth/microsoft/callback")
 	for _, d := range splitList(strings.ToLower(get("AUTH_ALLOWED_EMAIL_DOMAINS", "dialogfinance.lk"))) {
@@ -73,16 +68,25 @@ func Load() (Config, error) {
 		}
 		c.MaxInFlight = n
 	}
-	var missing []string
-	for name, v := range map[string]string{
-		"DATABASE_URL": c.DatabaseURL, "SUPABASE_URL": c.SupabaseURL, "SUPABASE_ANON_KEY": c.SupabaseAnonKey,
-	} {
-		if v == "" {
-			missing = append(missing, name)
-		}
+	if c.DatabaseURL == "" {
+		return c, fmt.Errorf("missing settings: DATABASE_URL")
 	}
-	if len(missing) > 0 {
-		return c, fmt.Errorf("missing settings: %s", strings.Join(missing, ", "))
+	return c, c.loadBypass()
+}
+
+// loadBypass reads the development sign-in. It needs a work email to sign in
+// as, and is refused outright in production.
+func (c *Config) loadBypass() error {
+	c.AuthBypass = strings.EqualFold(get("AUTH_BYPASS", "false"), "true")
+	if !c.AuthBypass {
+		return nil
 	}
-	return c, nil
+	if strings.EqualFold(c.Env, "production") {
+		return fmt.Errorf("AUTH_BYPASS can't be used with APP_ENV=production: set up Microsoft Entra ID sign-in")
+	}
+	c.AuthBypassEmail = strings.ToLower(get("AUTH_BYPASS_EMAIL", ""))
+	if _, domain, ok := strings.Cut(c.AuthBypassEmail, "@"); !ok || domain == "" || strings.Contains(domain, "@") {
+		return fmt.Errorf("AUTH_BYPASS needs AUTH_BYPASS_EMAIL, the work email to sign in as")
+	}
+	return nil
 }

@@ -5,6 +5,8 @@
 services:
   backend:
     environment:
+      # Fixed here, so the development sign-in (AUTH_BYPASS) can never start on a server.
+      APP_ENV: production
       TRUSTED_PROXIES: ${DOCKER_GATEWAY:-172.30.0.1},127.0.0.1
     ports:
       - 127.0.0.1:${API_PORT:-8080}:8080

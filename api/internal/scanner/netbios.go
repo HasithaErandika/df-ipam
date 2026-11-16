@@ -77,17 +77,7 @@ func parseNetBIOS(packet []byte) (string, string, error) {
 	if len(data) < 1+count*18+6 {
 		return "", "", fmt.Errorf("truncated NetBIOS status data")
 	}
-	host := ""
-	for i := 0; i < count; i++ {
-		entry := data[1+i*18 : 1+(i+1)*18]
-		flags := binary.BigEndian.Uint16(entry[16:18])
-		if flags&0x8000 == 0 {
-			host = strings.TrimSpace(strings.TrimRight(string(entry[:15]), "\x00"))
-			if host != "" {
-				break
-			}
-		}
-	}
+	host := computerName(data[1:1+count*18], count)
 	macStart := 1 + count*18
 	macBytes := data[macStart : macStart+6]
 	if macBytes[0]|macBytes[1]|macBytes[2]|macBytes[3]|macBytes[4]|macBytes[5] == 0 {
@@ -119,4 +109,26 @@ func skipDNSName(packet []byte, offset int) (int, error) {
 		offset += length
 	}
 	return 0, fmt.Errorf("unterminated DNS name")
+}
+
+// computerName picks the machine's name from a NetBIOS name table: a unique
+// name of type 0x00 (workstation) or 0x20 (file server). Other unique names,
+// such as 0x03, can be the signed-in user's name, so they are not used.
+func computerName(table []byte, count int) string {
+	var server string
+	for i := 0; i < count; i++ {
+		entry := table[i*18 : (i+1)*18]
+		if binary.BigEndian.Uint16(entry[16:18])&0x8000 != 0 {
+			continue // a group name, such as the workgroup
+		}
+		name := strings.TrimSpace(strings.TrimRight(string(entry[:15]), "\x00"))
+		switch {
+		case name == "":
+		case entry[15] == 0x00:
+			return name
+		case entry[15] == 0x20 && server == "":
+			server = name
+		}
+	}
+	return server
 }

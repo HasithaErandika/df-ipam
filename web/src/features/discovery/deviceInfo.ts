@@ -1,4 +1,4 @@
-import { makerFromName, makers } from '../../lib/platforms'
+import { makerFromName, makers, type IconEvidence } from '../../lib/platforms'
 
 /** What the scanner knows about a device: from a finding, a device or a register entry. */
 export interface Evidence {
@@ -57,4 +57,13 @@ export function deviceLine(r: Evidence): string {
   if (parts.length === 0 && f.system) parts.push(`Likely ${f.system.replace(/ \(TTL \d+\)$/, '')}`)
   if (f.dhcpClass) parts.push(f.dhcpClass)
   return [...new Set(parts)].join(' · ')
+}
+
+/** The evidence that chooses a device's icon (see deviceIcon). */
+export function iconEvidence(r: Evidence & { platform?: string | null; isGateway?: boolean; deviceName?: string | null; name?: string | null }): IconEvidence {
+  return {
+    recorded: r.platform || null, gateway: r.isGateway, kind: r.deviceKind, model: r.model,
+    dhcpClass: r.source === 'dhcp' ? r.vendor : null, hostname: r.hostname || r.deviceName || r.name,
+    openPorts: r.openPorts, osHint: r.osHint, maker: r.maker,
+  }
 }

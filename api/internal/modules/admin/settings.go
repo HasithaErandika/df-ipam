@@ -7,6 +7,7 @@ import (
 
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
+	"dfipam/api/internal/seed"
 	"dfipam/api/internal/validate"
 
 	"github.com/gin-gonic/gin"
@@ -57,7 +58,10 @@ func (h *Handler) read(c *gin.Context) (settingsDTO, error) {
 	}
 	for _, n := range numbers {
 		var v int
-		if json.Unmarshal(raw[n.Key], &v) != nil || v < n.Min {
+		if json.Unmarshal(raw[n.Key], &v) != nil {
+			_ = json.Unmarshal([]byte(seed.Default(n.Key)), &v)
+		}
+		if v < n.Min {
 			v = n.Min
 		}
 		out.Values[n.Field] = v

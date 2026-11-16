@@ -36,5 +36,5 @@
 
 ## Documentation
 
-- [ ] `docs/development_phase.md` is updated
+- [ ] `docs/status.md` is updated
 - [ ] Other docs are updated, or no update is needed

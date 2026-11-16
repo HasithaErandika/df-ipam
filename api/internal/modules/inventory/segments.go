@@ -45,22 +45,29 @@ type segmentDTO struct {
 const segmentSelect = `SELECT s.id::text AS id, s.name, s.kind, s.floor, s.vlan, s.network::text AS network,
 	host(s.gateway) AS gateway, host(s.dhcp_start) AS dhcp_start, host(s.dhcp_end) AS dhcp_end,
 	s.default_environment_id::text AS default_environment_id, e.name AS environment_name, s.description, s.alert_private_macs, s.check_ports,
-	(SELECT count(*) FROM ip_addresses i WHERE i.segment_id = s.id) AS registered,
-	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - interval '24 hours') AS seen,
-	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - ` + recentWindow + `) AS online,
-	COALESCE(s.dhcp_end - s.dhcp_start + 1, 0) AS pool_size,
-	(SELECT count(DISTINCT v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.last_seen > now() - ` + recentWindow + `
-		AND s.dhcp_start IS NOT NULL AND v.ip BETWEEN s.dhcp_start AND s.dhcp_end) AS pool_used,
-	(SELECT count(DISTINCT v.mac) FROM sightings v LEFT JOIN devices d ON d.mac = v.mac WHERE v.segment_id = s.id AND v.mac IS NOT NULL
-		AND NOT v.is_private_mac AND v.last_seen > now() - interval '24 hours' AND d.status IS DISTINCT FROM 'approved') AS unknown_devices,
-	(SELECT count(*) FROM alerts a WHERE a.segment_id = s.id AND a.status <> 'closed') AS open_alerts,
+	COALESCE(reg.n, 0) AS registered, COALESCE(seen.seen, 0) AS seen, COALESCE(seen.online, 0) AS online,
+	COALESCE(s.dhcp_end - s.dhcp_start + 1, 0) AS pool_size, COALESCE(seen.pool_used, 0) AS pool_used,
+	COALESCE(seen.unknown_devices, 0) AS unknown_devices, COALESCE(al.n, 0) AS open_alerts,
 	(SELECT max(v.last_seen) FROM sightings v WHERE v.segment_id = s.id) AS last_seen,
 	(SELECT host(v.ip) FROM sightings v WHERE v.segment_id = s.id AND v.is_gateway ORDER BY v.last_seen DESC LIMIT 1) AS detected_gateway,
 	s.updated_at
-	FROM segments s LEFT JOIN environments e ON e.id = s.default_environment_id`
+	FROM segments s LEFT JOIN environments e ON e.id = s.default_environment_id
+	LEFT JOIN (SELECT segment_id, count(*) AS n FROM ip_addresses GROUP BY segment_id) reg ON reg.segment_id = s.id
+	LEFT JOIN (SELECT segment_id, count(*) AS n FROM alerts WHERE status <> 'closed' GROUP BY segment_id) al ON al.segment_id = s.id
+	LEFT JOIN (` + segmentActivity + `) seen ON seen.segment_id = s.id`
 
-// recentWindow is "answered within two scan intervals", as the alert rules use.
-const recentWindow = `make_interval(mins => GREATEST(10, 2 * COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), 10)))`
+// segmentActivity counts what each segment's sightings show, in one pass over
+// recent sightings instead of one query per count per segment.
+const segmentActivity = `SELECT v.segment_id,
+		count(DISTINCT v.ip) FILTER (WHERE v.last_seen > now() - interval '24 hours') AS seen,
+		count(DISTINCT v.ip) FILTER (WHERE v.last_seen > w.since) AS online,
+		count(DISTINCT v.ip) FILTER (WHERE v.last_seen > w.since AND v.ip BETWEEN sg.dhcp_start AND sg.dhcp_end) AS pool_used,
+		count(DISTINCT v.mac) FILTER (WHERE v.last_seen > now() - interval '24 hours' AND v.mac IS NOT NULL AND NOT v.is_private_mac
+			AND d.status IS DISTINCT FROM 'approved') AS unknown_devices
+	FROM sightings v JOIN segments sg ON sg.id = v.segment_id LEFT JOIN devices d ON d.mac = v.mac
+	CROSS JOIN (SELECT now() - ` + db.SeenWindow + ` AS since) w
+	WHERE v.last_seen > LEAST(w.since, now() - interval '24 hours')
+	GROUP BY v.segment_id`
 
 // segments lists every segment. There are few (one per floor and server network),
 // and forms need all of them, so this list is not paged.

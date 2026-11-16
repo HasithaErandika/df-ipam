@@ -14,7 +14,7 @@ The Go backend: Gin, pgx and golang-migrate. Run commands from the repository ro
 
 ## Layout
 
-See [docs/architecture.md](../docs/architecture.md). In short: `internal/modules/<name>` for each area, `internal/scanner` for discovery, `internal/platform` for shared infrastructure, `migrations/` for SQL embedded in the binaries, and `openapi.yaml` for the contract.
+See [docs/architecture.md](../docs/engineering/architecture.md). In short: `internal/modules/<name>` for each area, `internal/scanner` for discovery, `internal/platform` for shared infrastructure, `migrations/` for SQL embedded in the binaries, and `openapi.yaml` for the contract.
 
 - HTTP in handlers, rules in services, SQL in repositories. A module calls another module's service, never its SQL.
 - Every route is registered with its permission through the route guard.
@@ -22,10 +22,10 @@ See [docs/architecture.md](../docs/architecture.md). In short: `internal/modules
 
 ## Database
 
-PostgreSQL in Docker. Migrations run as `postgres` (`MIGRATION_DATABASE_URL`); the app connects as `dfipam_app` (`DATABASE_URL`), which can't change the audit log or run DDL. Supabase's database is for testing only.
+PostgreSQL in Docker. Migrations run as `postgres` (`MIGRATION_DATABASE_URL`); the app connects as `dfipam_app` (`DATABASE_URL`), which can't change the audit log or run DDL.
 
-To change the schema, add the next numbered `.up.sql` and `.down.sql` pair in `migrations/`, then run `make sql`. Never edit an applied migration. See [docs/database.md](../docs/database.md).
+To change the schema, add the next numbered `.up.sql` and `.down.sql` pair in `migrations/`, then run `make sql`. Never edit an applied migration. See [docs/database.md](../docs/engineering/database.md).
 
 ## Tests
 
-`make test` runs the unit tests. `make test-db` runs the schema rules and every API route as `dfipam_app` on a throwaway `dfipam_test` database. `make test-db-supabase` runs the same on Supabase, rolled back.
+`make test` runs the unit tests. `make test-db` runs the schema rules and every API route as `dfipam_app` on a throwaway `dfipam_test` database.
