@@ -390,11 +390,11 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /settings:
     get:
-      summary: "Scan and check intervals, reminder days, session timeout, and the email switch"
+      summary: "Scan and check intervals, the slow server limit, reminder days, session timeout, the email switch, and the automatic scanning switches (autoScanDevices, autoScanServers, serverChecks)"
       description: "Permission: system:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     put:
-      summary: "Change settings within their limits"
+      summary: "Change settings within their limits: values (numbers), switches (on/off) and emailEnabled"
       description: "Permission: system:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /audit-logs:

@@ -78,6 +78,7 @@ export interface RegisterEntry {
   notes: string
   health: Health
   healthChangedAt: string | null
+  responseMs: number | null
   lastSeen: string | null
   seenMac: string | null
   updatedAt: string
@@ -224,6 +225,8 @@ export interface ScanStatus {
   nextScanAt: string | null
   method: string
   intervalMinutes: number
+  autoScanDevices: boolean
+  autoScanServers: boolean
   segments: { id: string; name: string; found: number; error?: string; durationMs: number; scannedAt: string }[]
 }
 

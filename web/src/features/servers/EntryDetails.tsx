@@ -43,6 +43,7 @@ export function EntryDetails({ entry: r, canEdit, onClose, onEdit, onRelease }: 
           <Details items={[
             ['Status', r.monitor ? <HealthBadge key="h" health={r.health} since={r.healthChangedAt} /> : 'Not monitored'],
             ['Changed', when(r.healthChangedAt)],
+            ['Response time', r.monitor && r.health === 'up' && r.responseMs !== null ? `${r.responseMs} ms` : null],
             ['How', r.monitor ? (r.checkPort ? `Ping, then TCP port ${r.checkPort} when ping is blocked` : 'Ping') : null],
             ['Failures in a row', r.monitor ? String(r.checkFailures) : null],
             ['Critical', r.critical ? <Badge key="c" tone="danger">Critical</Badge> : 'No'],

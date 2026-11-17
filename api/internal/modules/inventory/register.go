@@ -41,6 +41,7 @@ type ipDTO struct {
 	Notes            string     `db:"notes" json:"notes"`
 	Health           string     `db:"health" json:"health"`
 	HealthChangedAt  *time.Time `db:"health_changed_at" json:"healthChangedAt"`
+	ResponseMs       *int32     `db:"response_ms" json:"responseMs"`
 	LastSeen         *time.Time `db:"last_seen" json:"lastSeen"`
 	SeenMAC          *string    `db:"seen_mac" json:"seenMac"`
 	UpdatedAt        time.Time  `db:"updated_at" json:"updatedAt"`
@@ -69,7 +70,7 @@ const ipFrom = ` FROM ip_addresses i JOIN segments s ON s.id = i.segment_id
 const ipColumns = `SELECT i.id::text AS id, i.segment_id::text AS segment_id, s.name AS segment_name, s.kind AS segment_kind,
 	host(i.ip) AS ip, i.status, i.ip_type, i.environment_id::text AS environment_id, e.name AS environment_name, i.platform, i.services,
 	e.colour AS environment_colour, i.device_id::text AS device_id, i.assigned_name, i.expected_mac::text AS expected_mac,
-	i.owner, i.department, i.monitor, i.critical, i.check_port, i.notes, i.health, i.health_changed_at,
+	i.owner, i.department, i.monitor, i.critical, i.check_port, i.notes, i.health, i.health_changed_at, i.response_ms,
 	v.last_seen, v.mac::text AS seen_mac, i.updated_at, i.created_at, i.server_check_failures, NULLIF(dv.name, '') AS device_name,
 	COALESCE(v.hostname, '') AS hostname, COALESCE(v.nic_vendor, '') AS nic_vendor, COALESCE(v.maker, '') AS maker, COALESCE(v.model, '') AS model,
 	COALESCE(v.device_kind, '') AS device_kind, COALESCE(v.os_hint, '') AS os_hint, COALESCE(v.vendor, '') AS vendor, COALESCE(v.source, '') AS source,

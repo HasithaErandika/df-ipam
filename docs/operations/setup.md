@@ -223,6 +223,7 @@ This rebuilds the images, runs new migrations and the seed, and restarts what ch
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| Microsoft says "Need admin approval" | The tenant doesn't let users consent to apps | An Entra administrator grants admin consent once: Enterprise applications > the app > Permissions > **Grant admin consent** |
 | The page loads, sign-in fails | Entra ID settings or redirect URI don't match `APP_BASE_URL`, or the browser can't reach `login.microsoftonline.com` | See [authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id); the reason is shown on the sign-in page |
 | "Sign-in isn't available" | The API is down, or the Entra ID settings are empty | Check `make docker-logs`; set `ENTRA_*` in `api/.env`, then `make docker-up` |
 | The API won't start: `APP_ENV=production needs Microsoft Entra ID sign-in` or `needs APP_BASE_URL to start with https://` | A server without Entra ID settings, or on plain HTTP | Set the `ENTRA_*` settings and an `https://` `APP_BASE_URL` |

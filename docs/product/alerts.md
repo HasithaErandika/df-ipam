@@ -19,10 +19,11 @@ After every scan, server check and FortiGate read, and after every change to dev
 | IP conflict | One IP seen with more than one MAC: for a static address, within the recent window; for an address in a DHCP pool, within the same scan (five minutes), since DHCP hands addresses on all the time | High |
 | Server MAC changed | A server answers with another MAC than expected | From its environment, Critical if critical |
 | Server down | A monitored server is Down | From its environment, Critical if critical |
+| Slow server | A monitored server answers, but slower than the limit in Settings (default 200 ms): the faster of two pings, or the check port's connect time when ping is blocked | Medium |
 
 ## One alert per cause
 
-- An alert is open, acknowledged or closed. It closes when its cause is gone.
+- An alert is open, acknowledged or closed. It closes when its cause is gone. On a segment whose last scan failed, or whose kind isn't scanned automatically, alerts stay open: nobody looked, so the cause may still be there.
 - **One open alert per cause.** Device alerts (unknown, private-MAC, rejected) belong to the MAC: when DHCP moves the device to another address, its one alert follows it instead of a new one opening. Other alerts belong to their address.
 - A cause that closes and reopens within an hour reopens quietly.
 - Closed alerts are kept for a year for the Alert history report.

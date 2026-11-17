@@ -20,7 +20,7 @@ const manualFullEvery = 15 * time.Minute
 const DefaultScanInterval = 10 * time.Minute
 
 // defaultCheckInterval is the server check interval when the setting is missing.
-const defaultCheckInterval = 5 * time.Minute
+const defaultCheckInterval = time.Hour
 
 // dueFull reports whether a host should be identified in full now: after
 // fullEvery, after manualFullEvery on a manual scan, or when its segment has

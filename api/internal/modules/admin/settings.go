@@ -25,23 +25,32 @@ var numbers = []numberSetting{
 	{"scan.interval_minutes", "scanIntervalMinutes", "Scan interval", 5, 1440},
 	{"server_check.interval_seconds", "serverCheckSeconds", "Server check interval", 60, 86400},
 	{"server_check.down_after_failures", "downAfterFailures", "Failed checks before Down", 1, 20},
+	{"server_check.slow_ms", "slowMs", "Slow server limit", 10, 5000},
 	{"reservations.reminder_days", "reminderDays", "Reminder days", 1, 60},
 	{"session.idle_timeout_minutes", "sessionTimeoutMinutes", "Session timeout", 5, 480},
 }
 
 const emailKey = "email.enabled"
 
+// switches are on/off settings an Admin may change. Keys are fixed here.
+var switches = []struct{ Key, Field string }{
+	{"scan.auto_devices", "autoScanDevices"},
+	{"scan.auto_servers", "autoScanServers"},
+	{"server_check.enabled", "serverChecks"},
+}
+
 // Settings is what the Settings screen shows. SMTP comes from api/.env and is
 // reported, never sent: only whether it is configured.
 type settingsDTO struct {
-	Values         map[string]int `json:"values"`
-	EmailEnabled   bool           `json:"emailEnabled"`
-	SMTPConfigured bool           `json:"smtpConfigured"`
-	ScanMethod     string         `json:"scanMethod"`
+	Values         map[string]int  `json:"values"`
+	Switches       map[string]bool `json:"switches"`
+	EmailEnabled   bool            `json:"emailEnabled"`
+	SMTPConfigured bool            `json:"smtpConfigured"`
+	ScanMethod     string          `json:"scanMethod"`
 }
 
 func (h *Handler) read(c *gin.Context) (settingsDTO, error) {
-	out := settingsDTO{Values: map[string]int{}, SMTPConfigured: h.smtpConfigured, ScanMethod: "ping"}
+	out := settingsDTO{Values: map[string]int{}, Switches: map[string]bool{}, SMTPConfigured: h.smtpConfigured, ScanMethod: "ping"}
 	rows, err := h.conn.Query(c, "SELECT key, value FROM settings")
 	if err != nil {
 		return out, err
@@ -66,6 +75,13 @@ func (h *Handler) read(c *gin.Context) (settingsDTO, error) {
 		}
 		out.Values[n.Field] = v
 	}
+	for _, s := range switches {
+		on := true
+		if json.Unmarshal(raw[s.Key], &on) != nil {
+			on = seed.Default(s.Key) != "false"
+		}
+		out.Switches[s.Field] = on
+	}
 	_ = json.Unmarshal(raw[emailKey], &out.EmailEnabled)
 	_ = json.Unmarshal(raw["scan.method"], &out.ScanMethod)
 	return out, rows.Err()
@@ -83,8 +99,9 @@ func (h *Handler) settings(c *gin.Context) {
 // updateSettings saves the fields sent, each checked against its limits.
 func (h *Handler) updateSettings(c *gin.Context) {
 	var in struct {
-		Values       map[string]int `json:"values"`
-		EmailEnabled *bool          `json:"emailEnabled"`
+		Values       map[string]int  `json:"values"`
+		Switches     map[string]bool `json:"switches"`
+		EmailEnabled *bool           `json:"emailEnabled"`
 	}
 	if !httpx.Bind(c, &in) {
 		return
@@ -100,6 +117,11 @@ func (h *Handler) updateSettings(c *gin.Context) {
 			v.Add("values."+n.Field, n.Label+" must be from "+strconv.Itoa(n.Min)+" to "+strconv.Itoa(n.Max)+".")
 		}
 		changes[n.Key] = strconv.Itoa(value)
+	}
+	for _, s := range switches {
+		if on, sent := in.Switches[s.Field]; sent {
+			changes[s.Key] = strconv.FormatBool(on)
+		}
 	}
 	if in.EmailEnabled != nil {
 		changes[emailKey] = strconv.FormatBool(*in.EmailEnabled)

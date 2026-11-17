@@ -28,7 +28,7 @@ func (h *Handler) Register(g *auth.Guard) {
 }
 
 var (
-	types      = []string{"unknown_device", "unregistered_static", "register_misuse", "unknown_server_ip", "ip_conflict", "server_down", "server_mac_changed", "rejected_device", "private_mac_device"}
+	types      = []string{"unknown_device", "unregistered_static", "register_misuse", "unknown_server_ip", "ip_conflict", "server_down", "server_mac_changed", "rejected_device", "private_mac_device", "server_slow"}
 	severities = []string{"critical", "high", "medium", "low"}
 )
 

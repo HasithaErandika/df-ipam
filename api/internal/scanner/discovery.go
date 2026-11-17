@@ -14,6 +14,10 @@ import (
 
 const maxSweepHosts = 4096
 
+// errTooLarge is a segment the scanner never sweeps by design. It is not a
+// failed scan, so its alerts (from FortiGate evidence) still close as usual.
+var errTooLarge = fmt.Errorf("network has more than %d scannable addresses; narrow the segment", maxSweepHosts)
+
 type segment struct {
 	id, name, network, kind string
 	dhcpStart, dhcpEnd      string
@@ -54,6 +58,9 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 	if err != nil {
 		return err
 	}
+	if req.by != "manual" {
+		segments = s.automatic(ctx, segments)
+	}
 	started := time.Now()
 	s.mu.Lock()
 	s.status.Running, s.status.Trigger, s.status.StartedAt, s.status.NextScanAt = true, req.by, &started, nil
@@ -77,6 +84,11 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 			scanErrors = append(scanErrors, fmt.Errorf("segment %q: %w", x.name, err))
 		}
 		s.record(result)
+		if ctx.Err() == nil && !errors.Is(err, errTooLarge) {
+			if err := s.markScanned(ctx, x.id, err != nil); err != nil {
+				scanErrors = append(scanErrors, err)
+			}
+		}
 		// Devices found here become pending and raise their alerts now, rather
 		// than after the slowest segments in the sweep.
 		if err == nil && found > 0 {
@@ -100,6 +112,27 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 	return errors.Join(scanErrors...)
 }
 
+// markScanned records whether a segment's scan failed, writing only when that
+// changes. The alert rules keep a failed segment's alerts open.
+func (s *Scanner) markScanned(ctx context.Context, segmentID string, failed bool) error {
+	_, err := s.conn.Exec(ctx, `UPDATE segments SET scan_failed_at = CASE WHEN $2 THEN now() END
+		WHERE id = $1::uuid AND (scan_failed_at IS NULL) = $2`, segmentID, failed)
+	return err
+}
+
+// automatic keeps the segments whose kind is scanned on schedule. Scan now
+// scans any segment, whatever these switches say.
+func (s *Scanner) automatic(ctx context.Context, all []segment) []segment {
+	on := map[string]bool{"dhcp": enabled(ctx, s.conn, "scan.auto_devices"), "server": enabled(ctx, s.conn, "scan.auto_servers")}
+	out := all[:0]
+	for _, x := range all {
+		if on[x.kind] {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
 // record keeps the latest result per segment.
 func (s *Scanner) record(r SegmentResult) {
 	s.mu.Lock()
@@ -120,7 +153,7 @@ func scanHosts(network string) ([]netip.Addr, error) {
 	}
 	span := netcalc.UsableRange(prefix)
 	if span.Size().Int64() > maxSweepHosts {
-		return nil, fmt.Errorf("network has more than %d scannable addresses; narrow the segment", maxSweepHosts)
+		return nil, errTooLarge
 	}
 	hosts := make([]netip.Addr, 0, int(span.Size().Int64()))
 	for ip := span.First; ip.IsValid() && !span.Last.Less(ip); ip = ip.Next() {

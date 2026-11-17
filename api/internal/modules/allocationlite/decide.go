@@ -150,7 +150,7 @@ func unavailable(s ipam.Status) string {
 	case s.Reserved:
 		return "This IP is held by a reservation."
 	case s.SeenRecently:
-		return "This IP answered on the network in the last 24 hours. Choose another."
+		return "This IP is in use on the network (seen in the last 30 days outside the DHCP pool, or 24 hours inside it). Choose another."
 	}
 	return ""
 }

@@ -151,7 +151,9 @@ func (s *Scanner) waitForStartup(ctx context.Context, next *request) bool {
 
 func (s *Scanner) checkLoop(ctx context.Context) {
 	for {
-		if err := s.checkAll(ctx); err != nil && ctx.Err() == nil {
+		if !enabled(ctx, s.conn, "server_check.enabled") {
+			slog.DebugContext(ctx, "automatic server checks are off")
+		} else if err := s.checkAll(ctx); err != nil && ctx.Err() == nil {
 			slog.ErrorContext(ctx, "server checks failed", "error", err)
 		}
 		timer := time.NewTimer(interval(ctx, s.conn, "server_check.interval_seconds", defaultCheckInterval))
@@ -162,6 +164,13 @@ func (s *Scanner) checkLoop(ctx context.Context) {
 		case <-timer.C:
 		}
 	}
+}
+
+// enabled reads an on/off setting. Missing or unreadable means on.
+func enabled(ctx context.Context, conn db.Conn, key string) bool {
+	on := true
+	_ = conn.QueryRow(ctx, `SELECT (value #>> '{}')::boolean FROM settings WHERE key = $1`, key).Scan(&on)
+	return on
 }
 
 func interval(ctx context.Context, conn db.Conn, key string, fallback time.Duration) time.Duration {

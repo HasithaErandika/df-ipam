@@ -12,8 +12,11 @@ import (
 	"dfipam/api/internal/platform/httpx"
 )
 
-// SeenWindow is how recently an address must have answered to count as in use.
-const SeenWindow = "24 hours"
+// InUse is the SQL condition for a sighting, aliased v, whose address counts as
+// in use: it answered in the last 24 hours, or, outside the DHCP pool, in the
+// last 30 days. A static device switched off for a weekend or a leave keeps its
+// address; inside the pool DHCP hands addresses on, so a day is enough.
+const InUse = "(v.last_seen > now() - interval '24 hours' OR (v.is_static AND v.last_seen > now() - interval '30 days'))"
 
 // ErrNoCandidate means every usable address in the segment is taken.
 var ErrNoCandidate = httpx.NewError(http.StatusConflict, "NO_CANDIDATE", "This segment has no Available candidate left.")
@@ -49,9 +52,9 @@ func Check(ctx context.Context, conn db.Conn, segmentID string, ip netip.Addr) (
 		v.ip IS NOT NULL, v.mac::text, COALESCE(v.hostname, '')
 		FROM segments s
 		LEFT JOIN ip_addresses i ON i.ip = $2::inet
-		LEFT JOIN LATERAL (SELECT ip, mac, hostname FROM sightings WHERE ip = $2::inet AND last_seen > now() - $3::interval
-			ORDER BY last_seen DESC LIMIT 1) v ON true
-		WHERE s.id = $1::uuid`, segmentID, ip.String(), SeenWindow).Scan(&network, &out.InSegment, &out.InDHCPPool, &out.IsGateway,
+		LEFT JOIN LATERAL (SELECT v.ip, v.mac, v.hostname FROM sightings v WHERE v.ip = $2::inet AND `+InUse+`
+			ORDER BY v.last_seen DESC LIMIT 1) v ON true
+		WHERE s.id = $1::uuid`, segmentID, ip.String()).Scan(&network, &out.InSegment, &out.InDHCPPool, &out.IsGateway,
 		&out.Registered, &out.RegisterName, &out.Reserved, &out.SeenRecently, &out.SeenMAC, &out.Hostname)
 	if err != nil {
 		return out, db.Friendly(err)
@@ -92,8 +95,8 @@ func Available(ctx context.Context, conn db.Conn, segmentID string) ([]netcalc.R
 		UNION ALL SELECT host(start_ip), host(end_ip) FROM reservations WHERE segment_id = $1::uuid AND status = 'active'
 		UNION ALL SELECT host(dhcp_start), host(dhcp_end) FROM segments WHERE id = $1::uuid AND dhcp_start IS NOT NULL
 		UNION ALL SELECT host(gateway), host(gateway) FROM segments WHERE id = $1::uuid AND gateway IS NOT NULL
-		UNION ALL SELECT DISTINCT host(ip), host(ip) FROM sightings WHERE segment_id = $1::uuid AND (last_seen > now() - $2::interval OR is_gateway)`,
-		segmentID, SeenWindow)
+		UNION ALL SELECT DISTINCT host(v.ip), host(v.ip) FROM sightings v WHERE v.segment_id = $1::uuid AND (`+InUse+` OR v.is_gateway)`,
+		segmentID)
 	if err != nil {
 		return nil, err
 	}

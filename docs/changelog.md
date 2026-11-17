@@ -15,6 +15,25 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 - Go 1.26.11 (`go.mod`, `api/Dockerfile`), which fixes GO-2026-6859, a crash in `net/http`. `govulncheck` now reports nothing that the code calls.
 - Web dependencies from Dependabot's #12 (React Query, React Hook Form and its resolvers, Lucide, Simple Icons, Tailwind, Vite and its React plugin), applied on `lite`. `@types/node` stays on 24 to match Node 24 in `web/Dockerfile`, not 26.
 
+- The Entra ID setup now says to grant admin consent; without it Microsoft shows "Need admin approval".
+
+**Web server (nginx)**
+- Device, register and segment imports up to 5 MB get through: nginx refused anything over 2 MB with 413 before it reached the API.
+- Files under `/assets/` keep the security headers (`nosniff`, CSP, and HSTS over HTTPS); a cache header added there had dropped them.
+
+**Discovery and alerts**
+- A static address seen in the last 30 days counts as in use (24 hours inside the DHCP pool, as before). A device switched off for a weekend or a leave is no longer offered as an Available candidate, and an approval or reservation can't take its address.
+- On routed segments, a sighting without a MAC borrows the MAC last seen at its address only outside the DHCP pool. Inside it the address may belong to another device by now, which was credited to the old one and could raise a false "Rejected device is active".
+- When a segment's scan fails, its alerts stay open until a scan succeeds, instead of closing as if resolved (migration 000015: `segments.scan_failed_at`). Segments too large to scan aren't counted as failed.
+- Server checks that can't ping now skip servers without a check port, and log it, instead of counting failures until every one of them is Down.
+- Monitored servers are checked every hour by default, not every 5 minutes (migration 000016 changes the setting only where it was still 5 minutes). With 3 failed checks before Down, an outage now shows after about 3 hours.
+
+**Automatic scanning switches and slow servers**
+- Settings › System has three switches: scan device segments automatically, scan server segments automatically, and check monitored servers automatically. They stop only scheduled work; Scan now still scans any segment. While a kind of segment isn't scanned automatically its alerts stay open, and while checks are off servers keep their last state.
+- Each server check records how fast the server answered: the faster of two pings, or the check port's connect time. It shows next to the status on Servers and in the server's details.
+- Discovery shows "Automatic scanning is off. Use Scan now." instead of a next scan time when both scan switches are off, and says when the next scan covers only device or only server segments.
+- New **Slow server** alert (Medium) when a monitored server answers slower than the limit in Settings (default 200 ms). Migration 000017 adds `ip_addresses.response_ms` and the alert type.
+
 **Commits**
 - `94a8c01` remove the development sign-in; Entra ID only, and production needs it with HTTPS
 

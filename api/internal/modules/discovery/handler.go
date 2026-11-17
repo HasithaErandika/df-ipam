@@ -43,6 +43,9 @@ type statusDTO struct {
 	scanner.Status
 	Method          string `json:"method"`
 	IntervalMinutes int    `json:"intervalMinutes"`
+	// Which kinds of segment the scheduled scan covers (Settings > System).
+	AutoDevices bool `json:"autoScanDevices"`
+	AutoServers bool `json:"autoScanServers"`
 }
 
 func (h *Handler) status(c *gin.Context) {
@@ -50,9 +53,16 @@ func (h *Handler) status(c *gin.Context) {
 		httpx.Fail(c, errUnavailable)
 		return
 	}
-	out := statusDTO{Status: h.scan.Snapshot(), Method: "ping", IntervalMinutes: int(scanner.DefaultScanInterval.Minutes())}
+	out := statusDTO{Status: h.scan.Snapshot(), Method: "ping", IntervalMinutes: int(scanner.DefaultScanInterval.Minutes()), AutoDevices: true, AutoServers: true}
 	_ = h.conn.QueryRow(c, `SELECT COALESCE((SELECT value #>> '{}' FROM settings WHERE key = 'scan.method'), 'ping'),
-		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), $1)`, out.IntervalMinutes).Scan(&out.Method, &out.IntervalMinutes)
+		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), $1),
+		COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'scan.auto_devices'), true),
+		COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'scan.auto_servers'), true)`,
+		out.IntervalMinutes).Scan(&out.Method, &out.IntervalMinutes, &out.AutoDevices, &out.AutoServers)
+	// With both kinds off the scheduled scan does nothing, so there is no next scan to show.
+	if !out.AutoDevices && !out.AutoServers {
+		out.NextScanAt = nil
+	}
 	httpx.OK(c, http.StatusOK, out)
 }
 
