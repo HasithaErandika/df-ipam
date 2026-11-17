@@ -75,11 +75,13 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 
 // attachMACs gives a sighting with no MAC the MAC last seen at its address
 // within a day. NetBIOS sometimes misses its reply on a routed network; the
-// host is the same one, so it shouldn't be listed again without its MAC.
+// host is the same one, so it shouldn't be listed again without its MAC. Only
+// outside the DHCP pool: inside it the address may belong to another device by
+// now, which would then be credited to the old one.
 func (s *Scanner) attachMACs(ctx context.Context, values []sighting) error {
 	var bare []string
 	for _, v := range values {
-		if v.mac == "" {
+		if v.mac == "" && v.static {
 			bare = append(bare, v.ip)
 		}
 	}
@@ -104,7 +106,7 @@ func (s *Scanner) attachMACs(ctx context.Context, values []sighting) error {
 		return err
 	}
 	for i := range values {
-		if mac, ok := known[values[i].ip]; ok && values[i].mac == "" {
+		if mac, ok := known[values[i].ip]; ok && values[i].mac == "" && values[i].static {
 			values[i].mac = mac
 			values[i].nicVendor = macVendor(mac)
 		}

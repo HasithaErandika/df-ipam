@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"net"
 	"net/netip"
 	"strconv"
@@ -26,7 +27,13 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 	}
 	icmp, err := newPinger()
 	if err != nil {
-		icmp = nil // check ports only; isUp copes
+		// Without ping, a server with no check port can't be checked at all.
+		// Skip it rather than count a failure, or every one of them goes Down.
+		slog.ErrorContext(ctx, "server checks can't ping; checking only servers with a check port", "error", err)
+		icmp, targets = nil, withPort(targets)
+		if len(targets) == 0 {
+			return nil
+		}
 	} else {
 		defer icmp.Close()
 	}
@@ -62,6 +69,16 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 		return err
 	}
 	return monitoring.New(s.conn).Evaluate(ctx)
+}
+
+func withPort(targets []monitoredIP) []monitoredIP {
+	var out []monitoredIP
+	for _, t := range targets {
+		if t.port.Valid {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func (s *Scanner) monitored(ctx context.Context) ([]monitoredIP, error) {

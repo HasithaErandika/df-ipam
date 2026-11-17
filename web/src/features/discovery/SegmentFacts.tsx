@@ -109,7 +109,7 @@ export function AvailableList({ segment: s, ranges, onRegister }: { segment: Seg
           ))}
         </ul>
       )}
-      <p className="border-t border-line px-4 py-2 text-[12px] text-ink-3">Not registered, not reserved, not the gateway, outside the DHCP pool, and not seen in use in the last 24 hours.</p>
+      <p className="border-t border-line px-4 py-2 text-[12px] text-ink-3">Not registered, not reserved, not the gateway, outside the DHCP pool, and not seen in use recently (30 days outside the DHCP pool, 24 hours inside it).</p>
     </Card>
   )
 }

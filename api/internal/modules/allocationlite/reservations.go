@@ -137,8 +137,8 @@ func (h *Handler) createReservation(c *gin.Context) {
 		var busy bool
 		if err := tx.QueryRow(c, `SELECT EXISTS (SELECT 1 FROM reservations WHERE status = 'active' AND start_ip <= $2::inet AND end_ip >= $1::inet)
 			OR EXISTS (SELECT 1 FROM ip_addresses WHERE ip BETWEEN $1::inet AND $2::inet)
-			OR EXISTS (SELECT 1 FROM sightings WHERE ip BETWEEN $1::inet AND $2::inet AND last_seen > now() - $3::interval)`,
-			in.StartIP, in.EndIP, ipam.SeenWindow).Scan(&busy); err != nil {
+			OR EXISTS (SELECT 1 FROM sightings v WHERE v.ip BETWEEN $1::inet AND $2::inet AND `+ipam.InUse+`)`,
+			in.StartIP, in.EndIP).Scan(&busy); err != nil {
 			return err
 		}
 		if busy {

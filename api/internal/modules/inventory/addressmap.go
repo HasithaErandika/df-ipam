@@ -70,11 +70,11 @@ func (h *Handler) addressMap(c *gin.Context) {
 	rows, err := db.All[mapRow](c, h.conn, `
 		SELECT host(dhcp_start) AS a, host(dhcp_end) AS b, 'dhcp_free' AS state FROM segments WHERE id = $1::uuid AND dhcp_start IS NOT NULL
 		UNION ALL SELECT DISTINCT host(v.ip), host(v.ip), CASE WHEN s.dhcp_start IS NOT NULL AND v.ip BETWEEN s.dhcp_start AND s.dhcp_end THEN 'dhcp_used' ELSE 'seen' END
-			FROM sightings v JOIN segments s ON s.id = v.segment_id WHERE v.segment_id = $1::uuid AND v.last_seen > now() - $2::interval
+			FROM sightings v JOIN segments s ON s.id = v.segment_id WHERE v.segment_id = $1::uuid AND `+ipam.InUse+`
 		UNION ALL SELECT host(start_ip), host(end_ip), 'held' FROM reservations WHERE segment_id = $1::uuid AND status = 'active'
 		UNION ALL SELECT host(gateway), host(gateway), 'gateway' FROM segments WHERE id = $1::uuid AND gateway IS NOT NULL
 		UNION ALL SELECT DISTINCT host(ip), host(ip), 'gateway' FROM sightings WHERE segment_id = $1::uuid AND is_gateway
-		UNION ALL SELECT host(ip), host(ip), status FROM ip_addresses WHERE segment_id = $1::uuid`, id, ipam.SeenWindow)
+		UNION ALL SELECT host(ip), host(ip), status FROM ip_addresses WHERE segment_id = $1::uuid`, id)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

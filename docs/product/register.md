@@ -13,7 +13,7 @@ The register is the official list of addresses: IP (unique), segment, status, ty
 Ways in:
 
 - **From Discovery:** an address seen but not registered has **Register**, pre-filled from what was seen. Approving a device can register its address in the same step.
-- **By hand:** the form suggests the next **Available candidate**: not registered, not reserved, outside the DHCP pool, not the gateway, and not seen recently. The API rejects an IP already registered and warns if it was seen in use.
+- **By hand:** the form suggests the next **Available candidate**: not registered, not reserved, outside the DHCP pool, not the gateway, and not seen in use (in the last 30 days outside the DHCP pool, so a device switched off for a weekend keeps its address; 24 hours inside it). The API rejects an IP already registered and warns if it was seen in use.
 - **Import** a CSV, text (`.txt`, `.tsv`: comma, tab, semicolon or pipe) or Excel file (5 MB, 5,000 rows) with the same columns as the export, so an export can be edited and imported back. On the Servers tab a blank type means Server, and blank Monitor and Critical take the environment's defaults.
 
 **Every import is reviewed first.** Choosing a file runs a dry run, which does the whole import in a transaction that is rolled back, and shows exactly which rows would be added and which skipped and why. Only Import, after that review, saves anything.

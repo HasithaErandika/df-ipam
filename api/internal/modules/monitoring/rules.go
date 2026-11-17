@@ -93,11 +93,13 @@ const upsertSQL = `INSERT INTO alerts (alert_type, severity, segment_id, ip_addr
 	RETURNING dedupe_key, (xmax = 0), EXISTS (SELECT 1 FROM alerts a WHERE a.dedupe_key = alerts.dedupe_key
 		AND a.status = 'closed' AND a.closed_at > now() - interval '1 hour')`
 
-// closeSQL closes alerts whose cause is gone, and tells those who handle alerts when a
+// closeSQL closes alerts whose cause is gone, except on a segment whose last scan
+// failed: nobody looked, so the cause may still be there. It tells those who handle alerts when a
 // server is back: only when it is still monitored and answering, not when it was
 // released or its monitoring turned off.
 const closeSQL = `WITH closed AS (
 	UPDATE alerts SET status = 'closed', closed_at = now() WHERE status <> 'closed' AND NOT (dedupe_key = ANY($1::text[]))
+		AND NOT (alert_type <> 'server_down' AND EXISTS (SELECT 1 FROM segments s WHERE s.id = alerts.segment_id AND s.scan_failed_at IS NOT NULL))
 	RETURNING alert_type, ip
 ) INSERT INTO notifications (user_id, kind, message, link, email_status)
 SELECT u.id, 'server_up', 'Server ' || COALESCE(NULLIF(i.assigned_name, ''), host(closed.ip)) || ' (' || host(closed.ip) || ') is back up', '/servers',

@@ -15,7 +15,7 @@ export function addressProblems(s: AddressStatus): { blocking: string[]; warning
   if (s.registered) blocking.push(`Already in the register${s.registerName ? ` as “${s.registerName}”` : ''}.`)
   if (s.reserved) blocking.push('Held by a reservation.')
   if (s.inDhcpPool) warnings.push('Inside the DHCP pool: a DHCP client may be given this address.')
-  if (s.seenRecently) warnings.push(`Seen in use in the last 24 hours${s.seenMac ? ` by ${s.seenMac}` : ''}${s.hostname ? ` (${s.hostname})` : ''}.`)
+  if (s.seenRecently) warnings.push(`Seen in use recently${s.seenMac ? ` by ${s.seenMac}` : ''}${s.hostname ? ` (${s.hostname})` : ''}.`)
   return { blocking, warnings }
 }
 
