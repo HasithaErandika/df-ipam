@@ -1,6 +1,6 @@
 // Package auth handles sign-in sessions, Microsoft Entra ID and permissions.
-// DF-IPAM holds no passwords: people sign in with Microsoft, or, while it isn't
-// set up, with the development sign-in (see the signin module).
+// DF-IPAM holds no passwords: people sign in with Microsoft (see the signin
+// module).
 package auth
 
 // Principal is the authenticated user for one request. Role is empty until an

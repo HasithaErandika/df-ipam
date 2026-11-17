@@ -3,7 +3,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -20,9 +22,6 @@ type Config struct {
 	// Microsoft Entra ID sign-in. Off until the tenant, client ID and secret are set.
 	EntraAuthority, EntraTenantID, EntraClientID, EntraClientSecret, EntraRedirectURL string
 	AllowedEmailDomains                                                               []string
-	// Development sign-in: no password, for while Entra ID isn't set up. Never in production.
-	AuthBypass      bool
-	AuthBypassEmail string
 }
 
 func get(key, fallback string) string {
@@ -71,22 +70,41 @@ func Load() (Config, error) {
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("missing settings: DATABASE_URL")
 	}
-	return c, c.loadBypass()
+	return c, c.checkProduction()
 }
 
-// loadBypass reads the development sign-in. It needs a work email to sign in
-// as, and is refused outright in production.
-func (c *Config) loadBypass() error {
-	c.AuthBypass = strings.EqualFold(get("AUTH_BYPASS", "false"), "true")
-	if !c.AuthBypass {
+// checkProduction refuses to start a server nobody can sign in to, or one that
+// would send the session cookie over plain HTTP.
+func (c *Config) checkProduction() error {
+	if !strings.EqualFold(c.Env, "production") {
 		return nil
 	}
-	if strings.EqualFold(c.Env, "production") {
-		return fmt.Errorf("AUTH_BYPASS can't be used with APP_ENV=production: set up Microsoft Entra ID sign-in")
+	var missing []string
+	for key, v := range map[string]string{"ENTRA_TENANT_ID": c.EntraTenantID, "ENTRA_CLIENT_ID": c.EntraClientID, "ENTRA_CLIENT_SECRET": c.EntraClientSecret} {
+		if v == "" {
+			missing = append(missing, key)
+		}
 	}
-	c.AuthBypassEmail = strings.ToLower(get("AUTH_BYPASS_EMAIL", ""))
-	if _, domain, ok := strings.Cut(c.AuthBypassEmail, "@"); !ok || domain == "" || strings.Contains(domain, "@") {
-		return fmt.Errorf("AUTH_BYPASS needs AUTH_BYPASS_EMAIL, the work email to sign in as")
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return fmt.Errorf("APP_ENV=production needs Microsoft Entra ID sign-in: missing %s", strings.Join(missing, ", "))
+	}
+	if !strings.HasPrefix(c.AppBaseURL, "https://") && !loopback(c.AppBaseURL) {
+		return fmt.Errorf("APP_ENV=production needs APP_BASE_URL to start with https:// (plain http only for localhost)")
 	}
 	return nil
+}
+
+// loopback reports whether the address is this machine, where plain HTTP never
+// crosses the network.
+func loopback(address string) bool {
+	u, err := url.Parse(address)
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }

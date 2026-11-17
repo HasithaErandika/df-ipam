@@ -31,7 +31,7 @@ The specification. What is described here is built.
 | [architecture.md](engineering/architecture.md) | Containers, code layout, background loops, tests |
 | [database.md](engineering/database.md) | Tables, schema rules, migrations |
 | [api.md](engineering/api.md) | REST conventions and limits |
-| [authentication.md](engineering/authentication.md) | Sign-in (Microsoft Entra ID, the development sign-in), roles and permissions |
+| [authentication.md](engineering/authentication.md) | Sign-in (Microsoft Entra ID), roles and permissions |
 | [frontend.md](engineering/frontend.md) | Design and UI rules |
 | [security.md](engineering/security.md) | Threat model and release checklist |
 

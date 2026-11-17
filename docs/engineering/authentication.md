@@ -1,11 +1,8 @@
 # Authentication and Authorisation
 
-DF-IPAM holds no passwords. There are two ways in, and both end in the same session cookie:
+DF-IPAM holds no passwords. The only way in is **Microsoft Entra ID**, for `@dialogfinance.lk` accounts, locally and on servers alike. There is no password-free or development sign-in.
 
-- **Microsoft Entra ID**, for `@dialogfinance.lk` accounts. This is the way in.
-- **Development sign-in** (`AUTH_BYPASS`), for while Entra ID isn't set up: one button that signs in as one named person, without a password. Never in production.
-
-Authorisation stays entirely in DF-IPAM's own `users` and `roles` tables, whichever way a person signed in. Every `/api/v1` request is signed in by its session cookie; there are no bearer tokens.
+Authorisation stays entirely in DF-IPAM's own `users` and `roles` tables. Every `/api/v1` request is signed in by its session cookie; there are no bearer tokens.
 
 ## Microsoft Entra ID
 
@@ -32,21 +29,11 @@ For local use, leave `VITE_API_URL` empty in `web/.env`, so the app and API shar
 
 ### Pending accounts
 
-An account can be made before its person first signs in: `make admin EMAIL=…`, and the development sign-in, add one with `auth_provider = 'entra'` and `auth_subject = 'pending:<email>'`. **Their first Microsoft sign-in with a verified email matching it takes that account over** (once), so the role and history given beforehand stay with them.
+An account can be made before its person first signs in: `make admin EMAIL=…` adds one with `auth_provider = 'entra'` and `auth_subject = 'pending:<email>'`. **Their first Microsoft sign-in with a verified email matching it takes that account over** (once), so the role and history given beforehand stay with them.
 
-## Development sign-in
+## Production
 
-For while the Entra ID app registration isn't ready. In `api/.env`:
-
-```bash
-AUTH_BYPASS=true
-AUTH_BYPASS_EMAIL=<you>@dialogfinance.lk
-```
-
-- The sign-in page shows **Continue with development sign-in**. It calls `POST /api/v1/auth/bypass` (with the `X-Requested-With` header), which starts an ordinary session as `AUTH_BYPASS_EMAIL`: the same cookie, idle timeout, deactivation check and audit (`provider: bypass`) as Microsoft sign-in.
-- The first time, that person is added as a pending **Administrator**, so they can set everything up; their later Microsoft sign-in takes the same account over. An existing account with that email is used as it is, and a deactivated one is refused.
-- **Anyone who can open the site signs in as that person.** Use it only on a trusted network. Every screen shows a warning banner while it is on, and the API logs a warning at start.
-- **The API refuses to start with it when `APP_ENV=production`**, and `docker-compose.prod.yml` and `docker-compose.apache.yml` fix `APP_ENV=production`. Turn it off (`AUTH_BYPASS=false`) once Microsoft sign-in works.
+With `APP_ENV=production` (fixed by `docker-compose.prod.yml` and `docker-compose.apache.yml`) the API refuses to start unless `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` and `ENTRA_CLIENT_SECRET` are set and `APP_BASE_URL` starts with `https://`, so a server can't come up that nobody can sign in to, or that sends the session cookie over plain HTTP. Outside production the API starts without Entra ID, logs a warning, and the sign-in page says sign-in isn't available.
 
 ## People and roles
 
@@ -88,5 +75,5 @@ Defined in `api/internal/auth/permissions.go` and described for people in `web/s
 | Sessions and the cookie check | `api/internal/auth/sessions.go`, `middleware.go` |
 | Microsoft Entra ID | `api/internal/auth/entra.go`, `keycache.go`, `token.go` |
 | Pending accounts | `api/internal/auth/accounts.go`, `api/cmd/admin` |
-| Sign-in routes, development sign-in | `api/internal/modules/signin` |
+| Sign-in routes | `api/internal/modules/signin` |
 | Browser | `web/src/lib/auth.ts` only; the API client sends the cookie and the `X-Requested-With` header |

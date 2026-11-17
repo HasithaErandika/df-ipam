@@ -1,14 +1,14 @@
 // How people sign in, and the only file that knows. The API holds the session
-// in a cookie scripts can't read; the browser never sees a token. Two ways in:
-// Microsoft Entra ID, and the development sign-in while Entra ID isn't set up.
+// in a cookie scripts can't read; the browser never sees a token. The one way in
+// is Microsoft Entra ID.
 
 const api = `${import.meta.env.VITE_API_URL ?? ''}/api/v1`
 const csrf = { 'X-Requested-With': 'DF-IPAM' }
 
-/** Which ways in are switched on, and whether this browser holds a session. */
-export interface AuthStatus { microsoft: boolean; bypass: boolean; session: boolean }
+/** Whether Microsoft sign-in is set up, and whether this browser holds a session. */
+export interface AuthStatus { microsoft: boolean; session: boolean }
 
-const unknownStatus: AuthStatus = { microsoft: false, bypass: false, session: false }
+const unknownStatus: AuthStatus = { microsoft: false, session: false }
 
 export async function authStatus(): Promise<AuthStatus> {
   try {
@@ -27,21 +27,6 @@ export function signInWithMicrosoft(returnTo = window.location.pathname + window
 }
 
 const listeners = new Set<(signedIn: boolean) => void>()
-
-/** The development sign-in: a session as the person set in api/.env, without a password. */
-export async function signInWithBypass(): Promise<void> {
-  let res: Response
-  try {
-    res = await fetch(`${api}/auth/bypass`, { method: 'POST', credentials: 'include', headers: csrf })
-  } catch {
-    throw new Error("Can't reach the server. Check your connection and try again.")
-  }
-  if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(body?.error?.message ?? 'The development sign-in did not work.')
-  }
-  listeners.forEach((l) => l(true))
-}
 
 /** Ends this browser's session. */
 export async function signOut(): Promise<void> {

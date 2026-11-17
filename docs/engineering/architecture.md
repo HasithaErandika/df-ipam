@@ -8,7 +8,7 @@
 | `backend` | One Go process: the API, the scanner, server checks, the FortiGate reader and the email outbox | `web` only |
 | `db` | PostgreSQL 16, volume `df-ipam-lite-db-data` | `backend` only |
 
-A `migrate` step applies migrations and the seed, then exits. People sign in with Microsoft Entra ID (or the development sign-in); all data stays in PostgreSQL.
+A `migrate` step applies migrations and the seed, then exits. People sign in with Microsoft Entra ID; all data stays in PostgreSQL.
 
 Instead of the `web` container, Apache on the host can serve the app and proxy the API: `deploy/apache/df-ipam.conf`, `docker-compose.apache.yml`, `make apache-up` and `make apache-web` (see [setup.md](../operations/setup.md#run-it-behind-apache)).
 

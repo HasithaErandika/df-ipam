@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # One image holds the server and the admin commands. Compose picks which to run.
-ARG GO_VERSION=1.26.10
+ARG GO_VERSION=1.26.11
 
 FROM golang:${GO_VERSION}-alpine AS build
 WORKDIR /src

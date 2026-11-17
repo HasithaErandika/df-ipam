@@ -51,4 +51,4 @@ A role is a job and the permissions it grants; each person holds one. People who
 | Requester | See the network, request and reserve, export reports |
 | Viewer | See the network, export reports |
 
-People sign in with their **Microsoft** `@dialogfinance.lk` account (Entra ID). Until Entra ID is set up, a development sign-in can stand in, never on a server. A signed-in person with no role sees nothing. Nobody changes their own role or access, and no change may leave nobody active who can manage users. The code checks permissions, never role names. See [authentication.md](../engineering/authentication.md).
+People sign in with their **Microsoft** `@dialogfinance.lk` account (Entra ID). A signed-in person with no role sees nothing. Nobody changes their own role or access, and no change may leave nobody active who can manage users. The code checks permissions, never role names. See [authentication.md](../engineering/authentication.md).

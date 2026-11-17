@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { SubnetMap } from '../../components/SubnetMap'
-import { Button, FormError, Notice } from '../../components/ui'
-import { authStatus, signInWithBypass, signInWithMicrosoft, type AuthStatus } from '../../lib/auth'
+import { Button, Notice } from '../../components/ui'
+import { authStatus, signInWithMicrosoft, type AuthStatus } from '../../lib/auth'
 import { takeSignOutReason } from '../../lib/idle'
 
 /** Why Microsoft sign-in sent the person back, from /?signin_error=. */
@@ -38,24 +38,10 @@ export function SignIn() {
   const [status, setStatus] = useState<AuthStatus | null>(null)
   const [leaving, setLeaving] = useState(false)
   useEffect(() => { void authStatus().then(setStatus) }, [])
-  const [error, setError] = useState<unknown>(null)
-  const [bypassing, setBypassing] = useState(false)
   const [reason] = useState(takeSignOutReason)
-
-  const bypass = async () => {
-    setError(null)
-    setBypassing(true)
-    try {
-      await signInWithBypass()
-    } catch (e) {
-      setError(e)
-      setBypassing(false)
-    }
-  }
 
   const msReady = status?.microsoft === true
   const msOff = status !== null && !status.microsoft
-  const nothing = msOff && !status.bypass
 
   return (
     <div className="flex h-full">
@@ -90,16 +76,7 @@ export function SignIn() {
             {!leaving && status !== null && <MicrosoftMark />}Sign in with Microsoft
           </Button>
           {msReady && <p className="mt-2 text-center text-[12.5px] text-ink-3">Only <strong className="font-medium text-ink-2">@dialogfinance.lk</strong> accounts can sign in.</p>}
-          {msOff && status.bypass && <p className="mt-2 text-[12.5px] text-ink-3">Microsoft sign-in isn't set up on this server yet.</p>}
-          {nothing && <div className="mt-4"><Notice tone="warn">No way to sign in is set up. An administrator adds the Entra ID settings to <code className="font-mono">api/.env</code>, or turns on the development sign-in with <code className="font-mono">AUTH_BYPASS</code>.</Notice></div>}
-
-          {status?.bypass && (
-            <div className="mt-6 rounded-md border border-warn/40 bg-warn-soft p-3.5">
-              <p className="text-[12.5px] text-warn"><strong className="font-semibold">Development sign-in.</strong> Signs in as the person set in <code className="font-mono">api/.env</code>, without a password. For use until Microsoft sign-in works.</p>
-              <Button variant={msReady ? 'secondary' : 'primary'} className="mt-3 w-full" busy={bypassing} onClick={() => void bypass()}>Continue with development sign-in</Button>
-              <FormError error={error} />
-            </div>
-          )}
+          {msOff && <div className="mt-4"><Notice tone="warn">Sign-in isn't available: the server can't be reached, or Microsoft sign-in isn't set up. An administrator adds the Entra ID settings to <code className="font-mono">api/.env</code>.</Notice></div>}
 
           <div className="mt-8 rounded-md border border-line bg-surface-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-ink-2">
             <strong className="font-medium text-ink">First time here?</strong> Sign in, and you'll see "Waiting for access" until your IPAM administrator gives you a role.

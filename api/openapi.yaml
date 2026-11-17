@@ -9,7 +9,7 @@ security:
   - session: []
 components:
   securitySchemes:
-    # The session cookie from Microsoft sign-in or the development sign-in. Changes also need X-Requested-With: DF-IPAM.
+    # The session cookie from Microsoft sign-in. Changes also need X-Requested-With: DF-IPAM.
     session: { type: apiKey, in: cookie, name: __Host-dfipam_session }
   parameters:
     id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -117,7 +117,7 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /auth/status:
     get:
-      summary: "Public. Which ways to sign in are on (microsoft, bypass), and whether this browser holds a session"
+      summary: "Public. Whether Microsoft sign-in is set up (microsoft), and whether this browser holds a session"
       responses: { '2XX': { description: OK } }
   /auth/microsoft/login:
     get:
@@ -127,10 +127,6 @@ paths:
     get:
       summary: "Public. Microsoft returns here. Checks the ID token, the tenant and the email domain, starts a session cookie, and redirects to the app (or to /?signin_error=domain|tenant|disabled|expired|cancelled|failed)"
       responses: { '302': { description: To the app } }
-  /auth/bypass:
-    post:
-      summary: "Public. Development sign-in, only when AUTH_BYPASS is on (never in production): starts a session as AUTH_BYPASS_EMAIL, adding them as a pending Administrator the first time. Needs X-Requested-With: DF-IPAM. 404 BYPASS_OFF otherwise"
-      responses: { '204': { description: Signed in }, default: { $ref: '#/components/responses/Error' } }
   /auth/logout:
     post:
       summary: "Public. Ends the session in this browser. Needs X-Requested-With: DF-IPAM"

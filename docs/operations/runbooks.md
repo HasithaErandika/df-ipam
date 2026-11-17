@@ -75,4 +75,4 @@ Stop the backend: `sudo bash -c 'set -a; . api/.env; set +a; docker compose stop
 
 ## Microsoft sign-in or the internet is down
 
-Nobody new can sign in, but data is safe on the server, and open sessions keep working until they end (10 hours, or the idle timeout). Discovery, server checks and alerts carry on. Don't turn on `AUTH_BYPASS` on a server to get round it: the API refuses it in production, by design. If an administrator must get in, wait for Microsoft, or reach the database with `make db-shell` for what can't wait (audited changes go through the app, so note anything done there).
+Nobody new can sign in, but data is safe on the server, and open sessions keep working until they end (10 hours, or the idle timeout). Discovery, server checks and alerts carry on. There is no other way in, by design. If an administrator must get in, wait for Microsoft, or reach the database with `make db-shell` for what can't wait (audited changes go through the app, so note anything done there).
