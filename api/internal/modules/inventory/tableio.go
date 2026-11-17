@@ -130,11 +130,11 @@ func importTx(c *gin.Context, conn db.Conn, dry bool, fn func(pgx.Tx) error) err
 	return err
 }
 
-// exportFormat reads ?format=csv|xlsx, defaulting to CSV.
+// exportFormat reads ?format=csv|txt|xlsx, defaulting to CSV.
 func exportFormat(c *gin.Context) (string, bool) {
 	f := c.DefaultQuery("format", "csv")
 	if _, ok := tabular.Formats[f]; !ok {
-		httpx.Fail(c, httpx.Validation("format", "Choose CSV or Excel."))
+		httpx.Fail(c, httpx.Validation("format", "Choose CSV, text or Excel."))
 		return "", false
 	}
 	return f, true

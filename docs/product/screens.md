@@ -21,7 +21,7 @@ Lists refresh on their own (Discovery every 30 seconds, most others every minute
 
 ## Reports
 
-On demand, as CSV, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices, Static IPs on floors, Server availability, Alert history, Requests and reservations, and Audit log.
+On demand, as CSV, tab-separated text, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices, Static IPs on floors, Server availability, Alert history, Requests and reservations, and Audit log.
 
 ## System settings
 

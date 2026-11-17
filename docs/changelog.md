@@ -37,6 +37,9 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 **Microsoft sign-in fix**
 - Sign-in failed with "didn't complete" for every account: Microsoft publishes its signing keys without `alg`, and the JWT library uses no key without one. Microsoft's RSA keys are now pinned to RS256 when fetched (never inferred), and the test's fake Microsoft publishes its keys the same way, so the test catches it.
 
+**Text export**
+- Every export (Devices, IP register, Servers, Audit log and Reports) can download tab-separated text (.txt) as well as CSV and Excel: one line per row, Windows line endings for Notepad, columns when pasted into a spreadsheet, and it imports back as is. A tab or line break inside a value becomes a space, and values that look like formulas are neutralised as in CSV.
+
 **Commits**
 - `94a8c01` remove the development sign-in; Entra ID only, and production needs it with HTTPS
 

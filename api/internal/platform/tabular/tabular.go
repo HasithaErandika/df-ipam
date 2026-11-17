@@ -1,6 +1,6 @@
-// Package tabular reads and writes the table files people import and export: CSV
-// and Excel (.xlsx). Every export and import in DF-IPAM goes through here, so
-// both formats behave the same way.
+// Package tabular reads and writes the table files people import and export: CSV,
+// tab-separated text (.txt) and Excel (.xlsx). Every export and import in DF-IPAM
+// goes through here, so the formats behave the same way.
 package tabular
 
 import (
@@ -17,6 +17,7 @@ import (
 // Formats an export can be written in, with their content types.
 var Formats = map[string]string{
 	"csv":  "text/csv; charset=utf-8",
+	"txt":  "text/plain; charset=utf-8",
 	"xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
@@ -26,7 +27,7 @@ type Writer interface {
 	Bytes() ([]byte, error)
 }
 
-// NewWriter starts a file with a header row. format is csv or xlsx.
+// NewWriter starts a file with a header row. format is csv, txt or xlsx.
 func NewWriter(format, sheet string, header []string) (Writer, error) {
 	switch format {
 	case "csv":
@@ -34,6 +35,9 @@ func NewWriter(format, sheet string, header []string) (Writer, error) {
 		w.buf.WriteString("\xef\xbb\xbf") // Excel reads UTF-8 CSV correctly with a byte order mark
 		w.w = csv.NewWriter(&w.buf)
 		return w, w.w.Write(header)
+	case "txt":
+		w := &textWriter{}
+		return w, w.Write(header)
 	case "xlsx":
 		return newSheet(sheet, header)
 	}
@@ -66,6 +70,26 @@ func (c *csvWriter) Bytes() ([]byte, error) {
 	c.w.Flush()
 	return c.buf.Bytes(), c.w.Error()
 }
+
+// textWriter writes one line per row, values separated by tabs: it reads in any
+// text editor, pastes into a spreadsheet as columns, and imports back as is.
+// A tab or line break inside a value becomes a space, so rows stay on one line.
+type textWriter struct{ buf bytes.Buffer }
+
+var flatten = strings.NewReplacer("\t", " ", "\r\n", " ", "\n", " ", "\r", " ")
+
+func (t *textWriter) Write(row []string) error {
+	for i, v := range row {
+		if i > 0 {
+			t.buf.WriteByte('\t')
+		}
+		t.buf.WriteString(Safe(flatten.Replace(v)))
+	}
+	t.buf.WriteString("\r\n") // Windows line endings, so Notepad shows the lines
+	return nil
+}
+
+func (t *textWriter) Bytes() ([]byte, error) { return t.buf.Bytes(), nil }
 
 type sheetWriter struct {
 	f   *excelize.File

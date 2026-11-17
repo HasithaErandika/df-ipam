@@ -17,7 +17,7 @@ function Download({ report }: { report: ReportDefinition }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
   const bad = report.dated && (!from || !to || to < from)
-  const get = async (format: 'csv' | 'xlsx' | 'pdf') => {
+  const get = async (format: 'csv' | 'txt' | 'xlsx' | 'pdf') => {
     setBusy(format)
     setError(null)
     try {
@@ -52,9 +52,10 @@ function Download({ report }: { report: ReportDefinition }) {
         <div className="flex flex-wrap gap-2 border-t border-line pt-4">
           <Button variant="primary" disabled={bad} busy={busy === 'xlsx'} onClick={() => void get('xlsx')}><FileSpreadsheet size={14} aria-hidden />Excel</Button>
           <Button disabled={bad} busy={busy === 'csv'} onClick={() => void get('csv')}><FileText size={14} aria-hidden />CSV</Button>
+          <Button disabled={bad} busy={busy === 'txt'} onClick={() => void get('txt')}><FileText size={14} aria-hidden />Text</Button>
           <Button disabled={bad} busy={busy === 'pdf'} onClick={() => void get('pdf')}><FileType size={14} aria-hidden />PDF</Button>
         </div>
-        <p className="text-[12px] text-ink-3">PDF holds up to 5,000 rows; Excel and CSV up to 200,000. A cut-off file says so on its last line.</p>
+        <p className="text-[12px] text-ink-3">PDF holds up to 5,000 rows; Excel, CSV and text up to 200,000. A cut-off file says so on its last line.</p>
         <FormError error={error} />
       </div>
     </Card>

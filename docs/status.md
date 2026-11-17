@@ -8,7 +8,7 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 | --- | --- |
 | Foundation | 16 tables with RLS, policies and grants; roles and permissions; route guard; audit in the same transaction; Docker (`db`, `migrate`, `backend`, `web`) |
 | Segments | Floor, server and cloud segments; DHCP pools; gateways (set or detected); host-address and pool checks; warnings for segments too large to scan or without a pool; private-MAC alerts and port checks per segment |
-| IP register | Create, edit, release; Available candidate; range reservations; CSV and Excel import and export, including servers |
+| IP register | Create, edit, release; Available candidate; range reservations; CSV, text and Excel import and export, including servers |
 | Devices | Pending, approve, reject; register on approval; departments; import and export |
 | Discovery | Ping, NetBIOS, TCP presence check for hosts that block ping, ARP table (ARP-only hosts too), DNS, mDNS, SSDP/UPnP, optional port checks; ARP MAC preferred over NetBIOS; NetBIOS computer name by name type; device details apart from the network card; device icons from the evidence in order of reliability; red and orange for what needs attention; registered-elsewhere detection; findings with counts, shareable details and filters; segment pages with an address map; devices pending as soon as their segment is scanned; static addresses in use for 30 days after last seen; a failed segment scan keeps its alerts open |
 | Steady scanning | One ICMP socket per scan; 100 pings and 100 TCP connections a second; full identification at most every 6 hours (15 minutes on Scan now), remembered across restarts; no rescan on restart; send failures reported; 90-day evidence and one-year closed-alert retention |

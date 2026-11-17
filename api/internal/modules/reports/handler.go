@@ -38,7 +38,7 @@ func (h *Handler) download(c *gin.Context) {
 	format := c.DefaultQuery("format", "csv")
 	from, to, env := c.Query("from"), c.Query("to"), c.Query("environmentId")
 	var v validate.V
-	v.OneOf("format", format, []string{"csv", "xlsx", "pdf"}, "format")
+	v.OneOf("format", format, []string{"csv", "txt", "xlsx", "pdf"}, "format")
 	v.UUID("environmentId", env, false, "an environment")
 	now := time.Now()
 	if from == "" {

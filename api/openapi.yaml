@@ -201,7 +201,7 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /devices/export:
     get:
-      summary: "Download every device as CSV or Excel (format=csv|xlsx)"
+      summary: "Download every device as CSV, tab-separated text or Excel (format=csv|txt|xlsx)"
       description: "Permission: inventory:view."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /devices/import:
@@ -244,7 +244,7 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /ip-addresses/export:
     get:
-      summary: "Download the register as CSV or Excel, with the list filters"
+      summary: "Download the register as CSV, tab-separated text or Excel (format=csv|txt|xlsx), with the list filters"
       description: "Permission: inventory:view."
       parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: environmentId, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: health, in: query, schema: { type: string } }, { name: ipType, in: query, schema: { type: string } }, { name: view, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
@@ -405,7 +405,7 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /audit-logs/export:
     get:
-      summary: "Download the filtered change history as CSV or Excel (up to 50,000 rows)"
+      summary: "Download the filtered change history as CSV, tab-separated text or Excel (format=csv|txt|xlsx, up to 50,000 rows)"
       description: "Permission: audit:view."
       parameters: [{ name: user, in: query, schema: { type: string } }, { name: action, in: query, schema: { type: string } }, { name: objectType, in: query, schema: { type: string } }, { name: from, in: query, schema: { type: string } }, { name: to, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
@@ -416,7 +416,7 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /reports/{key}:
     get:
-      summary: "Download a report as CSV, Excel or PDF"
+      summary: "Download a report as CSV, tab-separated text, Excel or PDF (format=csv|txt|xlsx|pdf)"
       description: "Permission: reports:export."
       parameters: [{ name: key, in: path, required: true, schema: { type: string } }, { name: format, in: query, schema: { type: string } }, { name: from, in: query, schema: { type: string } }, { name: to, in: query, schema: { type: string } }, { name: environmentId, in: query, schema: { type: string } }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }

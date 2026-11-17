@@ -10,10 +10,10 @@ import { ImportPreview } from './ImportPreview'
 
 const item = 'flex h-8 cursor-pointer items-center gap-2 rounded-[4px] px-2.5 text-[13px] text-ink-2 outline-none data-[highlighted]:bg-bg data-[highlighted]:text-ink'
 
-/** Downloads a list as CSV or Excel, with the filters on screen. */
+/** Downloads a list as Excel, CSV or tab-separated text, with the filters on screen. */
 export function ExportMenu({ path, params = {}, name, label = 'Export' }: { path: string; params?: Record<string, string>; name: string; label?: string }) {
   const [busy, setBusy] = useState(false)
-  const get = async (format: 'csv' | 'xlsx') => {
+  const get = async (format: 'csv' | 'txt' | 'xlsx') => {
     setBusy(true)
     try {
       await download(`${path}${queryString({ ...params, format })}`, `${name}.${format}`)
@@ -28,6 +28,7 @@ export function ExportMenu({ path, params = {}, name, label = 'Export' }: { path
         <DropdownMenu.Content align="end" sideOffset={4} className="z-30 min-w-44 rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
           <DropdownMenu.Item className={item} onSelect={() => void get('xlsx')}><FileSpreadsheet size={14} aria-hidden />Excel (.xlsx)</DropdownMenu.Item>
           <DropdownMenu.Item className={item} onSelect={() => void get('csv')}><FileText size={14} aria-hidden />CSV</DropdownMenu.Item>
+          <DropdownMenu.Item className={item} onSelect={() => void get('txt')}><FileText size={14} aria-hidden />Text (.txt)</DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

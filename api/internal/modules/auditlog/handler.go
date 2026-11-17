@@ -96,7 +96,7 @@ func (h *Handler) list(c *gin.Context) {
 func (h *Handler) export(c *gin.Context) {
 	format := c.DefaultQuery("format", "csv")
 	if _, ok := tabular.Formats[format]; !ok {
-		httpx.Fail(c, httpx.Validation("format", "Choose CSV or Excel."))
+		httpx.Fail(c, httpx.Validation("format", "Choose CSV, text or Excel."))
 		return
 	}
 	w, err := filter(c)

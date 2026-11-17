@@ -43,7 +43,7 @@ Known MAC addresses: name, owner, department, type, platform and status (`pendin
 
 - A MAC seen for the first time becomes **pending**; private MACs do so only on segments that watch them.
 - Approving can register the address it was seen on. Rejecting only marks it: DF-IPAM never blocks anything, but a rejected MAC raises a High alert whenever it is seen.
-- Devices import and export as CSV or Excel.
+- Devices import as CSV, text or Excel, and export as CSV, tab-separated text (.txt) or Excel. A text export imports back as is.
 
 **Registered devices on another network.** The register is per address. An approved device seen at an unregistered address whose MAC is registered elsewhere shows "Registered elsewhere: at 192.168.1.7 · Wi-Fi" and counts as known. It raises nothing on a floor DHCP pool; in a server segment the unknown-server-IP alert still fires. A phone with a private MAC uses another MAC on each network, so it can't be linked.
 
