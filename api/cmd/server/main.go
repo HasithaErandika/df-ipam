@@ -83,12 +83,8 @@ func run() error {
 		slog.Info("microsoft sign-in is on", "tenant", cfg.EntraTenantID, "domains", cfg.AllowedEmailDomains, "redirect", cfg.EntraRedirectURL)
 	}
 	signIn := signin.New(pool, microsoft, sessions, cfg.AppBaseURL)
-	if cfg.AuthBypass {
-		signIn.WithBypass(cfg.AuthBypassEmail)
-		slog.Warn("DEVELOPMENT SIGN-IN IS ON: anyone who can open the site signs in without a password. Turn AUTH_BYPASS off once Microsoft sign-in works",
-			"email", cfg.AuthBypassEmail)
-	} else if microsoft == nil {
-		slog.Warn("no way to sign in: set the ENTRA_* settings, or AUTH_BYPASS for development")
+	if microsoft == nil {
+		slog.Warn("nobody can sign in: set ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET")
 	}
 	deps := server.Deps{Sessions: sessions, SignIn: signIn, Conn: pool, Ready: pool.Ping, Origins: cfg.AllowedOrigins,
 		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, SMTPConfigured: mailEnabled}

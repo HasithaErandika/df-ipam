@@ -27,7 +27,7 @@ DF-IPAM holds a map of the company network, so read access is itself sensitive.
 | Repudiation | Someone denies a change | Audit row with actor, values, source IP and correlation ID, in the same transaction |
 | Disclosure | The app's database role misused | Row level security on every table, least-privilege grants; tested |
 | | Secrets leak | FortiGate token encrypted with AES-256-GCM, never returned or logged; `ENTRA_CLIENT_SECRET` only in `api/.env` |
-| Spoofing | The development sign-in left on | Off by default; the API refuses it with `APP_ENV=production`, which the server compose files fix; a banner on every screen while on |
+| Spoofing | A server started without real sign-in, or over plain HTTP | No password-free sign-in exists; with `APP_ENV=production`, which the server compose files fix, the API refuses to start without Entra ID and an `https://` `APP_BASE_URL` |
 | | Stolen token through XSS | Content Security Policy, no `dangerouslySetInnerHTML`, idle sign-out |
 | Denial of service | Request flood | Limits per address and per person, an in-flight cap, Nginx limits, host SYN protection |
 | | DF-IPAM flooding the network | 100 pings and 100 TCP connections a second, 16 port checks in flight, slow probes every 6 hours at most per host (15 minutes on Scan now, remembered across restarts), one scan at a time, manual scans a minute apart, at least 5 minutes between scans |
@@ -57,7 +57,7 @@ DF-IPAM holds a map of the company network, so read access is itself sensitive.
 ## Release checklist
 
 **Auth**
-- [ ] `AUTH_BYPASS` is `false`, and Microsoft sign-in works for a test account
+- [ ] Microsoft sign-in works for a test account, and a non-`@dialogfinance.lk` account is refused
 - [ ] The Entra app is single-tenant, its redirect URIs are only DF-IPAM's, and the client secret is in `api/.env` only, with its expiry noted
 - [ ] Sign-in with a non-`dialogfinance.lk` account and a guest account is refused
 - [ ] `ENTRA_CLIENT_SECRET` is only in `api/.env`, and its expiry is in the calendar

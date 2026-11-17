@@ -1,6 +1,6 @@
-// Package signin runs sign-in: Microsoft Entra ID (the redirect to Microsoft,
-// and the callback that checks the result and starts a session), the
-// development sign-in while Entra ID isn't set up, and sign-out. These routes
+// Package signin runs sign-in with Microsoft Entra ID (the redirect to
+// Microsoft, and the callback that checks the result and starts a session) and
+// sign-out. These routes
 // are public by nature: they are how a person becomes signed in.
 package signin
 
@@ -37,7 +37,6 @@ type Microsoft interface {
 type Handler struct {
 	conn     db.Conn
 	ms       Microsoft // nil when Microsoft sign-in isn't set up
-	bypass   string    // AUTH_BYPASS_EMAIL; empty when the development sign-in is off
 	sessions *auth.Sessions
 	base     string // APP_BASE_URL: where the app is, and where people return to
 	secure   bool   // served over HTTPS, so cookies are Secure and __Host-
@@ -52,15 +51,13 @@ func New(conn db.Conn, ms Microsoft, sessions *auth.Sessions, baseURL string) *H
 }
 
 // Paths are the public routes, for the route guard test.
-var Paths = []string{"GET /api/v1/auth/status", "GET /api/v1/auth/microsoft/login", "GET /api/v1/auth/microsoft/callback",
-	"POST /api/v1/auth/bypass", "POST /api/v1/auth/logout"}
+var Paths = []string{"GET /api/v1/auth/status", "GET /api/v1/auth/microsoft/login", "GET /api/v1/auth/microsoft/callback", "POST /api/v1/auth/logout"}
 
 func (h *Handler) Register(r gin.IRouter) {
 	g := r.Group("/api/v1/auth", httpx.RateLimit(2, 20))
 	g.GET("/status", h.status)
 	g.GET("/microsoft/login", h.login)
 	g.GET("/microsoft/callback", h.callback)
-	g.POST("/bypass", h.bypassSignIn)
 	g.POST("/logout", h.logout)
 }
 
@@ -72,7 +69,7 @@ func (h *Handler) status(c *gin.Context) {
 		_, err := h.sessions.Resolve(c, token)
 		session = err == nil
 	}
-	c.JSON(http.StatusOK, gin.H{"microsoft": h.ms != nil, "bypass": h.bypass != "", "session": session})
+	c.JSON(http.StatusOK, gin.H{"microsoft": h.ms != nil, "session": session})
 }
 
 func (h *Handler) login(c *gin.Context) {

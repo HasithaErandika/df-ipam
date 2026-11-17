@@ -2,7 +2,7 @@
 
 Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web/`, design docs in `docs/`, Docker in `docker-compose.yml`. Run `make help` for commands. Before finishing a change, run `make lint test`.
 
-**On branch `lite`, the product documents in `docs/product/` are the specification and override everything below.** Lite is one building, IPv4 only, one routing table, roles that administrators set up from fixed permissions (`admin` has full access), and 16 tables. Sign-in is Microsoft Entra ID (`@dialogfinance.lk`), with a development sign-in (`AUTH_BYPASS`) until the app registration exists. There is no Supabase. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
+**On branch `lite`, the product documents in `docs/product/` are the specification and override everything below.** Lite is one building, IPv4 only, one routing table, roles that administrators set up from fixed permissions (`admin` has full access), and 16 tables. Sign-in is Microsoft Entra ID (`@dialogfinance.lk`) only; there is no development or password-free sign-in. There is no Supabase. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
 
 ## Read first
 
@@ -17,7 +17,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 - **Secrets stay in `api/.env`** (`ENTRA_CLIENT_SECRET`, `SECRET_ENCRYPTION_KEY`, database passwords). Never put them in `web/`, logs or responses.
 - **PostgreSQL runs in Docker,** with the backend and web containers, through `docker-compose.yml`. It is the only database.
 - **All data goes through the Go API.** The browser never queries tables, and holds no token: the API's `HttpOnly` session cookie signs every request.
-- **The development sign-in (`AUTH_BYPASS`) never reaches a server.** Config refuses it with `APP_ENV=production`; keep it that way.
+- **Microsoft Entra ID is the only way in.** Don't add a password-free or development sign-in. With `APP_ENV=production` config refuses to start without the `ENTRA_*` settings and an `https://` `APP_BASE_URL`; keep it that way.
 - **Env files are `api/.env` and `web/.env` only, none at the root.** Don't commit them, and don't put secrets in code, logs or API responses.
 - **Discovery never changes allocation state or ownership.** Evidence stays separate from inventory, and people approve authoritative changes.
 - **IPs are unique per routing domain,** never globally. Every subnet and IP query must respect routing context.
@@ -43,7 +43,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 
 ## Auth
 
-Sign-in is Microsoft Entra ID (`api/internal/auth/entra.go`, `api/internal/modules/signin`), plus the development sign-in while there is no app registration. Both end in the same session cookie (`sessions.go`); there are no bearer tokens. In the browser only `web/src/lib/auth.ts` knows how people sign in. Authorisation stays in DF-IPAM's own tables. The first Administrator comes from `make admin EMAIL=…`.
+Sign-in is Microsoft Entra ID (`api/internal/auth/entra.go`, `api/internal/modules/signin`). It ends in a session cookie (`sessions.go`); there are no bearer tokens. In the browser only `web/src/lib/auth.ts` knows how people sign in. Authorisation stays in DF-IPAM's own tables. The first Administrator comes from `make admin EMAIL=…`.
 
 ## Frontend conventions
 

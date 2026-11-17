@@ -2,13 +2,22 @@
 
 What changed, day by day, on branch `lite`. Newest first. The specification is in [product/](product/overview.md); what is and isn't built is in [status.md](status.md).
 
+## 2026-11-17
+
+**Sign-in: production only**
+- The development sign-in is gone: no `AUTH_BYPASS` or `AUTH_BYPASS_EMAIL`, no `POST /api/v1/auth/bypass`, no button or warning banner. Microsoft Entra ID is the only way in, locally too.
+- With `APP_ENV=production` the API refuses to start without `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` and an `https://` `APP_BASE_URL`.
+- The sign-in page says plainly when sign-in isn't available. A new test covers a `make admin` pending account taken over by the first Microsoft sign-in.
+- Remove `AUTH_BYPASS` and `AUTH_BYPASS_EMAIL` from your `api/.env`; they are ignored now.
+
 ## 2026-11-13 · v0.2.0
 
-**Finding devices**
-- Hosts that block ping (Windows by default, many servers) are found through NetBIOS and a TCP check of ports 445, 3389 and 22, and from the ARP table when nothing else answers.
+**Finding and identifying devices**
+- Hosts that block ping (Windows by default, many servers) are found through NetBIOS and a TCP check of ports 445, 3389 and 22, and from the ARP table when nothing else answers. Only a completed connection counts.
 - The ARP MAC wins over the NetBIOS one, which on hosts with several network cards is often another card's. This stops false "IP conflict" and "Server MAC changed" alerts.
 - A sighting whose NetBIOS reply was missed joins the MAC last seen at that address, instead of being listed again without one.
 - The NetBIOS computer name is chosen by name type, never a signed-in user's name. mDNS is asked even when DNS gives a name, so Apple models are found.
+- Devices found in a segment become pending, and raise their alerts, as soon as that segment is scanned, not after the whole sweep.
 
 **Steadier scanning**
 - One ICMP socket per scan, replies matched by sequence number and sender; failed sends are reported on the segment.
@@ -24,17 +33,20 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 **Efficiency**
 - Alerts and server health are written in one statement each, not one per row. Discovery looks up home entries and alert counts for the shown page only. The segment list counts in one pass. "Seen recently" has one definition, `seen_window()`.
 
-**Validation and screens**
-- Gateways and DHCP pools must use host addresses, not the network or broadcast address (form and API). A gateway inside the pool is allowed, with a note in the form, since many DHCP servers lease the whole range and exclude their own address. The form warns when a segment is too large to scan, and segment cards say so first.
+**Validation**
+- Gateways and DHCP pools must use host addresses, not the network or broadcast address (form and API). A gateway inside the pool is allowed, with a note in the form, since many DHCP servers lease the whole range and exclude their own address.
+- The segment form warns when a segment is too large to scan (over 4,096 addresses), and segment cards say so first.
 - Dates are checked against the person's own calendar day.
-- Discovery: a details link opens whatever page or filter is showing, the list pauses while a dialog is open, "Not answering · last seen …" replaces "Unavailable since …", and the default sort is labelled "Last seen, newest".
-- The dashboard's network tiles and "All segments" open Discovery › Segments, filtered to that type.
-- The side panel shows the version and build, without the build date.
-- Device icons come from the evidence in order of reliability: what a person recorded, the router mark for a gateway, what the device says it is, its model, DHCP vendor class or name, its open ports, a specific ping TTL (128 Windows, 255 network gear), then its maker. A TTL of 64 no longer shows Android, and the network card's maker is never used.
+- The Settings screen shows the seeded default for a setting without a saved value, instead of its minimum. The seed stays the one source of starting settings and environments, with a test that keeps them inside each setting's limits.
+
+**Screens**
+- Device icons come from the evidence in order of reliability: what a person recorded, the router mark for a gateway, what the device says it is, its model, DHCP vendor class or name, its open ports, a specific ping TTL (128 Windows, 255 network gear), then its maker. A TTL of 64 no longer shows Android, and the network card's maker is never used. Discovery, segment pages, Devices and the register all use the same rules.
 - Discovery colours what needs attention: red for open alerts and rejected devices, orange for unknown devices and addresses that should be in the register. An approved device on a DHCP pool address stays plain.
-- Devices found in a segment become pending, and raise their alerts, as soon as that segment is scanned, not after the whole sweep.
+- Discovery: a details link opens whatever page or filter is showing, the list pauses while a dialog is open, "Not answering · last seen …" replaces "Unavailable since …", and the default sort is labelled "Last seen, newest".
 - The Platform field in the approve, device and register forms is a menu with each platform's mark instead of a native list, which some browsers closed or couldn't scroll inside a dialog.
+- The dashboard's network tiles and "All segments" open Discovery › Segments, filtered to that type.
 - The header shows the signed-in person's name from their work email (hasitha.wickramasinghe@… shows as Hasitha Wickramasinghe), with their initials in the avatar.
+- The side panel shows the version and build, without the build date. Version 0.2.0.
 
 **Sign-in: Supabase removed**
 - Supabase is gone: its sign-in, bearer tokens, admin client, SQL bundle (`make sql`, `api/sql/`), test targets, settings and the `@supabase/supabase-js` package. PostgreSQL in Docker is the only database, and the API's session cookie is the only way a request is signed in.
@@ -44,6 +56,29 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 **Documentation**
 - Reorganised into `product/` (the specification), `engineering/`, `operations/`, `status.md` and this changelog. `new.md` is split across `product/`, and `plan.md` is retired now that Supabase is removed.
+
+**Fixed during the day**
+- Saving a sweep failed with a syntax error after the scan changes: a column in the insert was named `full`, a reserved word in PostgreSQL. Renamed, with a database test that saves a sweep end to end. It never reached a release.
+
+**Local environment**
+- The local database was cleared and rebuilt with all 14 migrations and the seed (five environments, default settings). `hasitha.wickramasinghe@dialogfinance.lk` was made an Administrator with `make admin`.
+- `api/.env` no longer holds Supabase settings, and has the development sign-in on for that account.
+
+**Commits**
+- `22b8b7c` find and identify devices accurately without flooding the network
+- `34d25c6` tighter segment validation, clearer Discovery and segment screens; v0.2.0
+- `2edd836` remove Supabase; Entra ID sign-in, with a development sign-in until it is registered
+- `091a425` restructure the documentation and describe sign-in without Supabase
+- `e285411` save sightings again, and update devices as each segment finishes
+- `31f4b42` correct device icons, attention colours, platform menu and names in the header
+
+**Still to do**
+- Fill in `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` and `ENTRA_CLIENT_SECRET` from the Entra ID app registration, sign in with Microsoft (it takes over the pending Administrator account), then set `AUTH_BYPASS=false`.
+- Delete the old Supabase project and its keys.
+- Decide whether to keep the five starting roles besides Administrator (they come from migration 000012).
+- Agree with the security team on the TCP presence check (22, 445, 3389) and on port checks for company segments.
+- Build **Add person** in Users and roles, so roles can be given before someone's first sign-in from the screen.
+- Push the commits.
 
 ## 2026-11-12
 

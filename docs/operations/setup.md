@@ -8,7 +8,7 @@ How to run DF-IPAM on your machine, and deploy it to a server. What runs is desc
 
 - Docker with the Compose plugin
 - Go 1.26.10+, and Node 24 with pnpm, for tests and commands outside Docker
-- For sign-in, an Entra ID app registration ([authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id)). Until you have one, use the development sign-in
+- For sign-in, an Entra ID app registration ([authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id)). Nobody can sign in without one
 
 ### First run
 
@@ -23,8 +23,7 @@ Fill in `api/.env`:
 | `POSTGRES_PASSWORD`, `DFIPAM_APP_PASSWORD` | `openssl rand -hex 24` each. They take effect when the database is first created |
 | `DATABASE_URL`, `MIGRATION_DATABASE_URL` | As in the example, with those passwords |
 | `SECRET_ENCRYPTION_KEY` | `openssl rand -base64 32`. Needed to store a FortiGate token |
-| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | From the Entra ID app registration, for Microsoft sign-in. See [authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id) |
-| `AUTH_BYPASS`, `AUTH_BYPASS_EMAIL` | Until Entra ID is set up: `true` and your work email, for the [development sign-in](../engineering/authentication.md#development-sign-in). Never on a server |
+| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | From the Entra ID app registration. Required: Microsoft sign-in is the only way in. See [authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id) |
 | `HOST_NETWORK` | `true` on Linux to let the scanner read MAC addresses (see below) |
 
 Leave `VITE_API_URL` empty in `web/.env`, so the app and the API share one address and the session cookie is sent. Never put secrets in `web/.env`: it ends up in the browser.
@@ -45,7 +44,7 @@ Everything is published on localhost only.
 ### Make yourself an Admin
 
 1. `make admin EMAIL=<you>@dialogfinance.lk`. It promotes your account if you have signed in, or adds a pending one that your first sign-in takes over.
-2. Sign in: **Sign in with Microsoft**, or **Continue with development sign-in** while `AUTH_BYPASS` is on. (The development sign-in also makes its person an Administrator the first time, so step 1 is optional there.)
+2. **Sign in with Microsoft.** Your first sign-in takes over the pending account, with its Administrator role.
 3. Give others roles in Users and roles.
 
 ### First data
@@ -105,8 +104,8 @@ In `api/.env`, as on your machine, plus:
 
 | Setting | Value |
 | --- | --- |
-| `APP_ENV` | `production` (also fixed by `docker-compose.prod.yml`). The development sign-in can't run with it |
-| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | Required on a server: Microsoft sign-in is the only way in. `AUTH_BYPASS` stays `false` |
+| `APP_ENV` | `production` (also fixed by `docker-compose.prod.yml`). The API then needs the `ENTRA_*` settings and an `https://` `APP_BASE_URL` |
+| `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` | Required: the API won't start in production without them, or without an `https://` `APP_BASE_URL` |
 | `COMPOSE_FILE` | `docker-compose.yml:docker-compose.prod.yml`. **Without it nothing is published on 80 and 443** |
 | `CORS_ALLOWED_ORIGINS`, `APP_BASE_URL` | `https://<host name>` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM` | Your mail server. Empty `SMTP_HOST` keeps email off |
@@ -225,8 +224,8 @@ This rebuilds the images, runs new migrations and the seed, and restarts what ch
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | The page loads, sign-in fails | Entra ID settings or redirect URI don't match `APP_BASE_URL`, or the browser can't reach `login.microsoftonline.com` | See [authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id); the reason is shown on the sign-in page |
-| "No way to sign in is set up" | Neither Entra ID nor `AUTH_BYPASS` is set | Set one in `api/.env`, then `make docker-up` |
-| The API won't start: `AUTH_BYPASS can't be used with APP_ENV=production` | The development sign-in is on on a server | Set `AUTH_BYPASS=false` and use Microsoft sign-in |
+| "Sign-in isn't available" | The API is down, or the Entra ID settings are empty | Check `make docker-logs`; set `ENTRA_*` in `api/.env`, then `make docker-up` |
+| The API won't start: `APP_ENV=production needs Microsoft Entra ID sign-in` or `needs APP_BASE_URL to start with https://` | A server without Entra ID settings, or on plain HTTP | Set the `ENTRA_*` settings and an `https://` `APP_BASE_URL` |
 | "Waiting for access" | Signed in with no role | An Admin assigns one |
 | `required variable ... is missing` | Compose run directly | Use the `make` commands |
 | Nothing on 443 | `COMPOSE_FILE` not set | See step 3 |

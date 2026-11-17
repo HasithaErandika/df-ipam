@@ -1,9 +1,9 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, TriangleAlert } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ChevronRight } from 'lucide-react'
 import { Suspense, useEffect, useState } from 'react'
 import { Link, Outlet, useLocation } from 'react-router'
 import { Button, Card, EmptyState, ErrorBoundary, Modal, SkeletonRows } from '../../components/ui'
-import { authStatus, signOut } from '../../lib/auth'
+import { signOut } from '../../lib/auth'
 import { rememberPage } from '../../lib/backTo'
 import { useIdleTimeout } from '../../lib/idle'
 import { useCan, useMe } from '../../lib/session'
@@ -48,18 +48,6 @@ function SessionGuard() {
   )
 }
 
-/** On every screen while the development sign-in is on, so nobody forgets it. */
-function BypassBanner() {
-  const status = useQuery({ queryKey: ['auth-status'], queryFn: authStatus, staleTime: 5 * 60_000 })
-  if (!status.data?.bypass) return null
-  return (
-    <div role="status" className="flex shrink-0 items-center gap-2 border-b border-warn/30 bg-warn-soft px-6 py-1.5 text-[12.5px] text-warn max-sm:px-4">
-      <TriangleAlert size={14} aria-hidden className="shrink-0" />
-      <span><strong className="font-semibold">Development sign-in is on.</strong> Anyone who can open this site gets in without a password. Turn <code className="font-mono">AUTH_BYPASS</code> off once Microsoft sign-in works.</span>
-    </div>
-  )
-}
-
 export function AppShell() {
   const { pathname } = useLocation()
   const canView = useCan('inventory:view')
@@ -92,7 +80,6 @@ export function AppShell() {
             <UserMenu />
           </div>
         </header>
-        <BypassBanner />
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-[1440px] px-6 py-5 max-sm:px-4">
             <ErrorBoundary resetKey={pathname}><Suspense fallback={<SkeletonRows rows={8} />}><Page pathname={pathname} /></Suspense></ErrorBoundary>

@@ -5,7 +5,7 @@
 services:
   backend:
     environment:
-      # Fixed here, so the development sign-in (AUTH_BYPASS) can never start on a server.
+      # Fixed here: the API then refuses to start without Entra ID sign-in and an https:// APP_BASE_URL.
       APP_ENV: production
       TRUSTED_PROXIES: ${DOCKER_GATEWAY:-172.30.0.1},127.0.0.1
     ports:

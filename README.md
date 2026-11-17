@@ -12,7 +12,7 @@ Dialog Finance IP Address Management (Lite): network discovery, the official IP 
 
 - Docker with the Compose plugin
 - Go 1.26.10+, and Node 24+ with pnpm, for tests and commands outside Docker
-- An Entra ID app registration for sign-in, or the development sign-in until there is one
+- An Entra ID app registration for sign-in
 
 ## Getting started
 
