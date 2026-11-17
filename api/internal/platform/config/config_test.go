@@ -21,9 +21,17 @@ func TestProductionNeedsEntraAndHTTPS(t *testing.T) {
 	if _, err := Load(); err != nil {
 		t.Fatalf("production with Entra ID: %v", err)
 	}
-	t.Setenv("APP_BASE_URL", "http://ipam.dialogfinance.lk")
-	if _, err := Load(); err == nil {
-		t.Fatal("production over plain HTTP was allowed")
+	for _, local := range []string{"http://localhost:5173", "http://127.0.0.1:8088"} {
+		t.Setenv("APP_BASE_URL", local)
+		if _, err := Load(); err != nil {
+			t.Fatalf("production on %s: %v", local, err)
+		}
+	}
+	for _, remote := range []string{"http://ipam.dialogfinance.lk", "http://localhost.evil.example", "http://10.0.0.5"} {
+		t.Setenv("APP_BASE_URL", remote)
+		if _, err := Load(); err == nil {
+			t.Fatalf("production over plain HTTP was allowed on %s", remote)
+		}
 	}
 }
 

@@ -11,7 +11,7 @@ Dialog Finance IP Address Management (Lite): network discovery, the official IP 
 ## Requirements
 
 - Docker with the Compose plugin
-- Go 1.26.10+, and Node 24+ with pnpm, for tests and commands outside Docker
+- Go 1.26.11+, and Node 24+ with pnpm, for tests and commands outside Docker
 - An Entra ID app registration for sign-in
 
 ## Getting started

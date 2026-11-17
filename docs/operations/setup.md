@@ -7,7 +7,7 @@ How to run DF-IPAM on your machine, and deploy it to a server. What runs is desc
 ### What you need
 
 - Docker with the Compose plugin
-- Go 1.26.10+, and Node 24 with pnpm, for tests and commands outside Docker
+- Go 1.26.11+, and Node 24 with pnpm, for tests and commands outside Docker
 - For sign-in, an Entra ID app registration ([authentication.md](../engineering/authentication.md#setting-it-up-in-entra-id)). Nobody can sign in without one
 
 ### First run

@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -88,8 +89,22 @@ func (c *Config) checkProduction() error {
 		sort.Strings(missing)
 		return fmt.Errorf("APP_ENV=production needs Microsoft Entra ID sign-in: missing %s", strings.Join(missing, ", "))
 	}
-	if !strings.HasPrefix(c.AppBaseURL, "https://") {
-		return fmt.Errorf("APP_ENV=production needs APP_BASE_URL to start with https://")
+	if !strings.HasPrefix(c.AppBaseURL, "https://") && !loopback(c.AppBaseURL) {
+		return fmt.Errorf("APP_ENV=production needs APP_BASE_URL to start with https:// (plain http only for localhost)")
 	}
 	return nil
+}
+
+// loopback reports whether the address is this machine, where plain HTTP never
+// crosses the network.
+func loopback(address string) bool {
+	u, err := url.Parse(address)
+	if err != nil || u.Scheme != "http" {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }

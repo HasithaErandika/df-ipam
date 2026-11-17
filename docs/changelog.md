@@ -9,6 +9,11 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 - With `APP_ENV=production` the API refuses to start without `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` and an `https://` `APP_BASE_URL`.
 - The sign-in page says plainly when sign-in isn't available. A new test covers a `make admin` pending account taken over by the first Microsoft sign-in.
 - Remove `AUTH_BYPASS` and `AUTH_BYPASS_EMAIL` from your `api/.env`; they are ignored now.
+- Plain `http://` is still allowed in production for `localhost`, `127.0.0.1` and `::1`, where it never crosses the network; any other host needs `https://`. The first rule stopped a local container started with `APP_ENV=production`.
+
+**Security and dependencies**
+- Go 1.26.11 (`go.mod`, `api/Dockerfile`), which fixes GO-2026-6859, a crash in `net/http`. `govulncheck` now reports nothing that the code calls.
+- Web dependencies from Dependabot's #12 (React Query, React Hook Form and its resolvers, Lucide, Simple Icons, Tailwind, Vite and its React plugin), applied on `lite`. `@types/node` stays on 24 to match Node 24 in `web/Dockerfile`, not 26.
 
 **Commits**
 - `94a8c01` remove the development sign-in; Entra ID only, and production needs it with HTTPS
