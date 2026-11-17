@@ -35,7 +35,7 @@ A server can be marked critical by hand.
 
 ### Server checks
 
-Monitored entries are checked every `server_check.interval_seconds` (default 5 minutes): two pings, so one lost packet isn't a failure, then the check port when ping is blocked. A server is **Down** after `server_check.down_after_failures` failed checks in a row (default 3, so about 15 minutes), and **Up** again on the first good check. All results of one round are recorded in one update.
+Monitored entries are checked every `server_check.interval_seconds` (default 1 hour): two pings, so one lost packet isn't a failure, then the check port when ping is blocked. A server is **Down** after `server_check.down_after_failures` failed checks in a row (default 3, so about 3 hours), and **Up** again on the first good check. Each check also records how fast the server answered (the faster of two pings, or the check port's connect time), shown next to its status; slower than the limit in Settings raises a **Slow server** alert. All results of one round are recorded in one update.
 
 ## Devices
 

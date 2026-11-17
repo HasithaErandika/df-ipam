@@ -4,13 +4,15 @@ import { Button, Card, ErrorState, Field, FormError, Input, Notice, SkeletonRows
 import { fieldIssues, get, put } from '../../lib/api'
 import { useInvalidate } from '../../lib/queries'
 import type { SystemSettings } from '../../lib/types'
+import { AutomationSwitches } from './AutomationSwitches'
 
 interface NumberField { key: string; label: string; unit: string; min: number; max: number; hint: string }
 
 const scanning: NumberField[] = [
   { key: 'scanIntervalMinutes', label: 'Discover devices every', unit: 'minutes', min: 5, max: 1440, hint: 'Sweep of every DHCP and server network. 10 minutes is a gentle default; 5 is the least, so scans never run back to back.' },
-  { key: 'serverCheckSeconds', label: 'Check monitored servers every', unit: 'seconds', min: 60, max: 86400, hint: '86400 is once a day. Shorter intervals find outages sooner.' },
-  { key: 'downAfterFailures', label: 'Mark a server Down after', unit: 'failed checks', min: 1, max: 20, hint: 'In a row. With daily checks, 1 reports an outage on the first failed check.' },
+  { key: 'serverCheckSeconds', label: 'Check monitored servers every', unit: 'seconds', min: 60, max: 86400, hint: '3600 is once an hour. Shorter intervals find outages sooner.' },
+  { key: 'downAfterFailures', label: 'Mark a server Down after', unit: 'failed checks', min: 1, max: 20, hint: 'In a row. With hourly checks, 3 means about 3 hours; 1 reports an outage on the first failed check.' },
+  { key: 'slowMs', label: 'Alert when a server answers slower than', unit: 'ms', min: 10, max: 5000, hint: 'The faster of two pings, or the check port when ping is blocked. Servers on the same network usually answer in a few ms.' },
 ]
 const other: NumberField[] = [
   { key: 'reminderDays', label: 'Remind reservation owners', unit: 'days before expiry', min: 1, max: 60, hint: 'One reminder per reservation.' },
@@ -70,8 +72,9 @@ export function SystemTab() {
           {s.emailEnabled && s.smtpConfigured && <Notice tone="ok">Email is on. At most 20 emails an hour go to one person; a burst of alerts arrives as one summary.</Notice>}
         </div>
       </Card>
+      <AutomationSwitches settings={s} onSaved={() => void refresh()} />
       <Card title="Discovery and checks" subtitle={`Method: ${s.scanMethod === 'ping' ? 'ping sweep with reverse DNS and NetBIOS (option C)' : s.scanMethod}. Read-only: nothing on the network is changed.`}>
-        <div className="grid gap-4 p-4 md:grid-cols-3">{scanning.map(row)}</div>
+        <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">{scanning.map(row)}</div>
       </Card>
       <Card title="Reservations and sessions">
         <div className="grid gap-4 p-4 md:grid-cols-2">{other.map(row)}</div>

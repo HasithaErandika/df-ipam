@@ -28,8 +28,12 @@ var Environments = []Environment{
 var Settings = []struct{ Key, Value string }{
 	{"scan.interval_minutes", "10"},
 	{"scan.method", `"ping"`},
-	{"server_check.interval_seconds", "300"},
+	{"server_check.interval_seconds", "3600"},
 	{"server_check.down_after_failures", "3"},
+	{"server_check.slow_ms", "200"},
+	{"scan.auto_devices", "true"},    // scheduled scans of floor (DHCP) segments; Scan now works either way
+	{"scan.auto_servers", "true"},    // scheduled scans of server segments
+	{"server_check.enabled", "true"}, // scheduled checks of monitored servers
 	{"reservations.reminder_days", "7"},
 	{"email.enabled", "false"}, // email stays off until an Admin turns it on in Settings
 	{"session.idle_timeout_minutes", "30"},

@@ -52,7 +52,9 @@ const segmentLink = (r: RegisterEntry) => <Link className="hover:text-accent hov
 /** Monitored servers: health first, because that is what people look for. */
 export function serverColumns(a: Actions): Column<RegisterEntry>[] {
   return [
-    { key: 'health', header: 'Status', cell: (r) => (r.monitor ? <HealthBadge health={r.health} since={r.healthChangedAt} /> : <span className="text-[12.5px] text-ink-3">Not monitored</span>) },
+    { key: 'health', header: 'Status', cell: (r) => (r.monitor
+      ? <span className="inline-flex items-center gap-2"><HealthBadge health={r.health} since={r.healthChangedAt} />{r.health === 'up' && r.responseMs !== null && <span className="text-[12px] text-ink-3 tabular-nums">{r.responseMs} ms</span>}</span>
+      : <span className="text-[12.5px] text-ink-3">Not monitored</span>) },
     { key: 'name', header: 'Server', cell: (r) => (
       <WithPlatform evidence={iconEvidence(r)} type="server">
         {opener(a.onOpen, r, r.assignedName || r.deviceName || r.ip)}

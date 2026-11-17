@@ -96,6 +96,7 @@ export interface AuditEntry {
 
 export interface SystemSettings {
   values: Record<string, number>
+  switches: Record<string, boolean>
   emailEnabled: boolean
   smtpConfigured: boolean
   scanMethod: string

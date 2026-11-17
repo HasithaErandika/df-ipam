@@ -9,6 +9,14 @@ import { DiscoveryMethods } from './DiscoveryMethods'
 
 const method: Record<string, string> = { ping: 'Ping sweep with reverse DNS and NetBIOS', arp: 'ARP scan per VLAN', snmp: 'Switch SNMP tables' }
 
+/** When the scheduled scan runs next, and what it covers, per the Settings switches. */
+function NextScan({ s }: { s: ScanStatus }) {
+  if (!s.autoScanDevices && !s.autoScanServers) return <span className="text-ink-3">Automatic scanning is off. Use Scan now.</span>
+  if (!s.nextScanAt) return null
+  const only = !s.autoScanDevices ? ' (server segments only)' : !s.autoScanServers ? ' (device segments only)' : ''
+  return <span className="text-ink-3">Next {formatIn(s.nextScanAt)}{only}</span>
+}
+
 /** One line about the scanner, with Scan now for Admins. */
 export function ScanSummary({ compact }: { compact?: boolean }) {
   const q = useScanStatus()
@@ -19,7 +27,7 @@ export function ScanSummary({ compact }: { compact?: boolean }) {
       {s.running
         ? <StateBadge tone="accent">Scanning now{s.startedAt ? ` · started ${formatAgo(s.startedAt)}` : ''}</StateBadge>
         : <StateBadge tone={s.finishedAt ? 'ok' : 'neutral'}>{s.finishedAt ? `Last scan ${formatAgo(s.finishedAt)}` : 'No scan since the server started'}</StateBadge>}
-      {!s.running && s.nextScanAt && <span className="text-ink-3">Next {formatIn(s.nextScanAt)}</span>}
+      {!s.running && <NextScan s={s} />}
       <ScanButton running={s.running} />
     </div>
   )

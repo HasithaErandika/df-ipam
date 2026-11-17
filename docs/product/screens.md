@@ -30,11 +30,17 @@ People who may manage the system change these in **System > Settings**:
 | Setting | Default | Range |
 | --- | --- | --- |
 | Scan interval | 10 minutes | 5 to 1,440 minutes |
-| Server check interval | 5 minutes | 1 minute to 1 day |
+| Server check interval | 1 hour | 1 minute to 1 day |
 | Failed checks before Down | 3 | 1 to 20 |
+| Slow server limit | 200 ms | 10 to 5,000 ms |
+| Scan device segments automatically | On | On or off |
+| Scan server segments automatically | On | On or off |
+| Check monitored servers automatically | On | On or off |
 | Reservation reminder | 7 days | 1 to 60 days |
 | Idle sign-out | 30 minutes, warned one minute before | 5 to 480 minutes |
 | Email | Off | |
+
+The three automatic switches stop only scheduled work: **Scan now** still scans any segment. While a kind of segment isn't scanned automatically, its alerts stay open; while checks are off, servers keep their last state.
 
 Defaults live in the seed (`api/internal/seed`). Every edit on the administration pages asks first, lists exactly what changes, and confirms when saved.
 

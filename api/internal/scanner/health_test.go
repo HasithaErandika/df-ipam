@@ -10,9 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// A server that refuses ping but listens on its check port is Up; with the
-// port closed as well it is Down.
-func TestIsUpUsesTheCheckPort(t *testing.T) {
+// A server that refuses ping but listens on its check port is Up, timed by the
+// connection; with the port closed as well it is Down.
+func TestResponseTimeUsesTheCheckPort(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -30,6 +30,10 @@ func TestIsUpUsesTheCheckPort(t *testing.T) {
 	icmp, _ := newPinger()
 	if icmp != nil {
 		defer icmp.Close()
+	}
+	isUp := func(ctx context.Context, icmp *pinger, item monitoredIP) bool {
+		_, up := responseTime(ctx, icmp, item)
+		return up
 	}
 	// 192.0.2.1 is reserved for documentation, so ping never answers there.
 	if isUp(context.Background(), icmp, monitoredIP{ip: "192.0.2.1", port: sql.NullInt32{Int32: int32(port), Valid: true}}) {
@@ -73,13 +77,17 @@ func TestHealthNeedsFailuresInARow(t *testing.T) {
 	}
 	step := func(result, want string, failures int) {
 		t.Helper()
-		if _, err := tx.Exec(ctx, healthSQL, []string{id}, []string{result}); err != nil {
+		if _, err := tx.Exec(ctx, healthSQL, []string{id}, []string{result}, []int32{12}); err != nil {
 			t.Fatal(err)
 		}
 		var health string
 		var n int
-		if err := tx.QueryRow(ctx, `SELECT health, server_check_failures FROM ip_addresses WHERE id = $1::uuid`, id).Scan(&health, &n); err != nil {
+		var ms *int32
+		if err := tx.QueryRow(ctx, `SELECT health, server_check_failures, response_ms FROM ip_addresses WHERE id = $1::uuid`, id).Scan(&health, &n, &ms); err != nil {
 			t.Fatal(err)
+		}
+		if (result == "up") != (ms != nil && *ms == 12) {
+			t.Fatalf("after %s: response time %v", result, ms)
 		}
 		if health != want || n != failures {
 			t.Fatalf("after %s: health %s with %d failures, want %s with %d", result, health, n, want, failures)

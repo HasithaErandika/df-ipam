@@ -37,7 +37,7 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 	} else {
 		defer icmp.Close()
 	}
-	ids, results := make([]string, len(targets)), make([]string, len(targets))
+	ids, results, times := make([]string, len(targets)), make([]string, len(targets)), make([]int32, len(targets))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for range min(len(targets), 32) {
@@ -46,8 +46,8 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 			defer wg.Done()
 			for i := range jobs {
 				ids[i], results[i] = targets[i].id, "down"
-				if isUp(ctx, icmp, targets[i]) {
-					results[i] = "up"
+				if ms, up := responseTime(ctx, icmp, targets[i]); up {
+					results[i], times[i] = "up", ms
 				}
 			}
 		}()
@@ -65,7 +65,7 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 	}
 	// A failed check only counts towards Down; the server is Down once it has
 	// failed the configured number of checks in a row.
-	if _, err := s.conn.Exec(ctx, healthSQL, ids, results); err != nil {
+	if _, err := s.conn.Exec(ctx, healthSQL, ids, results, times); err != nil {
 		return err
 	}
 	return monitoring.New(s.conn).Evaluate(ctx)
@@ -98,40 +98,49 @@ func (s *Scanner) monitored(ctx context.Context) ([]monitoredIP, error) {
 	return out, rows.Err()
 }
 
-// healthSQL records one check per address: $1 the IDs, $2 "up" or "down".
+// healthSQL records one check per address: $1 the IDs, $2 "up" or "down", $3
+// the response time in milliseconds (ignored when down).
 const healthSQL = `WITH limits AS (
 	SELECT COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'server_check.down_after_failures'), 3) AS n
 ), checks AS (
-	SELECT v.id::uuid AS id, v.result FROM unnest($1::text[], $2::text[]) AS v(id, result)
+	SELECT v.id::uuid AS id, v.result, v.ms FROM unnest($1::text[], $2::text[], $3::integer[]) AS v(id, result, ms)
 ), next AS (
-	SELECT i.id, CASE WHEN c.result = 'up' THEN 0 ELSE i.server_check_failures + 1 END AS failures,
+	SELECT i.id, CASE WHEN c.result = 'up' THEN c.ms END AS ms, CASE WHEN c.result = 'up' THEN 0 ELSE i.server_check_failures + 1 END AS failures,
 		CASE WHEN c.result = 'up' THEN 'up' WHEN i.server_check_failures + 1 >= (SELECT n FROM limits) THEN 'down' ELSE i.health END AS health
 	FROM ip_addresses i JOIN checks c ON c.id = i.id
 )
-UPDATE ip_addresses i SET server_check_failures = next.failures, health = next.health,
+UPDATE ip_addresses i SET server_check_failures = next.failures, health = next.health, response_ms = next.ms,
 	health_changed_at = CASE WHEN i.health IS DISTINCT FROM next.health THEN now() ELSE i.health_changed_at END
 FROM next WHERE i.id = next.id`
 
-// isUp pings twice, so one lost packet isn't a failed check, then tries the
-// check port for servers that block ping.
-func isUp(ctx context.Context, icmp *pinger, item monitoredIP) bool {
+// responseTime reports whether the server answered, and how fast in
+// milliseconds. It pings twice and keeps the faster reply, so one lost or late
+// packet is neither a failure nor a slow server; a server that blocks ping is
+// timed by connecting to its check port.
+func responseTime(ctx context.Context, icmp *pinger, item monitoredIP) (int32, bool) {
 	ip, err := netip.ParseAddr(item.ip)
 	if err == nil && icmp != nil {
+		best := time.Duration(-1)
 		for range 2 {
-			if up, _, _ := icmp.ping(ctx, ip, 700*time.Millisecond); up {
-				return true
+			start := time.Now()
+			if up, _, _ := icmp.ping(ctx, ip, 700*time.Millisecond); up && (best < 0 || time.Since(start) < best) {
+				best = time.Since(start)
 			}
+		}
+		if best >= 0 {
+			return int32(best.Milliseconds()), true
 		}
 	}
 	if !item.port.Valid {
-		return false
+		return 0, false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
 	defer cancel()
+	start := time.Now()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(item.ip, strconv.Itoa(int(item.port.Int32))))
 	if err != nil {
-		return false
+		return 0, false
 	}
 	_ = conn.Close()
-	return true
+	return int32(time.Since(start).Milliseconds()), true
 }

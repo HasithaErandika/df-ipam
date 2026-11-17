@@ -58,6 +58,9 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 	if err != nil {
 		return err
 	}
+	if req.by != "manual" {
+		segments = s.automatic(ctx, segments)
+	}
 	started := time.Now()
 	s.mu.Lock()
 	s.status.Running, s.status.Trigger, s.status.StartedAt, s.status.NextScanAt = true, req.by, &started, nil
@@ -115,6 +118,19 @@ func (s *Scanner) markScanned(ctx context.Context, segmentID string, failed bool
 	_, err := s.conn.Exec(ctx, `UPDATE segments SET scan_failed_at = CASE WHEN $2 THEN now() END
 		WHERE id = $1::uuid AND (scan_failed_at IS NULL) = $2`, segmentID, failed)
 	return err
+}
+
+// automatic keeps the segments whose kind is scanned on schedule. Scan now
+// scans any segment, whatever these switches say.
+func (s *Scanner) automatic(ctx context.Context, all []segment) []segment {
+	on := map[string]bool{"dhcp": enabled(ctx, s.conn, "scan.auto_devices"), "server": enabled(ctx, s.conn, "scan.auto_servers")}
+	out := all[:0]
+	for _, x := range all {
+		if on[x.kind] {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // record keeps the latest result per segment.
