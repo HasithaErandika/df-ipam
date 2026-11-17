@@ -10,6 +10,9 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 - The sign-in page says plainly when sign-in isn't available. A new test covers a `make admin` pending account taken over by the first Microsoft sign-in.
 - Remove `AUTH_BYPASS` and `AUTH_BYPASS_EMAIL` from your `api/.env`; they are ignored now.
 
+**Commits**
+- `94a8c01` remove the development sign-in; Entra ID only, and production needs it with HTTPS
+
 ## 2026-11-13 · v0.2.0
 
 **Finding and identifying devices**
