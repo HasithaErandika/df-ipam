@@ -34,6 +34,9 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 - Discovery shows "Automatic scanning is off. Use Scan now." instead of a next scan time when both scan switches are off, and says when the next scan covers only device or only server segments.
 - New **Slow server** alert (Medium) when a monitored server answers slower than the limit in Settings (default 200 ms). Migration 000017 adds `ip_addresses.response_ms` and the alert type.
 
+**Microsoft sign-in fix**
+- Sign-in failed with "didn't complete" for every account: Microsoft publishes its signing keys without `alg`, and the JWT library uses no key without one. Microsoft's RSA keys are now pinned to RS256 when fetched (never inferred), and the test's fake Microsoft publishes its keys the same way, so the test catches it.
+
 **Commits**
 - `94a8c01` remove the development sign-in; Entra ID only, and production needs it with HTTPS
 

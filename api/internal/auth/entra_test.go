@@ -38,6 +38,7 @@ func newFakeEntra(t *testing.T) *fakeEntra {
 	_ = private.Set(jwk.KeyIDKey, "k1")
 	_ = private.Set(jwk.AlgorithmKey, jwa.RS256())
 	public, _ := private.PublicKey()
+	_ = public.Remove(jwk.AlgorithmKey) // Microsoft publishes its keys without "alg"
 	set := jwk.NewSet()
 	_ = set.AddKey(public)
 	f := &fakeEntra{key: private, code: "good-code"}

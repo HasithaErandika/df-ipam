@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
@@ -44,7 +45,23 @@ func (k *keyCache) get(ctx context.Context, kid string) (jwk.Set, error) {
 			}
 			return nil, fmt.Errorf("fetch jwks: %w", err)
 		}
+		pinRS256(keys)
 		k.keys, k.fetchedAt = keys, time.Now()
 	}
 	return k.keys, nil
+}
+
+// pinRS256 labels Microsoft's RSA signing keys RS256. Microsoft publishes them
+// without "alg", and the JWT library uses no key without one. Pinning, not
+// inferring, means a token signed any other way still finds no key.
+func pinRS256(keys jwk.Set) {
+	for i := range keys.Len() {
+		key, ok := keys.Key(i)
+		if !ok || key.KeyType() != jwa.RSA() {
+			continue
+		}
+		if _, has := key.Algorithm(); !has {
+			_ = key.Set(jwk.AlgorithmKey, jwa.RS256())
+		}
+	}
 }
