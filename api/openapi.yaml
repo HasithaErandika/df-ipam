@@ -109,6 +109,11 @@ paths:
       summary: "Start a scan now, of one segment or all. Refused while a scan runs and within a minute of the last manual scan"
       description: "Permission: discovery:scan."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /discovery/stop:
+    post:
+      summary: "Stop the running scan. Segments already swept keep their results; the one in progress saves nothing. 409 SCAN_NOT_RUNNING when none runs"
+      description: "Permission: discovery:scan."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /discovery/findings:
     get:
       summary: "Everything the scanner has seen, with register and device state, filtered and paged"

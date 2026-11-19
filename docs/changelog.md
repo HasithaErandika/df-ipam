@@ -4,6 +4,9 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 ## 2026-11-19
 
+**Discovery**
+- **Stop** next to Scan now ends a running scan (`POST /api/v1/discovery/stop`, permission `discovery:scan`, audited as `scan_stop`, after a confirmation). Segments already scanned keep their results and the alert rules still run; the segment in progress saves nothing and isn't marked as failed. The status line then says "Last scan stopped".
+
 **IP register and reservations**
 - An address held by an active reservation can't be registered by hand (409 `IP_RESERVED`) or by import (the row is skipped and reported). Before, it could, and the address ended up both assigned and still reserved. Convert the reservation instead. Approving a request already checked this.
 - The message when a new reservation overlaps an address in use now gives the real rule: 30 days outside the DHCP pool, 24 hours inside it. It said 24 hours.

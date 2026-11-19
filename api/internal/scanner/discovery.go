@@ -61,63 +61,52 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 	if req.by != "manual" {
 		segments = s.automatic(ctx, segments)
 	}
-	started := time.Now()
-	s.mu.Lock()
-	s.status.Running, s.status.Trigger, s.status.StartedAt, s.status.NextScanAt = true, req.by, &started, nil
-	s.mu.Unlock()
-	defer func() {
-		done := time.Now()
-		s.mu.Lock()
-		s.status.Running, s.status.FinishedAt = false, &done
-		s.mu.Unlock()
-	}()
+	run, end := s.begin(ctx, req.by)
+	defer end()
 	var scanErrors []error
 	for _, x := range segments {
-		if err := ctx.Err(); err != nil {
-			return err
+		if run.Err() != nil {
+			break
 		}
-		begin := time.Now()
-		found, err := s.scanSegment(ctx, x, req.by == "manual")
-		result := SegmentResult{ID: x.id, Name: x.name, Found: found, DurationMs: time.Since(begin).Milliseconds(), ScannedAt: begin}
-		if err != nil {
-			result.Error = err.Error()
-			scanErrors = append(scanErrors, fmt.Errorf("segment %q: %w", x.name, err))
-		}
-		s.record(result)
-		if ctx.Err() == nil && !errors.Is(err, errTooLarge) {
-			if err := s.markScanned(ctx, x.id, err != nil); err != nil {
-				scanErrors = append(scanErrors, err)
-			}
-		}
-		// Devices found here become pending and raise their alerts now, rather
-		// than after the slowest segments in the sweep.
-		if err == nil && found > 0 {
-			if err := monitoring.New(s.conn).Evaluate(ctx); err != nil {
-				scanErrors = append(scanErrors, err)
-			}
-		}
+		scanErrors = append(scanErrors, s.sweepOne(ctx, run, x, req.by == "manual")...)
 	}
-	if err := monitoring.New(s.conn).Evaluate(ctx); err != nil {
-		scanErrors = append(scanErrors, err)
+	// A stop ends the sweeps only: what was saved is still evaluated.
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	// Evidence is kept for 90 days after a device was last seen. Phones that
-	// change their private MAC would otherwise leave rows behind forever.
-	// Closed alerts are kept for a year, for the Alert history report.
-	if _, err := s.conn.Exec(ctx, `DELETE FROM sightings WHERE last_seen < now() - interval '90 days'`); err != nil {
-		scanErrors = append(scanErrors, err)
-	}
-	if _, err := s.conn.Exec(ctx, `DELETE FROM alerts WHERE status = 'closed' AND closed_at < now() - interval '365 days'`); err != nil {
-		scanErrors = append(scanErrors, err)
-	}
-	return errors.Join(scanErrors...)
+	return errors.Join(append(scanErrors, s.afterScan(ctx)...)...)
 }
 
-// markScanned records whether a segment's scan failed, writing only when that
-// changes. The alert rules keep a failed segment's alerts open.
-func (s *Scanner) markScanned(ctx context.Context, segmentID string, failed bool) error {
-	_, err := s.conn.Exec(ctx, `UPDATE segments SET scan_failed_at = CASE WHEN $2 THEN now() END
-		WHERE id = $1::uuid AND (scan_failed_at IS NULL) = $2`, segmentID, failed)
-	return err
+// sweepOne scans one segment under run, which Stop cancels, and records how it
+// went. Database work after the sweep uses ctx, so a stop doesn't cut it short.
+func (s *Scanner) sweepOne(ctx, run context.Context, x segment, manual bool) []error {
+	begin := time.Now()
+	found, err := s.scanSegment(run, x, manual)
+	result := SegmentResult{ID: x.id, Name: x.name, Found: found, DurationMs: time.Since(begin).Milliseconds(), ScannedAt: begin}
+	if run.Err() != nil && ctx.Err() == nil { // stopped by hand: neither a result nor a failure
+		result.Found, result.Error = 0, stoppedText
+		s.record(result)
+		return nil
+	}
+	var out []error
+	if err != nil {
+		result.Error = err.Error()
+		out = append(out, fmt.Errorf("segment %q: %w", x.name, err))
+	}
+	s.record(result)
+	if ctx.Err() == nil && !errors.Is(err, errTooLarge) {
+		if err := s.markScanned(ctx, x.id, err != nil); err != nil {
+			out = append(out, err)
+		}
+	}
+	// Devices found here become pending and raise their alerts now, rather
+	// than after the slowest segments in the sweep.
+	if err == nil && found > 0 {
+		if err := monitoring.New(s.conn).Evaluate(ctx); err != nil {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 // automatic keeps the segments whose kind is scanned on schedule. Scan now

@@ -4,6 +4,7 @@ import { formatAgo, formatDateTime, formatIn } from '../../lib/format'
 import { useScanStatus } from '../../lib/scan'
 import type { ScanStatus } from '../../lib/types'
 import { ScanButton } from '../shared/ScanButton'
+import { StopScanButton } from '../shared/StopScanButton'
 import { DiscoveryMethods } from './DiscoveryMethods'
 
 
@@ -26,9 +27,10 @@ export function ScanSummary({ compact }: { compact?: boolean }) {
     <div className="flex flex-wrap items-center gap-3 text-[12.5px] text-ink-2">
       {s.running
         ? <StateBadge tone="accent">Scanning now{s.startedAt ? ` · started ${formatAgo(s.startedAt)}` : ''}</StateBadge>
-        : <StateBadge tone={s.finishedAt ? 'ok' : 'neutral'}>{s.finishedAt ? `Last scan ${formatAgo(s.finishedAt)}` : 'No scan since the server started'}</StateBadge>}
+        : <StateBadge tone={!s.finishedAt ? 'neutral' : s.stopped ? 'warn' : 'ok'}>{!s.finishedAt ? 'No scan since the server started' : `${s.stopped ? 'Last scan stopped' : 'Last scan'} ${formatAgo(s.finishedAt)}`}</StateBadge>}
       {!s.running && <NextScan s={s} />}
       <ScanButton running={s.running} />
+      {s.running && <StopScanButton />}
     </div>
   )
 }

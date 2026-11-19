@@ -34,6 +34,7 @@ type SegmentResult struct {
 // the evidence itself is in sightings.
 type Status struct {
 	Running    bool            `json:"running"`
+	Stopped    bool            `json:"stopped"` // the last scan was stopped by hand
 	Trigger    string          `json:"trigger"`
 	StartedAt  *time.Time      `json:"startedAt"`
 	FinishedAt *time.Time      `json:"finishedAt"`
@@ -49,6 +50,7 @@ type Scanner struct {
 	mu         sync.Mutex
 	status     Status
 	lastManual time.Time
+	cancel     context.CancelFunc // ends the running scan; nil when none runs
 	fullMu     sync.Mutex
 	lastFull   map[string]fullMark // segment and IP → last full identification
 }

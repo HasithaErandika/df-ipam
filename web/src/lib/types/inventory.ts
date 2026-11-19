@@ -219,6 +219,8 @@ export interface AddressStatus {
 
 export interface ScanStatus {
   running: boolean
+  /** The last scan was stopped by hand before it finished. */
+  stopped: boolean
   trigger: string
   startedAt: string | null
   finishedAt: string | null

@@ -2,6 +2,8 @@
 
 The backend scans every swept segment every `scan.interval_minutes` (default 10, at least 5), and on **Scan now**. **Discovery is evidence only:** it writes `sightings`, one row per IP and MAC. It never writes the register, devices' decisions or ownership. People decide.
 
+**Stop** ends a running scan, for anyone who may start one, and is recorded in the audit log. Segments already scanned keep their results and the alert rules still run on them. The segment being scanned saves nothing and isn't counted as a failed scan; the next scan covers it. Server checks are separate and carry on.
+
 ## What the scanner asks
 
 Every question goes to one host's own address and changes nothing on it.

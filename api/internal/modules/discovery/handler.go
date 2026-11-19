@@ -20,6 +20,7 @@ import (
 // Scanner is the part of the background scanner this module uses.
 type Scanner interface {
 	Trigger(segmentID, by string) error
+	Stop() error
 	Snapshot() scanner.Status
 }
 
@@ -33,6 +34,7 @@ func New(conn db.Conn, scan Scanner) *Handler { return &Handler{conn: conn, scan
 func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/discovery/status", h.status, auth.InventoryView)
 	g.Handle(http.MethodPost, "/discovery/scan", h.start, auth.DiscoveryScan)
+	g.Handle(http.MethodPost, "/discovery/stop", h.stop, auth.DiscoveryScan)
 	g.Handle(http.MethodGet, "/discovery/findings", h.findings, auth.InventoryView)
 	g.Handle(http.MethodGet, "/discovery/summary", h.summary, auth.InventoryView)
 }
