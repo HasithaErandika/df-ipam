@@ -3,6 +3,8 @@ package scanner
 import (
 	"bytes"
 	"encoding/binary"
+	"net/netip"
+	"strings"
 	"testing"
 )
 
@@ -20,5 +22,16 @@ func TestNetBIOSQueryMatchesNbtstat(t *testing.T) {
 	want = append(want, 0, 0, 33, 0, 1) // end of name, NBSTAT, IN
 	if got := q[12:]; !bytes.Equal(got, want) {
 		t.Errorf("question = %q, want %q", got, want)
+	}
+}
+
+// A unicast SSDP search names the device in HOST and carries no MX.
+func TestSSDPQueryIsUnicast(t *testing.T) {
+	q := string(ssdpQuery(netip.MustParseAddr("192.168.12.8")))
+	if !strings.Contains(q, "\r\nHOST: 192.168.12.8:1900\r\n") || strings.Contains(q, "MX:") || strings.Contains(q, "239.255.255.250") {
+		t.Errorf("unicast M-SEARCH is wrong:\n%s", q)
+	}
+	if !strings.HasPrefix(q, "M-SEARCH * HTTP/1.1\r\n") || !strings.HasSuffix(q, "\r\n\r\n") {
+		t.Errorf("M-SEARCH framing is wrong:\n%s", q)
 	}
 }

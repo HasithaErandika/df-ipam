@@ -31,7 +31,12 @@ func (u upnpInfo) Describe() string {
 	return strings.Join(parts, " · ")
 }
 
-var ssdpQuery = []byte("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 1\r\nST: upnp:rootdevice\r\n\r\n")
+// ssdpQuery is a unicast M-SEARCH (UPnP Device Architecture 1.1, 1.3.3): HOST
+// names the device itself, and there is no MX, which only multicast searches
+// use. Some devices ignore a unicast search written as a multicast one.
+func ssdpQuery(ip netip.Addr) []byte {
+	return []byte("M-SEARCH * HTTP/1.1\r\nHOST: " + ip.String() + ":1900\r\nMAN: \"ssdp:discover\"\r\nST: upnp:rootdevice\r\n\r\n")
+}
 
 // ssdpDescribe asks one host to describe itself: a unicast SSDP search to UDP
 // 1900, then a GET of the description it points to, on the same address only.
@@ -53,7 +58,7 @@ func ssdpLocation(ctx context.Context, ip netip.Addr) string {
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(900 * time.Millisecond))
-	if _, err := conn.WriteTo(ssdpQuery, &net.UDPAddr{IP: ip.AsSlice(), Port: 1900}); err != nil {
+	if _, err := conn.WriteTo(ssdpQuery(ip), &net.UDPAddr{IP: ip.AsSlice(), Port: 1900}); err != nil {
 		return ""
 	}
 	buf := make([]byte, 2048)
