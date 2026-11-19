@@ -12,10 +12,11 @@ import { listChanges } from '../../lib/changes'
 import type { Segment } from '../../lib/types'
 import { AddressLayout, type NetworkInfo } from '../discovery/SegmentFacts'
 import { cidrIssue, inNetwork, ipToInt, ipv4NetworkInfo, isHostAddress, isIPv4, maxScannable, optionalInt, optionalIPv4, requiredText, text, toInt } from '../../lib/validation'
+import { notSwept } from './segmentList'
 
 const schema = z.object({
   name: requiredText('Name', 80),
-  kind: z.enum(['dhcp', 'server', 'cloud']),
+  kind: z.enum(['dhcp', 'server', 'cloud', 'vpn']),
   floor: optionalInt('Floor', -5, 200),
   vlan: optionalInt('VLAN', 1, 4094),
   network: z.string().trim().superRefine((v, ctx) => { const issue = cidrIssue(v); if (issue) ctx.addIssue({ code: 'custom', message: issue }) }),
@@ -61,6 +62,7 @@ const kindHelp = {
   dhcp: 'A user network served by DHCP, such as a floor or Wi-Fi. Addresses outside the pool count as static.',
   server: 'Static server addresses. Entries take the default environment.',
   cloud: 'A network hosted in a cloud. Static, like servers, and never ping-swept from the building.',
+  vpn: 'The address pool the FortiGate gives VPN users (SSL or IPsec). Never swept: the FortiGate connection shows who is connected.',
 }
 
 export function SegmentForm({ open, segment, onClose }: { open: boolean; segment?: Segment; onClose: () => void }) {
@@ -109,14 +111,14 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name" htmlFor="sg-name" error={errors.name?.message}><Input id="sg-name" placeholder="Floor 4" {...register('name')} /></Field>
             <Field label="Type" htmlFor="sg-kind" hint={kindHelp[kind]}>
-              <Select id="sg-kind" {...register('kind')}><option value="dhcp">DHCP network (floor, Wi-Fi)</option><option value="server">Server</option><option value="cloud">Cloud</option></Select>
+              <Select id="sg-kind" {...register('kind')}><option value="dhcp">DHCP network (floor, Wi-Fi)</option><option value="server">Server</option><option value="cloud">Cloud</option><option value="vpn">VPN client pool</option></Select>
             </Field>
             <Field label="Network" htmlFor="sg-net" error={errors.network?.message} hint="IPv4, /16 to /30. Networks can't overlap.">
               <Input id="sg-net" className="font-mono" placeholder="192.168.4.0/24" {...register('network')} />
             </Field>
             <Field label="Gateway (optional)" htmlFor="sg-gw" error={errors.gateway?.message}
               hint={kind === 'dhcp' && gatewayInPool ? 'Inside the DHCP pool. Make sure the DHCP server excludes this address from its leases.' : undefined}><Input id="sg-gw" className="font-mono" placeholder="192.168.4.1" {...register('gateway')} /></Field>
-            {kind !== 'cloud' && <Field label="Floor (optional)" htmlFor="sg-floor" error={errors.floor?.message}><Input id="sg-floor" inputMode="numeric" {...register('floor')} /></Field>}
+            {!notSwept(kind) && <Field label="Floor (optional)" htmlFor="sg-floor" error={errors.floor?.message}><Input id="sg-floor" inputMode="numeric" {...register('floor')} /></Field>}
             <Field label="VLAN (optional)" htmlFor="sg-vlan" error={errors.vlan?.message}><Input id="sg-vlan" inputMode="numeric" {...register('vlan')} /></Field>
           </div>
           {preview && (
@@ -133,7 +135,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
                 <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">Potential available</div><div className="text-[13px] font-semibold text-ok">{formatCount(estimatedAvailable)}</div></div>
                 <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">DHCP pool</div><div className="text-[13px] font-semibold text-ink">{validPool ? formatCount(ipToInt(poolEnd) - ipToInt(poolStart) + 1) : kind === 'dhcp' ? 'Not set' : 'None'}</div></div>
               </div>
-              {kind !== 'cloud' && subnet && subnet.usableAddresses > maxScannable && (
+              {!notSwept(kind) && subnet && subnet.usableAddresses > maxScannable && (
                 <p role="alert" className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
                   Too large to scan: {formatCount(subnet.usableAddresses)} usable addresses, and discovery sweeps at most {formatCount(maxScannable)} (a /20). Split it into smaller segments, or it is never scanned.
                 </p>
@@ -150,7 +152,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
             </div>
             <p className="text-[12.5px] text-ink-3">Static detection depends on this range: anything in use outside it is treated as a hand-set IP. Without a pool, nothing here counts as static and no unregistered-static alerts are raised.</p>
           </FormSection>
-        ) : (
+        ) : kind === 'vpn' ? null : (
           <Field label="Default environment" htmlFor="sg-env" hint="New entries in this segment start with it. Each entry can still differ.">
             <Select id="sg-env" {...register('defaultEnvironmentId')}><option value="">None</option>{environments.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</Select>
           </Field>
@@ -160,7 +162,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
             label="Alert on devices with a private MAC"
             hint="Phones and laptops use random MACs on Wi-Fi, so these are not unknown-device alerts. Turn this on where every device matters: one alert per unregistered address, Medium on floors and High on server and cloud networks." />
         </FormSection>
-        {watch('kind') !== 'cloud' && (
+        {!notSwept(watch('kind')) && (
           <FormSection title="Discovery">
             <Switch id="sg-ports" checked={watch('checkPorts')} onChange={(v) => setValue('checkPorts', v, { shouldDirty: true })}
               label="Check common ports on each device"

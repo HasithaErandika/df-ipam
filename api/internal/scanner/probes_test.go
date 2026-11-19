@@ -73,9 +73,9 @@ func TestParseNetBIOSReadsAWindowsReply(t *testing.T) {
 	mac := []byte{0x3c, 0x52, 0x82, 0x1a, 0x2b, 0x3c}
 	names := [][18]byte{nbName("DFHO-PC-12", 0x00, 0x0400), nbName("CALF", 0x00, 0x8400), nbName("DFHO-PC-12", 0x20, 0x0400)}
 	for _, echo := range []bool{false, true} {
-		gotMAC, host, err := parseNetBIOS(nbstatReply(echo, mac, names...))
-		if err != nil || host != "DFHO-PC-12" || gotMAC != "3c:52:82:1a:2b:3c" {
-			t.Errorf("question echoed %v: got %q %q %v", echo, gotMAC, host, err)
+		got, err := parseNetBIOS(nbstatReply(echo, mac, names...))
+		if err != nil || got.name != "DFHO-PC-12" || got.mac != "3c:52:82:1a:2b:3c" || got.group != "CALF" {
+			t.Errorf("question echoed %v: got %+v %v", echo, got, err)
 		}
 	}
 }

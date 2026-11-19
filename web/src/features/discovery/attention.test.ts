@@ -31,3 +31,11 @@ describe('Discovery attention colours', () => {
     expect(isDhcpClient({ isStatic: false, inPool: true })).toBe(true)
   })
 })
+
+describe('VPN clients', () => {
+  it('never ask to be registered, in a VPN pool or with no segment', () => {
+    expect(needsRegister({ ...base, source: 'vpn', segmentKind: null })).toBe(false)
+    expect(needsRegister({ ...base, source: 'vpn', segmentKind: 'vpn' })).toBe(false)
+    expect(attentionRow({ ...base, mac: null, deviceStatus: null, source: 'vpn', segmentKind: 'vpn' })).toBeUndefined()
+  })
+})

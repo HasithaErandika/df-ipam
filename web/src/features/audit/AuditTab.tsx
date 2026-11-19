@@ -5,8 +5,8 @@ import { useFilters, usePagedList } from '../../lib/listing'
 import type { AuditEntry } from '../../lib/types'
 import { ExportMenu } from '../shared/FileTransfer'
 
-const objects = ['segment', 'ip_address', 'device', 'reservation', 'ip_request', 'alert', 'environment', 'department', 'user', 'role', 'settings', 'integration', 'discovery']
-const actions = ['create', 'update', 'delete', 'release', 'reserve', 'convert', 'approved', 'rejected', 'cancel', 'acknowledge', 'import', 'scan', 'sync']
+const objects = ['segment', 'ip_address', 'device', 'reservation', 'ip_request', 'alert', 'environment', 'department', 'user', 'role', 'settings', 'integration', 'discovery', 'session']
+const actions = ['create', 'update', 'delete', 'release', 'reserve', 'convert', 'approved', 'rejected', 'cancel', 'acknowledge', 'import', 'scan', 'scan_stop', 'sync', 'login', 'logout']
 const nice = (s: string) => (s.charAt(0).toUpperCase() + s.slice(1)).replaceAll('_', ' ')
 const tone = (a: string) => (['delete', 'release', 'rejected', 'cancel'].includes(a) ? 'danger' : ['create', 'approved', 'import'].includes(a) ? 'ok' : 'neutral')
 

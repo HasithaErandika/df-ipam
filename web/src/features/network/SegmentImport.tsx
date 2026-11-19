@@ -13,6 +13,7 @@ const kinds = [
   { value: 'server', text: 'Server networks (static, swept)' },
   { value: 'cloud', text: 'Cloud networks (static, never swept)' },
   { value: 'dhcp', text: 'DHCP networks (set each pool afterwards)' },
+  { value: 'vpn', text: 'VPN client pools (never swept)' },
 ]
 
 const th = 'sticky top-0 z-[1] bg-surface-2 px-2.5 py-1.5 text-left text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase'

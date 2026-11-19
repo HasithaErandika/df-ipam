@@ -1,14 +1,17 @@
 import type { Segment } from '../../lib/types'
 import { maxScannable } from '../../lib/validation'
 
+/** Cloud networks and VPN client pools are never swept from the building. */
+export const notSwept = (kind: string) => kind === 'cloud' || kind === 'vpn'
+
 /** A swept segment with more addresses than the scanner sweeps: it is never scanned. */
-export const tooLargeToScan = (s: Segment) => s.kind !== 'cloud' && s.usableSize > maxScannable
+export const tooLargeToScan = (s: Segment) => !notSwept(s.kind) && s.usableSize > maxScannable
 
 /** A segment that needs someone to look at it, with the reason. */
 export function attention(s: Segment): string | null {
   if (tooLargeToScan(s)) return 'Too large to scan; split it'
   if (s.kind === 'dhcp' && !s.dhcpStart) return 'No DHCP pool set'
-  if (!s.gateway && !s.detectedGateway) return 'No gateway'
+  if (!s.gateway && !s.detectedGateway && s.kind !== 'vpn') return 'No gateway'
   if (s.openAlerts > 0) return `${s.openAlerts} open alert${s.openAlerts === 1 ? '' : 's'}`
   return null
 }
@@ -36,5 +39,5 @@ export function matches(s: Segment, q: string): boolean {
     .some((v) => v?.toLowerCase().includes(t))
 }
 
-export const kindOrder = ['dhcp', 'server', 'cloud'] as const
-export const kindTitle: Record<string, string> = { dhcp: 'DHCP networks (floors and Wi-Fi)', server: 'Server networks', cloud: 'Cloud networks' }
+export const kindOrder = ['dhcp', 'server', 'cloud', 'vpn'] as const
+export const kindTitle: Record<string, string> = { dhcp: 'DHCP networks (floors and Wi-Fi)', server: 'Server networks', cloud: 'Cloud networks', vpn: 'VPN client pools' }

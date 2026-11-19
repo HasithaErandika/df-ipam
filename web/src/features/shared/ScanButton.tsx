@@ -7,6 +7,7 @@ import { label, segmentKinds } from '../../lib/labels'
 import { useInvalidate, useSegments } from '../../lib/queries'
 import { useCan } from '../../lib/session'
 import type { Segment } from '../../lib/types'
+import { notSwept } from '../network/segmentList'
 
 const item = 'flex cursor-pointer items-center justify-between gap-4 rounded-[4px] px-2.5 py-1.5 text-[13px] text-ink-2 outline-none data-[highlighted]:bg-bg data-[highlighted]:text-ink data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50'
 
@@ -36,10 +37,10 @@ export function ScanButton({ segmentId, running, label: text = 'Scan now' }: { s
       </Button>
     )
   }
-  const groups: [string, Segment[]][] = (['dhcp', 'server', 'cloud'] as const)
+  const groups: [string, Segment[]][] = (['dhcp', 'server', 'cloud', 'vpn'] as const)
     .map((k) => [k, (segments.data ?? []).filter((s) => s.kind === k)] as [string, Segment[]])
     .filter(([, list]) => list.length > 0)
-  const sweepable = (segments.data ?? []).filter((s) => s.kind !== 'cloud').length
+  const sweepable = (segments.data ?? []).filter((s) => !notSwept(s.kind)).length
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild disabled={running}>
@@ -57,10 +58,10 @@ export function ScanButton({ segmentId, running, label: text = 'Scan now' }: { s
             <DropdownMenu.Group key={kind}>
               <DropdownMenu.Separator className="my-1 h-px bg-line" />
               <DropdownMenu.Label className="px-2.5 pt-1 pb-0.5 text-[10.5px] font-semibold tracking-[.06em] text-ink-3 uppercase">
-                {label(segmentKinds, kind)}{kind === 'cloud' ? ' · not swept' : ''}
+                {label(segmentKinds, kind)}{notSwept(kind) ? ' · not swept' : ''}
               </DropdownMenu.Label>
               {list.map((s) => (
-                <DropdownMenu.Item key={s.id} className={item} disabled={kind === 'cloud'} onSelect={() => scan.mutate(s.id)}>
+                <DropdownMenu.Item key={s.id} className={item} disabled={notSwept(kind)} onSelect={() => scan.mutate(s.id)}>
                   <span className="truncate">{s.name}</span><span className="shrink-0 font-mono text-[11.5px] text-ink-3">{s.network}</span>
                 </DropdownMenu.Item>
               ))}

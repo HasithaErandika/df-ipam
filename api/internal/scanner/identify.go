@@ -2,7 +2,9 @@ package scanner
 
 import (
 	"context"
+	"log/slog"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -18,12 +20,25 @@ type probePlan struct {
 	seg         segment
 	hostGateway string
 	pinger      *pinger
+	pace        *pace // one turn per address, shared across the scanner
 	portSlots   chan struct{}
 	tcpTick     <-chan time.Time // paces every TCP connection attempt in the scan
 	due         func(ip string) bool
-	done        func(ip string)
+	portsDue    func(ip string) bool
+	done        func(ip string, ports bool)
 	sendErrors  *atomic.Int64
 	firstError  *atomic.Value
+	// An address that doesn't answer ping is asked again (NetBIOS, then a few
+	// TCP ports) only on server segments, where something was seen in the last
+	// 30 days or is registered (known), or on the hourly full sweep (silentAll).
+	// Otherwise an empty address costs one ping.
+	known     map[string]bool
+	silentAll bool
+}
+
+// askSilent reports whether an address that ignored ping is worth more questions.
+func (p probePlan) askSilent(ip string) bool {
+	return p.silentAll || p.seg.kind == "server" || p.known[ip]
 }
 
 // identify finds out whether one address is in use and, if so, asks it who it
@@ -35,15 +50,18 @@ func identify(ctx context.Context, p probePlan, ip netip.Addr) (sighting, bool) 
 	if err != nil {
 		p.sendFailed(err)
 	}
-	var mac, nbName string
+	var nb nbInfo
 	nbDone := false
+	if !alive && !p.askSilent(ip.String()) {
+		return sighting{}, false
+	}
 	if !alive {
 		// Windows blocks ping by default, and so do many servers. NetBIOS and a
 		// few TCP ports find them. Only a completed connection counts: a router
 		// can refuse on an absent host's behalf (see dial).
-		mac, nbName, _ = netbiosStatus(ctx, ip)
+		nb, _ = netbiosStatus(ctx, ip)
 		nbDone = true
-		alive = mac != "" || nbName != "" || answersTCP(ctx, p, ip)
+		alive = nb.answered() || answersTCP(ctx, p, ip)
 	}
 	if !alive {
 		return sighting{}, false
@@ -54,29 +72,38 @@ func identify(ctx context.Context, p probePlan, ip netip.Addr) (sighting, bool) 
 		name = "" // synthetic names from the local resolver, such as _gateway
 	}
 	if !nbDone {
-		mac, nbName, _ = netbiosStatus(ctx, ip) // also the MAC on routed networks, so every time
+		nb, _ = netbiosStatus(ctx, ip) // also the MAC on routed networks, so every time
 	}
 	if name == "" {
-		name = nbName
+		name = nb.name
 	}
 	source := "ping"
-	if mac != "" || nbName != "" {
+	if nb.answered() {
 		source = "netbios"
 	}
-	out := sighting{ip: ip.String(), mac: mac, hostname: name, source: source, static: isStatic(p.seg, ip), gateway: gateway, os: osFromTTL(ttl)}
+	out := sighting{ip: ip.String(), mac: nb.mac, hostname: name, source: source, static: isStatic(p.seg, ip), gateway: gateway,
+		os: osFromTTL(ttl), workgroup: nb.group}
 	if p.due(out.ip) {
 		out.full = true
 		deepIdentify(ctx, p, ip, &out)
 		if ctx.Err() == nil {
-			p.done(out.ip) // only a finished identification waits fullEvery
+			p.done(out.ip, out.portsChecked) // only a finished identification waits fullEvery
 		}
 	}
 	return out, true
 }
 
+// slowAfter is how many pings may fail to send before the scan halves its rate:
+// the network, or this host's buffers, can't keep up.
+const slowAfter = 5
+
 func (p probePlan) sendFailed(err error) {
-	if p.sendErrors.Add(1) == 1 {
+	n := p.sendErrors.Add(1)
+	if n == 1 {
 		p.firstError.Store(err.Error())
+	}
+	if n == slowAfter && p.pace.slowDown() {
+		slog.Warn("pings are failing to send; halving the scan rate until the next scan", "segment", p.seg.name, "error", err.Error())
 	}
 }
 
@@ -98,7 +125,20 @@ func deepIdentify(ctx context.Context, p probePlan, ip netip.Addr, out *sighting
 		out.model = upnp.Model
 	}
 	out.vendor, out.maker, out.kind = upnp.Describe(), upnp.Maker, upnp.Kind
-	if p.seg.checkPorts {
+	if p.seg.checkPorts && p.portsDue(out.ip) {
 		out.ports, out.portsChecked = openPorts(ctx, ip, p.portSlots, p.tcpTick), true
+	}
+	// Only hosts that look like Windows (they answered NetBIOS, or have file
+	// sharing open) are asked for their Windows details, paced like any connection.
+	if out.source == "netbios" || slices.Contains(out.ports, 445) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.tcpTick:
+		}
+		out.windows = smbInfo(ctx, ip)
+		if out.hostname == "" {
+			out.hostname = out.windows.fqdn
+		}
 	}
 }

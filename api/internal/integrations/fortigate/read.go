@@ -6,9 +6,12 @@ import (
 	"strings"
 )
 
-// Entry is one IP the firewall knows about, as evidence for sightings.
+// Entry is one IP the firewall knows about, as evidence for sightings. A VPN
+// client also carries its user, the kind of VPN ("ssl" or "ipsec"), the
+// IPsec tunnel's name and the public address it connected from.
 type Entry struct {
 	IP, MAC, Hostname, Vendor, Source string
+	User, VPNKind, Tunnel, Remote     string
 }
 
 type arpEntry struct {
@@ -84,7 +87,7 @@ func (c *Client) ReadAll(ctx context.Context) ([]Entry, Counts, error) {
 	for _, s := range ssl {
 		for _, sub := range s.Subsessions {
 			if ok4(sub.AIP) {
-				out = append(out, Entry{IP: sub.AIP, Hostname: vpnName("SSL VPN", s.User, s.RemoteHost), Source: "vpn"})
+				out = append(out, Entry{IP: sub.AIP, Source: "vpn", User: strings.TrimSpace(s.User), VPNKind: "ssl", Remote: s.RemoteHost})
 				counts.VPN++
 			}
 		}
@@ -93,11 +96,7 @@ func (c *Client) ReadAll(ctx context.Context) ([]Entry, Counts, error) {
 		for _, p := range t.ProxyIDs {
 			for _, d := range p.Dst {
 				if ip := singleHost(d.Subnet); ip != "" && p.Status == "up" {
-					user := t.User
-					if user == "" {
-						user = t.Name
-					}
-					out = append(out, Entry{IP: ip, Hostname: vpnName("IPsec", user, t.Gateway), Source: "vpn"})
+					out = append(out, Entry{IP: ip, Source: "vpn", User: strings.TrimSpace(t.User), VPNKind: "ipsec", Tunnel: t.Name, Remote: t.Gateway})
 					counts.VPN++
 				}
 			}
@@ -109,17 +108,6 @@ func (c *Client) ReadAll(ctx context.Context) ([]Entry, Counts, error) {
 func ok4(s string) bool {
 	a, err := netip.ParseAddr(s)
 	return err == nil && a.Is4() && !a.IsUnspecified()
-}
-
-func vpnName(kind, user, from string) string {
-	name := kind
-	if user != "" {
-		name += ": " + user
-	}
-	if from != "" {
-		name += " from " + from
-	}
-	return name
 }
 
 // singleHost reads "10.0.0.5-10.0.0.5" or "10.0.0.5/32" as one address.

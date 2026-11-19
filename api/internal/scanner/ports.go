@@ -27,10 +27,11 @@ var presencePorts = []int{445, 3389, 22}
 // many answering devices at once can't turn into a burst of connections.
 const portSlots = 16
 
-// tcpEvery paces TCP connection attempts across a whole scan: at most 100 a
-// second. Closed ports answer at once on a LAN, so a cap on connections in
-// flight alone would still allow hundreds a second.
-const tcpEvery = 10 * time.Millisecond
+// tcpEvery paces TCP connection attempts across a whole scan: at most 20 a
+// second, so a port check doesn't look like a port scan to security tools.
+// Closed ports answer at once on a LAN, so a cap on connections in flight
+// alone would still allow hundreds a second.
+const tcpEvery = 50 * time.Millisecond
 
 // dial tries one TCP port and reports whether the connection completed. A
 // refusal is not counted: a router rejecting on a host's behalf looks the same.

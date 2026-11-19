@@ -87,6 +87,7 @@ Install Docker Engine with the Compose plugin from Docker's apt repository, then
 | Out | `login.microsoftonline.com` (Entra ID) | 443/tcp |
 | Out | Mail server | 587/tcp |
 | Out | The FortiGate's management address, if used | 443/tcp or its admin port |
+| Out | `login.microsoftonline.com` and `graph.microsoft.com`, for sign-in and the optional Intune read | 443/tcp |
 | Out | Floors and server segments | ICMP; UDP 53, 137, 1900, 5353; TCP 80 for UPnP descriptions; the check ports of monitored servers; the common ports, where port checks are on |
 | In | Office and VPN ranges | 443/tcp, and 80/tcp for the redirect |
 

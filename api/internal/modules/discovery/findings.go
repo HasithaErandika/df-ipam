@@ -3,7 +3,6 @@ package discovery
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
@@ -11,46 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-// findingDTO is one IP and MAC the scanner saw. Register and device state come
-// alongside, as separate fields: evidence never stands in for the register.
-type findingDTO struct {
-	ID             string    `db:"id" json:"id"`
-	IP             string    `db:"ip" json:"ip"`
-	MAC            *string   `db:"mac" json:"mac"`
-	Hostname       string    `db:"hostname" json:"hostname"`
-	Vendor         string    `db:"vendor" json:"vendor"`
-	Online         bool      `db:"online" json:"online"`
-	Source         string    `db:"source" json:"source"`
-	IsStatic       bool      `db:"is_static" json:"isStatic"`
-	IsPrivateMAC   bool      `db:"is_private_mac" json:"isPrivateMac"`
-	IsGateway      bool      `db:"is_gateway" json:"isGateway"`
-	FirstSeen      time.Time `db:"first_seen" json:"firstSeen"`
-	LastSeen       time.Time `db:"last_seen" json:"lastSeen"`
-	SegmentID      *string   `db:"segment_id" json:"segmentId"`
-	SegmentName    *string   `db:"segment_name" json:"segmentName"`
-	SegmentKind    *string   `db:"segment_kind" json:"segmentKind"`
-	RegisterID     *string   `db:"register_id" json:"registerId"`
-	RegisterStatus *string   `db:"register_status" json:"registerStatus"`
-	AssignedName   *string   `db:"assigned_name" json:"assignedName"`
-	DeviceID       *string   `db:"device_id" json:"deviceId"`
-	DeviceStatus   *string   `db:"device_status" json:"deviceStatus"`
-	DeviceName     *string   `db:"device_name" json:"deviceName"`
-	Owner          *string   `db:"owner" json:"owner"`
-	NICVendor      string    `db:"nic_vendor" json:"nicVendor"`
-	Maker          string    `db:"maker" json:"maker"`
-	Model          string    `db:"model" json:"model"`
-	DeviceKind     string    `db:"device_kind" json:"deviceKind"`
-	OSHint         string    `db:"os_hint" json:"osHint"`
-	OpenPorts      []int32   `db:"open_ports" json:"openPorts"`
-	Known          bool      `db:"known" json:"known"`
-	HomeIP         *string   `db:"home_ip" json:"homeIp"`
-	HomeSegment    *string   `db:"home_segment" json:"homeSegment"`
-	PortsChecked   bool      `db:"ports_checked" json:"portsChecked"`
-	Platform       string    `db:"platform" json:"platform"`
-	OpenAlerts     int64     `db:"open_alerts" json:"openAlerts"`
-	Rank           int64     `db:"rn" json:"-"`
-}
 
 const findingFrom = ` FROM sightings v
 	LEFT JOIN segments s ON s.id = v.segment_id
@@ -65,7 +24,10 @@ const findingColumns = `SELECT v.id::text AS id, host(v.ip) AS ip, v.mac::text A
 	COALESCE(NULLIF(i.owner, ''), NULLIF(d.owner, '')) AS owner,
 	v.nic_vendor, v.maker, v.model, v.device_kind, v.os_hint, v.open_ports, COALESCE(s.check_ports, false) AS ports_checked,
 	COALESCE(` + known + `, false) AS known,
-	COALESCE(NULLIF(i.platform, ''), d.platform, '') AS platform`
+	COALESCE(NULLIF(i.platform, ''), d.platform, '') AS platform,
+	v.intune_user, v.intune_user_name, v.intune_device, v.intune_seen_at, v.intune_serial, v.intune_maker, v.intune_model, v.intune_os,
+	v.intune_compliance, v.intune_encrypted, v.intune_last_sync, v.workgroup, v.windows_domain, v.windows_fqdn, v.os_version,
+	v.vpn_user, v.vpn_kind, v.vpn_tunnel, v.vpn_remote`
 
 // findingPage adds, to one page of rows that is already sorted and cut, the
 // device's own register entry elsewhere and the open alert count: looked up for
@@ -102,9 +64,11 @@ var kinds = map[string]string{
 // alerting, undecided, known and newWindow are shared with the summary counts.
 // Known: registered here; or an approved device on a DHCP pool address, which
 // is never registered as its address changes; or an approved device registered
-// at another address, such as a laptop that moved to another Wi-Fi network.
+// at another address, such as a laptop that moved to another Wi-Fi network; or
+// a VPN session the FortiGate signed a user in to.
 const (
-	known = "((i.id IS NOT NULL AND (v.mac IS NULL OR d.status = 'approved')) OR (i.id IS NULL AND d.status = 'approved' AND (" + dhcpClient + " OR EXISTS (" + homeWhere + "))))"
+	known = "((i.id IS NOT NULL AND (v.mac IS NULL OR d.status = 'approved')) OR (i.id IS NULL AND d.status = 'approved' AND (" + dhcpClient + " OR EXISTS (" + homeWhere + ")))" +
+		" OR (v.source = 'vpn' AND v.vpn_user <> ''))"
 	// dhcpClient is an address the DHCP server leases: in a DHCP segment, inside its pool.
 	dhcpClient = "(s.kind = 'dhcp' AND NOT v.is_static)"
 	// homeWhere finds the device's own register entry, by its MAC or its device.
@@ -144,7 +108,9 @@ func findingFilter(c *gin.Context) (db.Where, error) {
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		w.Add(`(host(v.ip) ILIKE ? ESCAPE '\' OR v.mac::text ILIKE ? ESCAPE '\' OR v.hostname ILIKE ? ESCAPE '\'
 			OR i.assigned_name ILIKE ? ESCAPE '\' OR d.name ILIKE ? ESCAPE '\' OR v.vendor ILIKE ? ESCAPE '\'
-			OR v.model ILIKE ? ESCAPE '\' OR v.maker ILIKE ? ESCAPE '\')`, db.Contains(q))
+			OR v.model ILIKE ? ESCAPE '\' OR v.maker ILIKE ? ESCAPE '\'
+			OR v.intune_user ILIKE ? ESCAPE '\' OR v.intune_user_name ILIKE ? ESCAPE '\' OR v.intune_serial ILIKE ? ESCAPE '\'
+			OR v.workgroup ILIKE ? ESCAPE '\' OR v.windows_domain ILIKE ? ESCAPE '\' OR v.vpn_user ILIKE ? ESCAPE '\')`, db.Contains(q))
 	}
 	return w, v.Err()
 }

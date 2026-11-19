@@ -73,7 +73,7 @@ const segmentActivity = `SELECT v.segment_id,
 // and forms need all of them, so this list is not paged.
 func (h *Handler) segments(c *gin.Context) {
 	var w db.Where
-	if kind := c.Query("kind"); kind == "dhcp" || kind == "server" || kind == "cloud" {
+	if kind := c.Query("kind"); kind == "dhcp" || kind == "server" || kind == "cloud" || kind == "vpn" {
 		w.Add("s.kind = ?", kind)
 	}
 	out, err := db.All[segmentDTO](c, h.conn, segmentSelect+w.SQL()+" ORDER BY s.kind, s.floor NULLS LAST, lower(s.name)", w.Args...)

@@ -14,6 +14,7 @@ import (
 
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/integrations/fortigate"
+	"dfipam/api/internal/integrations/intune"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/signin"
 	"dfipam/api/internal/platform/config"
@@ -74,6 +75,9 @@ func run() error {
 	}
 	firewall := fortigate.NewSyncer(pool, keys)
 	go firewall.Run(ctx)
+	// Intune is read with the same Entra app that signs people in.
+	directory := intune.NewSyncer(pool, intune.NewClient(cfg.EntraAuthority, cfg.EntraTenantID, cfg.EntraClientID, cfg.EntraClientSecret))
+	go directory.Run(ctx)
 
 	sessions := &auth.Sessions{Conn: pool}
 	var microsoft signin.Microsoft
@@ -87,7 +91,7 @@ func run() error {
 		slog.Warn("nobody can sign in: set ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET")
 	}
 	deps := server.Deps{Sessions: sessions, SignIn: signIn, Conn: pool, Ready: pool.Ping, Origins: cfg.AllowedOrigins,
-		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, SMTPConfigured: mailEnabled}
+		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, Intune: directory, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 
 	// API_LISTEN_ADDR may list several addresses, for host networking: loopback

@@ -28,6 +28,8 @@ type segment struct {
 type sighting struct {
 	ip, mac, hostname, source, vendor string
 	nicVendor, maker, model, kind, os string
+	workgroup                         string      // NetBIOS workgroup or Windows domain
+	windows                           windowsInfo // from the SMB handshake, when it answered
 	static, gateway, portsChecked     bool
 	full                              bool // identified in full this time
 	ports                             []int
@@ -35,7 +37,7 @@ type sighting struct {
 
 func (s *Scanner) loadSegments(ctx context.Context, only string) ([]segment, error) {
 	rows, err := s.conn.Query(ctx, `SELECT id::text, name, network::text, kind, COALESCE(host(dhcp_start), ''), COALESCE(host(dhcp_end), ''), COALESCE(host(gateway), ''), check_ports
-		FROM segments WHERE kind <> 'cloud' AND ($1 = '' OR id::text = $1) ORDER BY kind, floor NULLS LAST, name`, only)
+		FROM segments WHERE kind NOT IN ('cloud', 'vpn') AND ($1 = '' OR id::text = $1) ORDER BY kind, floor NULLS LAST, name`, only)
 	if err != nil {
 		return nil, err
 	}
@@ -58,9 +60,13 @@ func (s *Scanner) scanAll(ctx context.Context, req request) error {
 	if err != nil {
 		return err
 	}
-	if req.by != "manual" {
-		segments = s.automatic(ctx, segments)
+	if req.segmentID == "" {
+		segments = only(segments, req.kinds)
 	}
+	s.pace.reset(number(ctx, s.conn, "scan.rate_per_second", DefaultRate))
+	s.fullMu.Lock()
+	s.portGap = interval(ctx, s.conn, "scan.port_check_hours", DefaultPortEvery)
+	s.fullMu.Unlock()
 	run, end := s.begin(ctx, req.by)
 	defer end()
 	var scanErrors []error
@@ -104,19 +110,6 @@ func (s *Scanner) sweepOne(ctx, run context.Context, x segment, manual bool) []e
 	if err == nil && found > 0 {
 		if err := monitoring.New(s.conn).Evaluate(ctx); err != nil {
 			out = append(out, err)
-		}
-	}
-	return out
-}
-
-// automatic keeps the segments whose kind is scanned on schedule. Scan now
-// scans any segment, whatever these switches say.
-func (s *Scanner) automatic(ctx context.Context, all []segment) []segment {
-	on := map[string]bool{"dhcp": enabled(ctx, s.conn, "scan.auto_devices"), "server": enabled(ctx, s.conn, "scan.auto_servers")}
-	out := all[:0]
-	for _, x := range all {
-		if on[x.kind] {
-			out = append(out, x)
 		}
 	}
 	return out
@@ -167,9 +160,17 @@ func (s *Scanner) scanSegment(ctx context.Context, seg segment, manual bool) (in
 	defer tcpTicker.Stop()
 	var sendErrors atomic.Int64
 	var firstError atomic.Value
-	plan := probePlan{seg: seg, hostGateway: defaultGateway(), pinger: icmp, portSlots: make(chan struct{}, portSlots), tcpTick: tcpTicker.C,
-		due: func(ip string) bool { return s.dueFull(seg, ip, manual) }, done: func(ip string) { s.markFull(seg, ip) },
-		sendErrors: &sendErrors, firstError: &firstError}
+	if err := ctx.Err(); err != nil { // stopped before this segment started
+		return 0, err
+	}
+	known, err := s.knownAddresses(ctx, seg.id)
+	if err != nil {
+		return 0, err
+	}
+	plan := probePlan{seg: seg, hostGateway: defaultGateway(), pinger: icmp, pace: s.pace, portSlots: make(chan struct{}, portSlots), tcpTick: tcpTicker.C,
+		due: func(ip string) bool { return s.dueFull(seg, ip, manual) }, portsDue: func(ip string) bool { return s.portsDue(seg, ip) },
+		done: func(ip string, ports bool) { s.markFull(seg, ip, ports) }, sendErrors: &sendErrors, firstError: &firstError,
+		known: known, silentAll: s.silentDue(seg.id, manual)}
 	found := sweep(ctx, plan, hosts)
 	if err := ctx.Err(); err != nil {
 		return 0, err

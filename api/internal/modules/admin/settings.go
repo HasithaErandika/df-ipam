@@ -22,7 +22,10 @@ type numberSetting struct {
 
 // Settings people can change. Keys are fixed here, never taken from a request.
 var numbers = []numberSetting{
-	{"scan.interval_minutes", "scanIntervalMinutes", "Scan interval", 5, 1440},
+	{"scan.interval_minutes", "scanIntervalMinutes", "User network scan interval", 5, 1440},
+	{"scan.server_interval_minutes", "serverScanIntervalMinutes", "Server network scan interval", 5, 1440},
+	{"scan.rate_per_second", "scanRatePerSecond", "Scan speed", 5, 100},
+	{"scan.port_check_hours", "portCheckHours", "Port check interval", 6, 168},
 	{"server_check.interval_seconds", "serverCheckSeconds", "Server check interval", 60, 86400},
 	{"server_check.down_after_failures", "downAfterFailures", "Failed checks before Down", 1, 20},
 	{"server_check.slow_ms", "slowMs", "Slow server limit", 10, 5000},

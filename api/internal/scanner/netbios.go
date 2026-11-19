@@ -11,23 +11,29 @@ import (
 	"time"
 )
 
-func netbiosStatus(parent context.Context, ip netip.Addr) (mac, hostname string, err error) {
+// nbInfo is what a NetBIOS node status reply says: the card's MAC, the
+// computer name, and the workgroup or Windows domain it belongs to.
+type nbInfo struct{ mac, name, group string }
+
+func (n nbInfo) answered() bool { return n.mac != "" || n.name != "" }
+
+func netbiosStatus(parent context.Context, ip netip.Addr) (nbInfo, error) {
 	ctx, cancel := context.WithTimeout(parent, 650*time.Millisecond)
 	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "udp4", net.JoinHostPort(ip.String(), "137"))
 	if err != nil {
-		return "", "", err
+		return nbInfo{}, err
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(650 * time.Millisecond))
 	packet := netbiosQuery()
 	if _, err = conn.Write(packet); err != nil {
-		return "", "", err
+		return nbInfo{}, err
 	}
 	response := make([]byte, 1500)
 	n, err := conn.Read(response)
 	if err != nil {
-		return "", "", err
+		return nbInfo{}, err
 	}
 	return parseNetBIOS(response[:n])
 }
@@ -55,9 +61,9 @@ func netbiosQuery() []byte {
 	return packet
 }
 
-func parseNetBIOS(packet []byte) (string, string, error) {
+func parseNetBIOS(packet []byte) (nbInfo, error) {
 	if len(packet) < 12 || binary.BigEndian.Uint16(packet[6:8]) == 0 {
-		return "", "", fmt.Errorf("NetBIOS status response has no answer")
+		return nbInfo{}, fmt.Errorf("NetBIOS status response has no answer")
 	}
 	// A node status response (RFC 1002, section 4.2.18) has no question section:
 	// the answer follows the header. Skip a question only if one was echoed.
@@ -65,34 +71,36 @@ func parseNetBIOS(packet []byte) (string, string, error) {
 	var err error
 	for range int(binary.BigEndian.Uint16(packet[4:6])) {
 		if offset, err = skipDNSName(packet, offset); err != nil || offset+4 > len(packet) {
-			return "", "", fmt.Errorf("invalid NetBIOS question")
+			return nbInfo{}, fmt.Errorf("invalid NetBIOS question")
 		}
 		offset += 4
 	}
 	if offset, err = skipDNSName(packet, offset); err != nil || offset+10 > len(packet) {
-		return "", "", fmt.Errorf("invalid NetBIOS answer")
+		return nbInfo{}, fmt.Errorf("invalid NetBIOS answer")
 	}
 	rdataLen := int(binary.BigEndian.Uint16(packet[offset+8 : offset+10]))
 	offset += 10
 	if rdataLen < 1 || offset+rdataLen > len(packet) {
-		return "", "", fmt.Errorf("invalid NetBIOS data length")
+		return nbInfo{}, fmt.Errorf("invalid NetBIOS data length")
 	}
 	data := packet[offset : offset+rdataLen]
 	count := int(data[0])
 	if len(data) < 1+count*18+6 {
-		return "", "", fmt.Errorf("truncated NetBIOS status data")
+		return nbInfo{}, fmt.Errorf("truncated NetBIOS status data")
 	}
-	host := computerName(data[1:1+count*18], count)
+	table := data[1 : 1+count*18]
+	info := nbInfo{name: computerName(table, count), group: groupName(table, count)}
 	macStart := 1 + count*18
 	macBytes := data[macStart : macStart+6]
 	if macBytes[0]|macBytes[1]|macBytes[2]|macBytes[3]|macBytes[4]|macBytes[5] == 0 {
-		return "", host, nil
+		return info, nil
 	}
 	parts := make([]string, 6)
 	for i, b := range macBytes {
 		parts[i] = hex.EncodeToString([]byte{b})
 	}
-	return strings.Join(parts, ":"), host, nil
+	info.mac = strings.Join(parts, ":")
+	return info, nil
 }
 
 func skipDNSName(packet []byte, offset int) (int, error) {
@@ -136,4 +144,17 @@ func computerName(table []byte, count int) string {
 		}
 	}
 	return server
+}
+
+// groupName is the workgroup or Windows domain: the group name of type 0x00.
+// A company PC shows the company's domain; a stranger's laptop usually shows
+// WORKGROUP or a home name.
+func groupName(table []byte, count int) string {
+	for i := 0; i < count; i++ {
+		entry := table[i*18 : (i+1)*18]
+		if entry[15] == 0x00 && binary.BigEndian.Uint16(entry[16:18])&0x8000 != 0 {
+			return strings.TrimSpace(strings.TrimRight(string(entry[:15]), "\x00"))
+		}
+	}
+	return ""
 }

@@ -55,7 +55,7 @@ export function ScanStatusPanel() {
   const s = q.data
   return (
     <div className="space-y-4">
-      <Card title="Scanner" subtitle={s ? `${method[s.method] ?? s.method} · every ${s.intervalMinutes} minutes · read-only, nothing on the network is changed` : undefined}>
+      <Card title="Scanner" subtitle={s ? `${method[s.method] ?? s.method} · user networks every ${s.intervalMinutes} min, servers every ${s.serverIntervalMinutes} min · at most ${s.ratePerSecond} a second · read-only, nothing on the network is changed` : undefined}>
         <div className="px-4 py-3"><ScanSummary /></div>
       </Card>
       <Card title="Last result per segment" subtitle="Cloud segments are not swept from the building. Segments larger than 4,096 addresses are skipped; split them to scan.">

@@ -18,7 +18,8 @@ type monitoredIP struct {
 	port   sql.NullInt32
 }
 
-// checkAll checks every monitored address, 32 at a time, then records every
+// checkAll checks every monitored address, 32 at a time and paced with the
+// sweeps, then records every
 // result in one update and evaluates the alert rules.
 func (s *Scanner) checkAll(ctx context.Context) error {
 	targets, err := s.monitored(ctx)
@@ -53,7 +54,7 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 		}()
 	}
 	for i := range targets {
-		if ctx.Err() != nil {
+		if !s.pace.wait(ctx) { // shares the scan's rate, so checks and sweeps never add up to a burst
 			break
 		}
 		jobs <- i

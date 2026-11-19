@@ -21,7 +21,7 @@ Lists refresh on their own (Discovery every 30 seconds, most others every minute
 
 ## Reports
 
-On demand, as CSV, tab-separated text, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices, Static IPs on floors, Server availability, Alert history, Requests and reservations, and Audit log.
+On demand, as CSV, tab-separated text, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices (with domain or workgroup, and whether Intune knows them), Device users and management (user from Intune or VPN, domain, Windows version, serial, model, OS, compliance, encryption), VPN sessions (the latest session per tunnel address), Static IPs on floors, Server availability, Alert history, Requests and reservations, and Audit log.
 
 ## System settings
 
@@ -29,8 +29,11 @@ People who may manage the system change these in **System > Settings**:
 
 | Setting | Default | Range |
 | --- | --- | --- |
-| Scan interval | 10 minutes | 5 to 1,440 minutes |
-| Server check interval | 1 hour | 1 minute to 1 day |
+| User network scan interval | 15 minutes | 5 to 1,440 minutes |
+| Server network scan interval | 10 minutes | 5 to 1,440 minutes |
+| Scan speed | 30 addresses a second | 5 to 100 |
+| Port check interval | 24 hours | 6 to 168 hours |
+| Server check interval | 5 minutes | 1 minute to 1 day |
 | Failed checks before Down | 3 | 1 to 20 |
 | Slow server limit | 200 ms | 10 to 5,000 ms |
 | Scan device segments automatically | On | On or off |

@@ -56,7 +56,7 @@ func (h *Handler) importSegments(c *gin.Context) {
 	if in.Kind == "" {
 		in.Kind = "server"
 	}
-	v.OneOf("kind", in.Kind, []string{"dhcp", "server", "cloud"}, "segment type")
+	v.OneOf("kind", in.Kind, []string{"dhcp", "server", "cloud", "vpn"}, "segment type")
 	if strings.TrimSpace(in.Text) == "" {
 		v.Add("text", "Paste the text, or choose a .txt file.")
 	}

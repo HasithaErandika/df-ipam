@@ -177,7 +177,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
         )}
         <FormSection title="Monitoring">
           <Switch id="reg-monitor" checked={monitor} onChange={(v) => { setValue('monitor', v); if (!v) setValue('critical', false) }}
-            label="Monitor this address" hint="Checked on the server check schedule (hourly by default) by ping, or the TCP port below when ping is blocked." />
+            label="Monitor this address" hint="Checked on the server check schedule (every 5 minutes by default) by ping, or the TCP port below when ping is blocked." />
           <Switch id="reg-critical" checked={watch('critical')} disabled={!monitor} onChange={(v) => setValue('critical', v)}
             label="Critical" hint="Down or a MAC change raises a Critical alert, whatever the environment." />
           {errors.critical && <p role="alert" className="text-[13px] text-danger">{errors.critical.message}</p>}

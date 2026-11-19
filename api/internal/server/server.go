@@ -8,6 +8,7 @@ import (
 
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/integrations/fortigate"
+	"dfipam/api/internal/integrations/intune"
 	"dfipam/api/internal/modules/account"
 	"dfipam/api/internal/modules/admin"
 	"dfipam/api/internal/modules/alerts"
@@ -48,6 +49,8 @@ type Deps struct {
 	Scanner discovery.Scanner
 	// FortiGate reads the firewall when an Admin connects one. Nil in tests.
 	FortiGate *fortigate.Syncer
+	// Intune names each device's user when an Admin switches it on. Nil in tests.
+	Intune *intune.Syncer
 	// SMTPConfigured says whether api/.env has a mail server, shown in Settings.
 	SMTPConfigured bool
 	// Sessions resolves sign-in cookies, the only way in. Nil refuses every request.
@@ -100,5 +103,6 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	auditlog.New(d.Conn).Register(guard)
 	reports.New(d.Conn).Register(guard)
 	integrations.New(d.Conn, d.FortiGate).Register(guard)
+	integrations.NewIntune(d.Conn, d.Intune).Register(guard)
 	return r, guard
 }

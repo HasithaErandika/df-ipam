@@ -17,7 +17,7 @@ func TestDueFull(t *testing.T) {
 	if !s.dueFull(seg, "10.0.0.5", false) {
 		t.Fatal("a host is due until its identification finishes")
 	}
-	s.markFull(seg, "10.0.0.5")
+	s.markFull(seg, "10.0.0.5", false)
 	if s.dueFull(seg, "10.0.0.5", false) {
 		t.Fatal("a host identified moments ago must not be again on a scheduled scan")
 	}
@@ -29,7 +29,7 @@ func TestDueFull(t *testing.T) {
 		t.Fatal("after manualFullEvery only a manual scan identifies the host again")
 	}
 	seg.checkPorts = true
-	s.markFull(seg, "10.0.0.6")
+	s.markFull(seg, "10.0.0.6", true)
 	if s.dueFull(seg, "10.0.0.6", false) {
 		t.Fatal("ports follow the same schedule once checked")
 	}
@@ -37,7 +37,7 @@ func TestDueFull(t *testing.T) {
 	if !s.dueFull(seg, "10.0.0.7", false) {
 		t.Fatal("a segment that starts checking ports gets them on its next scan")
 	}
-	s.lastFull["a|10.0.0.8"] = fullMark{at: time.Now().Add(-fullEvery - time.Minute), ports: true}
+	s.lastFull["a|10.0.0.8"] = fullMark{at: time.Now().Add(-fullEvery - time.Minute), portsAt: time.Now()}
 	if !s.dueFull(seg, "10.0.0.8", false) {
 		t.Fatal("a host is identified in full again after fullEvery")
 	}

@@ -1,4 +1,4 @@
-import { AlertTriangle, Cloud, Server, Wifi, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, Cloud, Server, ShieldCheck, Wifi, type LucideIcon } from 'lucide-react'
 import { Link } from 'react-router'
 import { Card, EmptyState, ErrorState, SkeletonRows } from '../../components/ui'
 import { formatCount } from '../../lib/format'
@@ -10,6 +10,7 @@ const kinds: { kind: Segment['kind']; title: string; icon: LucideIcon; tint: str
   { kind: 'dhcp', title: 'DHCP networks', icon: Wifi, tint: 'bg-accent-soft text-accent' },
   { kind: 'server', title: 'Server networks', icon: Server, tint: 'bg-ok-soft text-ok' },
   { kind: 'cloud', title: 'Cloud networks', icon: Cloud, tint: 'bg-surface-2 text-ink-2' },
+  { kind: 'vpn', title: 'VPN client pools', icon: ShieldCheck, tint: 'bg-surface-2 text-ink-2' },
 ]
 
 function Tile({ kind, title, icon: Icon, tint, rows }: (typeof kinds)[number] & { rows: Segment[] }) {
@@ -47,8 +48,8 @@ export function NetworksCard() {
         ? <EmptyState title="No networks yet" body="Add DHCP, server and cloud networks in Network setup, or import them from your firewall's interface list." />
         : (
           <div className="space-y-4 p-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              {kinds.map((k) => <Tile key={k.kind} {...k} rows={all.filter((s) => s.kind === k.kind)} />)}
+            <div className={`grid gap-3 ${all.some((s) => s.kind === 'vpn') ? 'sm:grid-cols-2 xl:grid-cols-4' : 'sm:grid-cols-3'}`}>
+              {kinds.filter((k) => k.kind !== 'vpn' || all.some((s) => s.kind === 'vpn')).map((k) => <Tile key={k.kind} {...k} rows={all.filter((s) => s.kind === k.kind)} />)}
             </div>
             <div>
               <h3 className="mb-1.5 text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase">Most active now</h3>

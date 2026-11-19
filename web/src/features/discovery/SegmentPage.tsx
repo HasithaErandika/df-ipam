@@ -15,6 +15,7 @@ import { ScanButton } from '../shared/ScanButton'
 import { GatewayHint } from './GatewayHint'
 import { SegmentAddresses } from './SegmentAddresses'
 import { AvailableList, type FreeRange, NetworkFacts, type NetworkInfo } from './SegmentFacts'
+import { notSwept } from '../network/segmentList'
 
 interface AddressMapData { usable: number; mapped: boolean; first?: string; counts: Record<string, number>; runs: Run[]; network: NetworkInfo; available: FreeRange[] }
 
@@ -47,7 +48,7 @@ export function SegmentPage() {
         description={[label(segmentKinds, segment.kind), segmentCaption(segment), segment.gateway ? `gateway ${segment.gateway}` : null, segment.dhcpStart ? `DHCP ${segment.dhcpStart} – ${segment.dhcpEnd}` : null].filter(Boolean).join(' · ')}
         actions={<>
           {segment.environmentName && <EnvironmentBadge name={segment.environmentName} />}
-          {segment.kind !== 'cloud' && <ScanButton segmentId={id} label="Scan this segment" />}
+          {!notSwept(segment.kind) && <ScanButton segmentId={id} label="Scan this segment" />}
           {canEdit && <Button variant="primary" onClick={() => setPrefill({ segmentId: id })}><Plus size={14} aria-hidden />Add to register</Button>}
         </>} />
 

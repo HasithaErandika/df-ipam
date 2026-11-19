@@ -5,13 +5,17 @@ import { fieldIssues, get, put } from '../../lib/api'
 import { useInvalidate } from '../../lib/queries'
 import type { SystemSettings } from '../../lib/types'
 import { AutomationSwitches } from './AutomationSwitches'
+import { ScanLoad } from './ScanLoad'
 
 interface NumberField { key: string; label: string; unit: string; min: number; max: number; hint: string }
 
 const scanning: NumberField[] = [
-  { key: 'scanIntervalMinutes', label: 'Discover devices every', unit: 'minutes', min: 5, max: 1440, hint: 'Sweep of every DHCP and server network. 10 minutes is a gentle default; 5 is the least, so scans never run back to back.' },
-  { key: 'serverCheckSeconds', label: 'Check monitored servers every', unit: 'seconds', min: 60, max: 86400, hint: '3600 is once an hour. Shorter intervals find outages sooner.' },
-  { key: 'downAfterFailures', label: 'Mark a server Down after', unit: 'failed checks', min: 1, max: 20, hint: 'In a row. With hourly checks, 3 means about 3 hours; 1 reports an outage on the first failed check.' },
+  { key: 'scanIntervalMinutes', label: 'Scan user networks every', unit: 'minutes', min: 5, max: 1440, hint: 'Floors and Wi-Fi. 15 minutes finds a new device within a quarter of an hour without loading the network.' },
+  { key: 'serverScanIntervalMinutes', label: 'Scan server networks every', unit: 'minutes', min: 5, max: 1440, hint: 'Finds unregistered addresses on server networks. 10 minutes by default.' },
+  { key: 'scanRatePerSecond', label: 'Scan speed', unit: 'addresses a second', min: 5, max: 100, hint: 'Shared by all scans and server checks, spread evenly. 30 is gentle for about 1,000 users and 250 servers; it halves itself if pings start failing.' },
+  { key: 'portCheckHours', label: 'Check open ports every', unit: 'hours', min: 6, max: 168, hint: 'Only on segments with port checks on, at most 20 connections a second.' },
+  { key: 'serverCheckSeconds', label: 'Check monitored servers every', unit: 'seconds', min: 60, max: 86400, hint: '300 is every 5 minutes. Shorter intervals find outages sooner.' },
+  { key: 'downAfterFailures', label: 'Mark a server Down after', unit: 'failed checks', min: 1, max: 20, hint: 'In a row. With 5-minute checks, 3 means about 15 minutes; 1 reports an outage on the first failed check.' },
   { key: 'slowMs', label: 'Alert when a server answers slower than', unit: 'ms', min: 10, max: 5000, hint: 'The faster of two pings, or the check port when ping is blocked. Servers on the same network usually answer in a few ms.' },
 ]
 const other: NumberField[] = [
@@ -74,7 +78,8 @@ export function SystemTab() {
       </Card>
       <AutomationSwitches settings={s} onSaved={() => void refresh()} />
       <Card title="Discovery and checks" subtitle={`Method: ${s.scanMethod === 'ping' ? 'ping sweep with reverse DNS and NetBIOS (option C)' : s.scanMethod}. Read-only: nothing on the network is changed.`}>
-        <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">{scanning.map(row)}</div>
+        <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">{scanning.map(row)}</div>
+        <ScanLoad rate={Number(values.scanRatePerSecond)} userMinutes={Number(values.scanIntervalMinutes)} serverMinutes={Number(values.serverScanIntervalMinutes)} />
       </Card>
       <Card title="Reservations and sessions">
         <div className="grid gap-4 p-4 md:grid-cols-2">{other.map(row)}</div>

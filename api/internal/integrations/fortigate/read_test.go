@@ -54,7 +54,7 @@ func TestReadAll(t *testing.T) {
 	var lease, vpn bool
 	for _, e := range entries {
 		lease = lease || (e.Source == "dhcp" && e.Hostname == "LAPTOP-7" && e.Vendor == "MSFT 5.0")
-		vpn = vpn || (e.Source == "vpn" && e.IP == "10.10.10.5" && strings.Contains(e.Hostname, "kamal"))
+		vpn = vpn || (e.Source == "vpn" && e.IP == "10.10.10.5" && e.User == "kamal" && e.VPNKind == "ipsec" && e.Tunnel == "dialup_0" && e.Remote == "198.51.100.4")
 	}
 	if !lease || !vpn {
 		t.Fatalf("missing lease or IPsec client: %+v", entries)

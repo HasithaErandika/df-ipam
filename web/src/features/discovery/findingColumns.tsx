@@ -7,12 +7,19 @@ import { label, sources } from '../../lib/labels'
 import type { Finding } from '../../lib/types'
 import { deviceLine, iconEvidence, networkCard, serviceName } from './deviceInfo'
 import { OwnerName } from '../shared/OwnerName'
+import { deviceDomain, windowsName } from './windowsInfo'
 
 /** A MAC nobody has approved yet. Private MACs aren't devices to decide on. */
 export const isUnknown = (r: { mac: string | null; isPrivateMac?: boolean | null; deviceStatus: string | null }) =>
   Boolean(r.mac) && !r.isPrivateMac && r.deviceStatus !== 'approved'
 
-type RegisterFacts = { registerId: string | null; isGateway: boolean; isStatic: boolean | null; segmentKind?: string | null; inPool?: boolean; deviceStatus: string | null; homeIp?: string | null }
+type RegisterFacts = { registerId: string | null; isGateway: boolean; isStatic: boolean | null; segmentKind?: string | null; inPool?: boolean; deviceStatus: string | null; homeIp?: string | null; source?: string | null }
+
+/** A VPN client: its address comes from the FortiGate's VPN pool and changes each session, so it is never registered. */
+export const isVpnClient = (r: Pick<RegisterFacts, 'source' | 'segmentKind'>) => r.source === 'vpn' || r.segmentKind === 'vpn'
+
+/** The VPN kind in words: "SSL VPN", or "IPsec" with its tunnel. */
+export const vpnLabel = (r: { vpnKind: string; vpnTunnel: string }) => (r.vpnKind === 'ssl' ? 'SSL VPN' : r.vpnKind === 'ipsec' ? `IPsec${r.vpnTunnel ? ` (${r.vpnTunnel})` : ''}` : 'VPN')
 
 /**
  * An address the DHCP server leases: in a DHCP segment's pool. These are never
@@ -27,7 +34,7 @@ export const isDhcpClient = (r: Pick<RegisterFacts, 'isStatic' | 'segmentKind' |
  * an unknown device there is flagged as unknown, and approved, not registered.
  */
 export function needsRegister(r: RegisterFacts): boolean {
-  if (r.registerId || r.isGateway || r.homeIp) return false
+  if (r.registerId || r.isGateway || r.homeIp || isVpnClient(r)) return false
   return !isDhcpClient(r)
 }
 
@@ -58,6 +65,7 @@ export function RegisterCell({ r }: { r: Finding }) {
     return <Stack main={<StateBadge tone="accent" title={`Registered at ${r.homeIp} on ${r.homeSegment}`}>Registered elsewhere</StateBadge>}
       sub={<span>at <span className="font-mono">{r.homeIp}</span> · {r.homeSegment}</span>} />
   }
+  if (!r.registerId && isVpnClient(r)) return <StateBadge tone="neutral" title="VPN addresses change with each session, so they are not registered.">VPN: not registered</StateBadge>
   if (!r.registerId && isDhcpClient(r)) return <DhcpNotRegistered />
   return <Stack main={<RegisterBadge status={r.registerStatus} attention={needsRegister(r)} />} sub={r.assignedName ?? undefined} />
 }
@@ -83,12 +91,14 @@ function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void })
     <WithPlatform evidence={iconEvidence(r)}>
       <div className="flex items-center gap-2 truncate text-ink">
         <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
-          <OwnerName owner={r.owner} name={r.deviceName || r.assignedName || r.hostname} fallback={r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>} />
+          <OwnerName owner={r.owner} name={r.deviceName || r.assignedName || r.hostname} fallback={r.isGateway ? 'Router' : r.source === 'vpn' ? `${vpnLabel(r)} client` : <span className="text-ink-3">No name found</span>} />
         </button>
         {r.isGateway && <GatewayBadge />}
       </div>
       {(r.deviceName || r.assignedName) && r.hostname && r.hostname !== (r.deviceName || r.assignedName) && <div className="truncate text-[11.5px] text-ink-3" title="Hostname the device reported">{r.hostname}</div>}
+      <UserLine r={r} />
       {line && <div className="truncate text-[12px] text-ink-2" title="What the device says about itself">{line}</div>}
+      {(deviceDomain(r) || r.osVersion) && <div className="truncate text-[11.5px] text-ink-3" title="Domain or workgroup, and Windows version, as the device reports them">{[deviceDomain(r) && `Domain: ${deviceDomain(r)}`, r.osVersion && windowsName(r.osVersion)].filter(Boolean).join(' · ')}</div>}
       <div className="flex items-center gap-2 truncate text-[11.5px] text-ink-3">
         <span className="font-mono">{r.mac ?? 'MAC not visible'}</span>{r.isPrivateMac && <PrivateMacBadge />}
         {card && <span className="truncate" title="Maker of the network card, from the MAC. Often not the device's maker.">· card: {card}</span>}
@@ -98,11 +108,22 @@ function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void })
   )
 }
 
+/** Who uses the device: Intune's primary user, or the user signed in to the VPN session. */
+function UserLine({ r }: { r: Finding }) {
+  if (r.intuneUser) {
+    return <div className="truncate text-[12px] text-ink-2" title={`Intune primary user of ${r.intuneDevice || 'this device'}`}>User: <span className="text-ink">{r.intuneUserName || r.intuneUser}</span>{r.intuneUserName && <span className="text-ink-3"> · {r.intuneUser}</span>}</div>
+  }
+  if (r.vpnUser) {
+    return <div className="truncate text-[12px] text-ink-2" title="User the FortiGate signed in to this VPN session">User: <span className="text-ink">{r.vpnUser}</span> <span className="text-ink-3">({vpnLabel(r)}{r.vpnRemote ? ` from ${r.vpnRemote}` : ''})</span></div>
+  }
+  return null
+}
+
 /** The one decision this row most needs, shown as a button instead of hidden in the menu. */
 function mainAction(r: Finding, canEdit: boolean): 'approve' | 'register' | null {
   if (!canEdit) return null
   if (r.deviceId && r.deviceStatus === 'pending') return 'approve'
-  if (!r.registerId && !isRoaming(r) && !isDhcpClient(r) && r.segmentId && r.deviceStatus !== 'rejected' && !r.isGateway) return 'register'
+  if (!r.registerId && !isRoaming(r) && !isDhcpClient(r) && !isVpnClient(r) && r.segmentId && r.deviceStatus !== 'rejected' && !r.isGateway) return 'register'
   return null
 }
 
@@ -119,7 +140,7 @@ export function findingColumns({ canEdit, onOpen, onRegister, onApprove, onRejec
     { key: 'register', header: 'Register', cell: (r) => <RegisterCell r={r} /> },
     { key: 'approval', header: 'Approval', hideBelow: 'lg', cell: (r) => (r.deviceId || (r.mac && !r.isPrivateMac) ? <DeviceBadge status={r.deviceStatus} /> : none) },
     { key: 'presence', header: 'Presence', cell: (r) => <Presence online={r.online} firstSeen={r.firstSeen} lastSeen={r.lastSeen} /> },
-    { key: 'source', header: 'Source', hideBelow: 'xl', cell: (r) => <Stack main={label(sources, r.source)} sub={r.segmentKind === 'dhcp' ? (r.isStatic ? 'Static (outside pool)' : 'DHCP pool') : undefined} /> },
+    { key: 'source', header: 'Source', hideBelow: 'xl', cell: (r) => <Stack main={label(sources, r.source)} sub={r.source === 'vpn' ? vpnLabel(r) : r.segmentKind === 'dhcp' ? (r.isStatic ? 'Static (outside pool)' : 'DHCP pool') : undefined} /> },
     { key: 'alerts', header: '', className: 'w-8', cell: (r) => (r.openAlerts > 0
       ? <Link to={`/alerts?q=${encodeURIComponent(r.ip)}`} title={`${r.openAlerts} open alert${r.openAlerts > 1 ? 's' : ''}`} className="text-warn"><AlertTriangle size={15} aria-label="Open alerts" /></Link>
       : isKnown(r) ? <span title="Registered and approved: no warnings" className="text-ok"><ShieldCheck size={15} aria-label="Known device, no warnings" /></span> : null) },
@@ -129,7 +150,7 @@ export function findingColumns({ canEdit, onOpen, onRegister, onApprove, onRejec
       {mainAction(r, canEdit) === 'register' && <Button className="h-7 px-2 text-[12px]" onClick={() => onRegister(r)}><PlusCircle size={13} aria-hidden />Register</Button>}
       <RowMenu actions={[
         { label: 'Details', icon: <Info size={14} aria-hidden />, onSelect: () => onOpen(r) },
-        { label: 'Add to register', icon: <PlusCircle size={14} aria-hidden />, onSelect: () => onRegister(r), hidden: !canEdit || Boolean(r.registerId) || !r.segmentId || isDhcpClient(r) },
+        { label: 'Add to register', icon: <PlusCircle size={14} aria-hidden />, onSelect: () => onRegister(r), hidden: !canEdit || Boolean(r.registerId) || !r.segmentId || isDhcpClient(r) || isVpnClient(r) },
         { label: 'Approve device', icon: <CheckCircle2 size={14} aria-hidden />, onSelect: () => onApprove(r), hidden: !canEdit || !r.deviceId || r.deviceStatus === 'approved' },
         { label: 'Reject device', icon: <XCircle size={14} aria-hidden />, onSelect: () => onReject(r), danger: true, hidden: !canEdit || !r.deviceId || r.deviceStatus !== 'pending' },
       ]} />

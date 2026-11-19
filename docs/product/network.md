@@ -11,6 +11,7 @@ A segment is one network: name, type, floor, VLAN, CIDR, gateway and description
 | `dhcp` (a floor or Wi-Fi) | A DHCP pool, and optionally a floor number. An address outside the pool is static | Swept |
 | `server` | A default environment for new entries | Swept |
 | `cloud` | A default environment | Never swept |
+| `vpn` (a VPN client pool) | Nothing more: the addresses the FortiGate gives SSL and IPsec VPN users | Never swept. The FortiGate's VPN sessions show who is connected; addresses are never registered, as they change each session |
 
 Per segment, off by default:
 

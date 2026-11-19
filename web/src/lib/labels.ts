@@ -34,7 +34,7 @@ export const alertTypes: Record<string, string> = {
 
 export const alertStatuses: Record<string, string> = { open: 'Open', acknowledged: 'Acknowledged', closed: 'Closed' }
 
-export const segmentKinds: Record<string, string> = { dhcp: 'DHCP network', server: 'Server', cloud: 'Cloud' }
+export const segmentKinds: Record<string, string> = { dhcp: 'DHCP network', server: 'Server', cloud: 'Cloud', vpn: 'VPN' }
 
 export const sources: Record<string, string> = { arp: 'ARP', ping: 'Ping', netbios: 'NetBIOS', snmp: 'SNMP', dns: 'DNS', dhcp: 'DHCP lease', vpn: 'VPN' }
 

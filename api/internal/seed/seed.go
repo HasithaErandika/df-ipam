@@ -26,9 +26,12 @@ var Environments = []Environment{
 
 // Settings are starting values for an Admin to review.
 var Settings = []struct{ Key, Value string }{
-	{"scan.interval_minutes", "10"},
+	{"scan.interval_minutes", "15"},        // user networks (floors, Wi-Fi)
+	{"scan.server_interval_minutes", "10"}, // server networks
+	{"scan.rate_per_second", "30"},         // probes a second, shared by sweeps and server checks
+	{"scan.port_check_hours", "24"},        // where a segment checks ports
 	{"scan.method", `"ping"`},
-	{"server_check.interval_seconds", "3600"},
+	{"server_check.interval_seconds", "300"},
 	{"server_check.down_after_failures", "3"},
 	{"server_check.slow_ms", "200"},
 	{"scan.auto_devices", "true"},    // scheduled scans of floor (DHCP) segments; Scan now works either way
@@ -40,6 +43,8 @@ var Settings = []struct{ Key, Value string }{
 	{"fortigate.enabled", "false"}, // optional, read-only; set up in Settings > Integrations
 	{"fortigate.verify_tls", "true"},
 	{"fortigate.interval_minutes", "10"},
+	{"intune.enabled", "false"}, // optional, read-only; set up in System > Microsoft Intune
+	{"intune.interval_minutes", "60"},
 }
 
 // Default is a setting's starting value, as JSON, or "" when the seed has none.

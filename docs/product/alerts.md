@@ -6,7 +6,7 @@ After every scan, server check and FortiGate read, and after every change to dev
 
 ## Rules
 
-"Recent" means seen within two scan intervals (at least 10 minutes).
+"Recent" means seen within two of the longer scan interval, user or server networks (at least 10 minutes; 30 with the defaults).
 
 | Alert | When | Severity |
 | --- | --- | --- |

@@ -25,7 +25,7 @@ type segmentInput struct {
 func (in *segmentInput) validate() error {
 	var v validate.V
 	v.Text("name", &in.Name, 80, true, "Name")
-	v.OneOf("kind", in.Kind, []string{"dhcp", "server", "cloud"}, "segment type")
+	v.OneOf("kind", in.Kind, []string{"dhcp", "server", "cloud", "vpn"}, "segment type")
 	v.IntRange("floor", in.Floor, -5, 200, "Floor")
 	v.IntRange("vlan", in.VLAN, 1, 4094, "VLAN")
 	v.Text("description", &in.Description, 500, false, "Description")
@@ -51,10 +51,10 @@ func (in *segmentInput) validate() error {
 	}
 	hostAddresses(&v, p, gw, start, end)
 	v.UUID("defaultEnvironmentId", in.EnvironmentID, false, "an environment")
-	if in.Kind == "dhcp" {
-		in.EnvironmentID = ""
+	if in.Kind == "dhcp" || in.Kind == "vpn" {
+		in.EnvironmentID = "" // environments belong to server and cloud networks
 	}
-	if in.Kind == "cloud" {
+	if in.Kind == "cloud" || in.Kind == "vpn" {
 		in.CheckPorts = false // never swept from the building
 	}
 	return v.Err()

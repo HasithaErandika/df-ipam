@@ -4,25 +4,21 @@ import (
 	"context"
 	"net/netip"
 	"sync"
-	"time"
 )
 
-// sweep probes every host, at most 100 a second with 32 workers.
+// sweep probes every host with 32 workers, each probe waiting its turn on
+// plan.pace: a steady rate shared with the server checks, never a burst.
 func sweep(ctx context.Context, plan probePlan, hosts []netip.Addr) []sighting {
 	results := make(chan sighting, 64)
 	jobs := make(chan netip.Addr)
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
 	var workers sync.WaitGroup
 	for range 32 {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			for ip := range jobs {
-				select {
-				case <-ctx.Done():
+				if !plan.pace.wait(ctx) {
 					return
-				case <-ticker.C:
 				}
 				if found, ok := identify(ctx, plan, ip); ok {
 					results <- found

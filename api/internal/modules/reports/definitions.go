@@ -15,7 +15,7 @@ type Report struct {
 
 // $1 from, $2 to (exclusive end, as dates), $3 environment ID or ”.
 var catalogue = []Report{
-	{Key: "segment-usage", Title: "Segment usage", Description: "Per DHCP, server and cloud network: registered, reserved, seen in use and DHCP pool use.",
+	{Key: "segment-usage", Title: "Segment usage", Description: "Per DHCP, server, cloud and VPN network: registered, reserved, seen in use and DHCP pool use.",
 		Columns: []string{"Segment", "Type", "Network", "VLAN", "Assigned", "Reserved", "Blocked", "Held by reservations", "Seen (24h)", "Pool size", "Pool in use"},
 		sql: `SELECT s.name, s.kind, s.network::text, COALESCE(s.vlan::text, ''),
 			(SELECT count(*) FROM ip_addresses i WHERE i.segment_id = s.id AND i.status = 'assigned')::text,
@@ -40,12 +40,31 @@ var catalogue = []Report{
 			FROM ip_addresses i JOIN segments s ON s.id = i.segment_id LEFT JOIN environments e ON e.id = i.environment_id
 			WHERE ($3::text = '' OR e.id::text = $3::text) AND $1::date IS NOT NULL AND $2::date IS NOT NULL ORDER BY i.ip`},
 	{Key: "unknown-devices", Title: "Unknown and pending devices", Description: "Devices seen but not approved, with first and last seen.",
-		Columns: []string{"MAC", "Status", "Name", "Last IP", "Segment", "Hostname", "First seen", "Last seen"},
+		Columns: []string{"MAC", "Status", "Name", "Last IP", "Segment", "Hostname", "Domain or workgroup", "In Intune", "First seen", "Last seen"},
 		sql: `SELECT d.mac::text, d.status, d.name, COALESCE(host(v.ip), ''), COALESCE(s.name, ''), COALESCE(v.hostname, ''),
+			COALESCE(NULLIF(v.windows_domain, ''), v.workgroup, ''), CASE WHEN v.intune_seen_at IS NULL THEN 'No' ELSE 'Yes' END,
 			COALESCE(to_char(d.first_seen, 'YYYY-MM-DD HH24:MI'), ''), COALESCE(to_char(d.last_seen, 'YYYY-MM-DD HH24:MI'), '')
-			FROM devices d LEFT JOIN LATERAL (SELECT ip, segment_id, hostname FROM sightings WHERE mac = d.mac ORDER BY last_seen DESC LIMIT 1) v ON true
+			FROM devices d LEFT JOIN LATERAL (SELECT ip, segment_id, hostname, windows_domain, workgroup, intune_seen_at FROM sightings
+				WHERE mac = d.mac ORDER BY last_seen DESC LIMIT 1) v ON true
 			LEFT JOIN segments s ON s.id = v.segment_id
 			WHERE d.status <> 'approved' AND $1::date IS NOT NULL AND $2::date IS NOT NULL AND $3::text IS NOT NULL ORDER BY d.last_seen DESC NULLS LAST`},
+	{Key: "device-users", Title: "Device users and management", Description: "Devices seen in the last 30 days with their user (Intune or VPN), domain, Windows version and Intune record.",
+		Columns: []string{"IP", "Segment", "Name", "MAC", "User", "User from", "Domain or workgroup", "Windows version", "Serial", "Maker and model",
+			"Operating system", "Compliance", "Encrypted", "Last Intune check-in", "Last seen"},
+		sql: `SELECT host(v.ip), COALESCE(s.name, ''), v.hostname, COALESCE(v.mac::text, ''), COALESCE(NULLIF(v.intune_user, ''), v.vpn_user),
+			CASE WHEN v.intune_user <> '' THEN 'Intune' WHEN v.vpn_user <> '' THEN 'VPN' ELSE '' END,
+			COALESCE(NULLIF(v.windows_domain, ''), v.workgroup), v.os_version, v.intune_serial, trim(v.intune_maker || ' ' || v.intune_model), v.intune_os,
+			v.intune_compliance, CASE v.intune_encrypted WHEN true THEN 'Yes' WHEN false THEN 'No' ELSE '' END,
+			COALESCE(to_char(v.intune_last_sync, 'YYYY-MM-DD HH24:MI'), ''), to_char(v.last_seen, 'YYYY-MM-DD HH24:MI')
+			FROM sightings v LEFT JOIN segments s ON s.id = v.segment_id
+			WHERE v.last_seen > now() - interval '30 days' AND $1::date IS NOT NULL AND $2::date IS NOT NULL AND $3::text IS NOT NULL
+			ORDER BY v.ip, v.last_seen DESC`},
+	{Key: "vpn-sessions", Title: "VPN sessions", Description: "The latest VPN session on each tunnel address seen in the date range: user, VPN kind and where they connected from. Earlier sessions on the same address are replaced.", Dated: true,
+		Columns: []string{"User", "Tunnel IP", "VPN", "Connected from", "Segment", "First seen", "Last seen"},
+		sql: `SELECT v.vpn_user, host(v.ip), CASE v.vpn_kind WHEN 'ssl' THEN 'SSL VPN' WHEN 'ipsec' THEN 'IPsec ' || v.vpn_tunnel ELSE '' END, v.vpn_remote,
+			COALESCE(s.name, ''), to_char(v.first_seen, 'YYYY-MM-DD HH24:MI'), to_char(v.last_seen, 'YYYY-MM-DD HH24:MI')
+			FROM sightings v LEFT JOIN segments s ON s.id = v.segment_id
+			WHERE v.source = 'vpn' AND v.last_seen >= $1::date AND v.last_seen < $2::date + 1 AND $3::text IS NOT NULL ORDER BY v.last_seen DESC`},
 	{Key: "static-on-floors", Title: "Static IPs in DHCP networks", Description: "Addresses in use outside the DHCP pool in DHCP networks (floors and Wi-Fi), registered or not.",
 		Columns: []string{"IP", "Segment", "MAC", "Hostname", "Registered", "Assigned to", "First seen", "Last seen"},
 		sql: `SELECT DISTINCT ON (v.ip) host(v.ip), s.name, COALESCE(v.mac::text, ''), v.hostname, CASE WHEN i.id IS NULL THEN 'No' ELSE 'Yes' END,

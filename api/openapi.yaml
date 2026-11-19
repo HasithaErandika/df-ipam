@@ -444,3 +444,17 @@ paths:
       summary: "Read ARP, DHCP leases and VPN sessions now. Spaced a minute apart"
       description: "Permission: system:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /integrations/intune:
+    get:
+      summary: "The optional Microsoft Intune connection: settings, whether the Entra app is set up, and how the last read went"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    put:
+      summary: "Switch the scheduled Intune read on or off and set its interval (15 to 1440 minutes)"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /integrations/intune/sync:
+    post:
+      summary: "Read Intune's managed devices now and name each discovered device's primary user. Spaced a minute apart"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }

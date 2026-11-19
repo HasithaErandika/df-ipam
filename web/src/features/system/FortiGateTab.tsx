@@ -86,7 +86,7 @@ export function FortiGateTab() {
           <ul className="list-disc space-y-1.5 py-3 pr-4 pl-8 text-[12.5px] text-ink-2">
             <li><strong className="text-ink">ARP table:</strong> IP and MAC of every device the firewall has talked to, so MACs appear even across routed floors.</li>
             <li><strong className="text-ink">DHCP leases:</strong> hostname, MAC and the DHCP vendor class (for example “MSFT 5.0”), which hints at the OS.</li>
-            <li><strong className="text-ink">VPN sessions:</strong> SSL and IPsec users with their tunnel IP.</li>
+            <li><strong className="text-ink">VPN sessions:</strong> SSL and IPsec users with their tunnel IP and where they connected from. Add the VPN client pool as a VPN segment in Network setup to group them.</li>
             <li>Only GET requests are sent. Nothing on the firewall is changed, and no traffic is inspected.</li>
             <li>Create a REST API admin with a read-only profile, and limit its trusted hosts to the DF-IPAM server.</li>
           </ul>

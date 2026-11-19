@@ -2,17 +2,19 @@ import { Card } from '../../components/ui'
 
 interface Method { name: string; finds: string; traffic: string; who: string; when: string }
 
-// Kept in step with api/internal/scanner and api/internal/integrations/fortigate.
+// Kept in step with api/internal/scanner, api/internal/integrations/fortigate and api/internal/integrations/intune.
 const methods: Method[] = [
-  { name: 'Ping (ICMP echo)', finds: 'Which addresses are in use', traffic: 'ICMP echo request and reply', who: 'Every address in each floor and server segment, at most 100 a second', when: 'Every scan' },
+  { name: 'Ping (ICMP echo)', finds: 'Which addresses are in use', traffic: 'ICMP echo request and reply', who: 'Every address in each floor and server segment, at most 30 a second by default, shared with server checks', when: 'Every scan' },
   { name: 'ARP table', finds: 'MAC address of each host that answered', traffic: 'None extra: read from the server’s own neighbour table after the ping', who: 'Hosts on networks the server is directly attached to', when: 'Every scan' },
   { name: 'Reverse DNS', finds: 'Registered hostname', traffic: 'DNS PTR query, UDP and TCP 53, to the server’s DNS resolver', who: 'Each host that answered', when: 'Every scan' },
-  { name: 'NetBIOS name', finds: 'Windows computer name and MAC', traffic: 'UDP 137, one status query', who: 'Each host that answered', when: 'Every scan' },
+  { name: 'NetBIOS name', finds: 'Windows computer name, MAC, and workgroup or domain', traffic: 'UDP 137, one status query', who: 'Each host that answered', when: 'Every scan' },
   { name: 'mDNS name', finds: 'Name of Apple devices, many phones, printers and Linux machines', traffic: 'UDP 5353, one unicast query (no multicast)', who: 'Each host that answered, if it has no name yet', when: 'Every scan' },
   { name: 'SSDP / UPnP description', finds: 'Friendly name, maker, model and type of TVs, media players, printers and routers', traffic: 'UDP 1900 unicast search, then HTTP GET of the description on the same host', who: 'Each host that answered', when: 'Every scan' },
+  { name: 'Windows details (SMB)', finds: 'Windows version and build, full DNS name and domain', traffic: 'TCP 445: SMB2 negotiate and an NTLM sign-in request with no credentials, closed at the challenge. Nobody signs in', who: 'Hosts that answered NetBIOS or have port 445 open', when: 'Every 6 hours per host' },
   { name: 'MAC vendor', finds: 'The maker of the network card', traffic: 'None: looked up in a built-in copy of the IEEE register', who: 'Hosts with a real (not randomised) MAC', when: 'Every scan' },
   { name: 'Server check', finds: 'Up or Down', traffic: 'ICMP echo, then a TCP connect to the configured port (no data sent)', who: 'Register entries marked Monitor', when: 'Server check interval' },
-  { name: 'FortiGate (optional)', finds: 'ARP table, DHCP leases with hostname and vendor class, VPN users', traffic: 'HTTPS GET to the firewall’s REST API with a read-only token', who: 'The firewall only', when: 'Its own interval, when switched on' },
+  { name: 'FortiGate (optional)', finds: 'ARP table, DHCP leases with hostname and vendor class, VPN sessions with their user, VPN kind and origin', traffic: 'HTTPS GET to the firewall’s REST API with a read-only token', who: 'The firewall only', when: 'Its own interval, when switched on' },
+  { name: 'Microsoft Intune (optional)', finds: 'Primary user, serial, maker and model, OS, compliance, disk encryption', traffic: 'HTTPS GET to Microsoft Graph with the sign-in app’s own token. Nothing is sent to the devices', who: 'Microsoft Graph only', when: 'Its own interval, when switched on' },
 ]
 
 /**

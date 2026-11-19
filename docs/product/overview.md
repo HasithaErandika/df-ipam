@@ -34,7 +34,7 @@ One building, IPv4 only, one routing table. No agents on PCs: the DF-IPAM server
 | Register | The official list of addresses and what each is for |
 | Device | A known MAC address, approved, pending or rejected |
 | Available candidate | An address that looks unused: never called "free", because evidence can be wrong |
-| Seen recently | Answered within two scan intervals, at least 10 minutes (`seen_window()` in the database) |
+| Seen recently | Answered within two of the longer scan interval (user or server networks), at least 10 minutes (`seen_window()` in the database) |
 
 ## Data model
 

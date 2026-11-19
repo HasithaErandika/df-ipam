@@ -48,19 +48,37 @@ type statusDTO struct {
 	// Which kinds of segment the scheduled scan covers (Settings > System).
 	AutoDevices bool `json:"autoScanDevices"`
 	AutoServers bool `json:"autoScanServers"`
+	// How much scanning costs: the server-network interval, the probe rate,
+	// and how many addresses one round of each kind covers.
+	ServerIntervalMinutes int   `json:"serverIntervalMinutes"`
+	RatePerSecond         int   `json:"ratePerSecond"`
+	UserAddresses         int64 `json:"userAddresses"`
+	ServerAddresses       int64 `json:"serverAddresses"`
 }
+
+// sweptSizes counts the addresses a round sweeps, per kind: usable addresses
+// of each segment small enough to sweep (/20 or smaller).
+const sweptSizes = `SELECT
+	COALESCE(sum(n) FILTER (WHERE kind = 'dhcp'), 0)::bigint, COALESCE(sum(n) FILTER (WHERE kind = 'server'), 0)::bigint
+	FROM (SELECT kind, CASE WHEN masklen(network) >= 31 THEN 2 ^ (32 - masklen(network)) ELSE 2 ^ (32 - masklen(network)) - 2 END AS n
+		FROM segments WHERE kind IN ('dhcp', 'server') AND masklen(network) >= 20) x`
 
 func (h *Handler) status(c *gin.Context) {
 	if h.scan == nil {
 		httpx.Fail(c, errUnavailable)
 		return
 	}
-	out := statusDTO{Status: h.scan.Snapshot(), Method: "ping", IntervalMinutes: int(scanner.DefaultScanInterval.Minutes()), AutoDevices: true, AutoServers: true}
+	out := statusDTO{Status: h.scan.Snapshot(), Method: "ping", IntervalMinutes: int(scanner.DefaultScanInterval.Minutes()), AutoDevices: true, AutoServers: true,
+		ServerIntervalMinutes: int(scanner.DefaultServerScanInterval.Minutes()), RatePerSecond: scanner.DefaultRate}
 	_ = h.conn.QueryRow(c, `SELECT COALESCE((SELECT value #>> '{}' FROM settings WHERE key = 'scan.method'), 'ping'),
 		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.interval_minutes'), $1),
 		COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'scan.auto_devices'), true),
-		COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'scan.auto_servers'), true)`,
-		out.IntervalMinutes).Scan(&out.Method, &out.IntervalMinutes, &out.AutoDevices, &out.AutoServers)
+		COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'scan.auto_servers'), true),
+		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.server_interval_minutes'), $2),
+		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'scan.rate_per_second'), $3)`,
+		out.IntervalMinutes, out.ServerIntervalMinutes, out.RatePerSecond).Scan(&out.Method, &out.IntervalMinutes, &out.AutoDevices, &out.AutoServers,
+		&out.ServerIntervalMinutes, &out.RatePerSecond)
+	_ = h.conn.QueryRow(c, sweptSizes).Scan(&out.UserAddresses, &out.ServerAddresses)
 	// With both kinds off the scheduled scan does nothing, so there is no next scan to show.
 	if !out.AutoDevices && !out.AutoServers {
 		out.NextScanAt = nil

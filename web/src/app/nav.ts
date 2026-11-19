@@ -51,7 +51,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/network-setup', label: 'Network setup', icon: Network, anyOf: ['network:manage'], summary: 'Segments, environments and departments.' },
       { to: '/access', label: 'Users and roles', icon: UsersRound, anyOf: ['users:manage'], summary: 'Who may sign in, and what each role may do.' },
-      { to: '/system', label: 'System', icon: SlidersHorizontal, anyOf: ['system:manage'], summary: 'Intervals, email, sessions and the FortiGate connection.' },
+      { to: '/system', label: 'System', icon: SlidersHorizontal, anyOf: ['system:manage'], summary: 'Intervals, email, sessions, FortiGate and Intune.' },
     ],
   },
 ]

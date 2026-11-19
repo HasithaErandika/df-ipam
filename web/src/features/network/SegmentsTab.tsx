@@ -14,10 +14,10 @@ import { ipv4NetworkInfo } from '../../lib/validation'
 import { ScanButton } from '../shared/ScanButton'
 import { SegmentForm } from './SegmentForm'
 import { SegmentImport } from './SegmentImport'
-import { attention, kindOrder, kindTitle, matches, sorts } from './segmentList'
+import { attention, kindOrder, kindTitle, matches, notSwept, sorts } from './segmentList'
 
 const chips = [
-  { key: '', label: 'All' }, { key: 'dhcp', label: 'DHCP' }, { key: 'server', label: 'Server' }, { key: 'cloud', label: 'Cloud' }, { key: 'attention', label: 'Needs attention' },
+  { key: '', label: 'All' }, { key: 'dhcp', label: 'DHCP' }, { key: 'server', label: 'Server' }, { key: 'cloud', label: 'Cloud' }, { key: 'vpn', label: 'VPN' }, { key: 'attention', label: 'Needs attention' },
 ]
 
 function SegmentCard({ s, onEdit, onDelete }: { s: Segment; onEdit: () => void; onDelete: () => void }) {
@@ -55,9 +55,9 @@ function SegmentCard({ s, onEdit, onDelete }: { s: Segment; onEdit: () => void; 
       </div>
       {issue && <p className="mt-2 truncate text-[11.5px] text-warn" title={issue}>{issue}</p>}
       <div className="mt-auto flex items-center justify-between gap-2 pt-3 text-[12px]">
-        <span className="truncate text-ink-3">{s.kind === 'cloud' ? 'Not swept from the building' : 'Ready to scan'}</span>
+        <span className="truncate text-ink-3">{s.kind === 'vpn' ? 'Shown from FortiGate VPN sessions' : s.kind === 'cloud' ? 'Not swept from the building' : 'Ready to scan'}</span>
         <div className="flex shrink-0 items-center gap-1.5">
-          {s.kind !== 'cloud' && <ScanButton segmentId={s.id} label="Scan" />}
+          {!notSwept(s.kind) && <ScanButton segmentId={s.id} label="Scan" />}
           <Link to={`/segments/${s.id}`} className="inline-flex h-8 items-center gap-1 rounded-[5px] px-2 font-medium text-accent hover:bg-accent-soft">Open<ArrowRight size={13} aria-hidden /></Link>
         </div>
       </div>

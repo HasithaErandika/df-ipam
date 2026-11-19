@@ -31,8 +31,14 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 	nics, makers, models, kinds, systems := make([]string, n), make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	static, private, gateway, ports := make([]bool, n), make([]bool, n), make([]bool, n), make([]string, n)
 	full := make([]bool, n)
+	groups, wdomains, fqdns, builds := make([]string, n), make([]string, n), make([]string, n), make([]string, n)
 	for i, v := range values {
 		full[i] = v.full
+		groups[i], fqdns[i], builds[i] = v.workgroup, v.windows.fqdn, v.windows.build
+		wdomains[i] = v.windows.dnsDomain
+		if wdomains[i] == "" {
+			wdomains[i] = v.windows.domain
+		}
 		ips[i], macs[i], names[i], sources[i], static[i] = v.ip, strings.ToLower(v.mac), v.hostname, v.source, v.static
 		private[i], gateway[i], vendors[i] = isPrivateMAC(macs[i]), v.gateway, v.vendor
 		nics[i], makers[i], models[i], kinds[i], systems[i] = v.nicVendor, v.maker, v.model, v.kind, v.os
@@ -40,11 +46,12 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 	}
 	// A later scan that can't find a detail keeps the one found before.
 	_, err := s.conn.Exec(ctx, `INSERT INTO sightings(segment_id,ip,mac,hostname,source,is_static,is_private_mac,is_gateway,vendor,
-			nic_vendor,maker,model,device_kind,os_hint,open_ports,identified_at,first_seen,last_seen)
+			nic_vendor,maker,model,device_kind,os_hint,open_ports,identified_at,first_seen,last_seen,workgroup,windows_domain,windows_fqdn,os_version)
 		SELECT $1::uuid,ip::inet,NULLIF(mac,'')::macaddr,name,source,static,private,gw,vendor,nic,maker,model,kind,os,COALESCE(NULLIF(ports,'')::integer[],'{}'),
-			CASE WHEN identified THEN now() END,now(),now()
+			CASE WHEN identified THEN now() END,now(),now(),grp,wdomain,fqdn,build
 		FROM unnest($2::text[],$3::text[],$4::text[],$5::text[],$6::boolean[],$7::boolean[],$8::boolean[],$9::text[],
-			$10::text[],$11::text[],$12::text[],$13::text[],$14::text[],$15::text[],$16::boolean[]) AS v(ip,mac,name,source,static,private,gw,vendor,nic,maker,model,kind,os,ports,identified)
+			$10::text[],$11::text[],$12::text[],$13::text[],$14::text[],$15::text[],$16::boolean[],$17::text[],$18::text[],$19::text[],$20::text[])
+			AS v(ip,mac,name,source,static,private,gw,vendor,nic,maker,model,kind,os,ports,identified,grp,wdomain,fqdn,build)
 		ON CONFLICT (ip,mac) DO UPDATE SET segment_id=EXCLUDED.segment_id,
 			hostname=COALESCE(NULLIF(EXCLUDED.hostname,''),sightings.hostname),
 			vendor=COALESCE(NULLIF(EXCLUDED.vendor,''),sightings.vendor),
@@ -54,14 +61,18 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 			device_kind=COALESCE(NULLIF(EXCLUDED.device_kind,''),sightings.device_kind),
 			os_hint=COALESCE(NULLIF(EXCLUDED.os_hint,''),sightings.os_hint),
 			identified_at=COALESCE(EXCLUDED.identified_at,sightings.identified_at),
+			workgroup=COALESCE(NULLIF(EXCLUDED.workgroup,''),sightings.workgroup),
+			windows_domain=COALESCE(NULLIF(EXCLUDED.windows_domain,''),sightings.windows_domain),
+			windows_fqdn=COALESCE(NULLIF(EXCLUDED.windows_fqdn,''),sightings.windows_fqdn),
+			os_version=COALESCE(NULLIF(EXCLUDED.os_version,''),sightings.os_version),
 			source=EXCLUDED.source,is_static=EXCLUDED.is_static,is_private_mac=EXCLUDED.is_private_mac,is_gateway=EXCLUDED.is_gateway,last_seen=now()`,
-		segmentID, ips, macs, names, sources, static, private, gateway, vendors, nics, makers, models, kinds, systems, ports, full)
+		segmentID, ips, macs, names, sources, static, private, gateway, vendors, nics, makers, models, kinds, systems, ports, full, groups, wdomains, fqdns, builds)
 	if err != nil {
 		return err
 	}
 	// Ports are replaced only where they were checked this time; otherwise the
 	// last full identification's result stands.
-	if _, err := s.conn.Exec(ctx, `UPDATE sightings o SET open_ports = v.ports::integer[]
+	if _, err := s.conn.Exec(ctx, `UPDATE sightings o SET open_ports = v.ports::integer[], ports_checked_at = now()
 		FROM unnest($1::text[], $2::text[], $3::text[]) AS v(ip, mac, ports)
 		WHERE v.ports <> '' AND o.ip = v.ip::inet AND o.mac IS NOT DISTINCT FROM NULLIF(v.mac, '')::macaddr`, ips, macs, ports); err != nil {
 		return err

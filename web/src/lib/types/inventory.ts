@@ -1,6 +1,6 @@
 /** Shapes the API returns. They mirror the Go DTOs in api/internal/modules. */
 
-export type SegmentKind = 'dhcp' | 'server' | 'cloud'
+export type SegmentKind = 'dhcp' | 'server' | 'cloud' | 'vpn'
 export type RegisterStatus = 'assigned' | 'reserved' | 'blocked'
 export type Health = 'up' | 'down' | 'unknown'
 export type DeviceStatus = 'pending' | 'approved' | 'rejected'
@@ -174,6 +174,28 @@ export interface Finding {
   homeSegment: string | null
   platform: string
   openAlerts: number
+  /** The device's primary user from Microsoft Intune, matched by MAC or computer name. Empty when Intune doesn't know the device. */
+  intuneUser: string
+  intuneUserName: string
+  intuneDevice: string
+  intuneSeenAt: string | null
+  intuneSerial: string
+  intuneMaker: string
+  intuneModel: string
+  intuneOs: string
+  intuneCompliance: string
+  intuneEncrypted: boolean | null
+  intuneLastSync: string | null
+  /** NetBIOS workgroup or Windows domain, and from the SMB handshake the DNS domain, full name and version ("10.0.22631"). */
+  workgroup: string
+  windowsDomain: string
+  windowsFqdn: string
+  osVersion: string
+  /** A VPN client: the user the FortiGate signed in, 'ssl' or 'ipsec', the IPsec tunnel, and the public address it came from. */
+  vpnUser: string
+  vpnKind: string
+  vpnTunnel: string
+  vpnRemote: string
 }
 
 export interface SegmentAddress {
@@ -229,6 +251,12 @@ export interface ScanStatus {
   intervalMinutes: number
   autoScanDevices: boolean
   autoScanServers: boolean
+  serverIntervalMinutes: number
+  /** Probes a second, shared by sweeps and server checks. */
+  ratePerSecond: number
+  /** Addresses one round sweeps on user (DHCP) and server networks. */
+  userAddresses: number
+  serverAddresses: number
   segments: { id: string; name: string; found: number; error?: string; durationMs: number; scannedAt: string }[]
 }
 
