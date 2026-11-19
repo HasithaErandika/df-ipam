@@ -148,6 +148,8 @@ func deviceKind(urn string) string {
 		return "Router"
 	case strings.Contains(urn, "DigitalSecurityCamera"):
 		return "Camera"
+	case strings.Contains(urn, "WLANAccessPoint"), strings.Contains(urn, "WFADevice"):
+		return "Wi-Fi access point"
 	}
 	return ""
 }

@@ -27,7 +27,10 @@ const byHostname: [RegExp, string][] = [
 ]
 
 /** Device kinds read from UPnP descriptions, and makers read from the MAC or UPnP. Guesses only, never saved. */
-export const kinds: Record<string, string> = { tv: 'TV or media player', printer: 'Printer', router: 'Router', camera: 'Camera', media: 'Media server', network: 'Network device' }
+export const kinds: Record<string, string> = {
+  tv: 'TV or media player', printer: 'Printer', router: 'Router', camera: 'Camera', media: 'Media server', network: 'Network device',
+  accesspoint: 'Wi-Fi access point',
+}
 
 export const makers: Record<string, string> = {
   apple: 'Apple', samsung: 'Samsung', lg: 'LG', sony: 'Sony', xiaomi: 'Xiaomi', huawei: 'Huawei', dell: 'Dell', lenovo: 'Lenovo',
@@ -39,8 +42,33 @@ export const makers: Record<string, string> = {
 
 const byKind: [RegExp, string][] = [
   [/TV or media player|\bTV\b|smart ?tv|bravia|webos|tizen|android ?tv/i, 'tv'], [/printer|laserjet|officejet|deskjet|ecotank|imageclass/i, 'printer'],
-  [/\brouter\b|gateway device/i, 'router'], [/camera|nvr|dvr/i, 'camera'], [/media server/i, 'media'],
+  [/\brouter\b|gateway device/i, 'router'], [/access point/i, 'accesspoint'], [/camera|nvr|dvr/i, 'camera'], [/media server/i, 'media'],
 ]
+
+/**
+ * Network card makers that build whole devices, not cards for others' PCs, so
+ * the card's maker is the device's: camera makers, and network gear makers.
+ * HUAWEI TECHNOLOGIES is the enterprise side (access points, switches); Huawei's
+ * phones register as "Huawei Device", and hide their MAC on Wi-Fi anyway. Plain
+ * Hewlett Packard also makes PCs and printers, so it names only the maker, and
+ * comes after the evidence that finds those.
+ */
+const byCard: [RegExp, string, string][] = [
+  [/hikvision|dahua|uniview|axis communications|hanwha|vivotek/i, 'camera', 'Camera'],
+  [/^huawei technologies|huawei symantec/i, 'huawei', 'Network device'],
+  [/aruba|hewlett packard enterprise|h3c|ruckus|juniper/i, 'network', 'Network device'],
+  [/^cisco/i, 'cisco', 'Network device'], [/ubiquiti/i, 'ubiquiti', 'Network device'],
+  [/mikrotik|routerboard/i, 'mikrotik', 'Network device'], [/fortinet/i, 'fortinet', 'Network device'],
+  [/^hewlett packard$|^hp inc/i, 'hp', ''],
+]
+
+/** What a network card's maker says about the whole device: an icon code, and a kind when it builds only one kind. */
+export function cardDevice(card: string | null | undefined): { code: string; kind: string; maker: string } | null {
+  const hit = card ? byCard.find(([re]) => re.test(card)) : undefined
+  if (!hit) return null
+  // A brand the app knows reads as its own name (Huawei, HP); otherwise the register's name for the maker.
+  return { code: hit[1], kind: hit[2], maker: makers[hit[1]] ?? platforms[hit[1]] ?? card! }
+}
 
 const byMaker: [RegExp, string][] = [
   [/^apple/i, 'apple'], [/samsung/i, 'samsung'], [/^lg /i, 'lg'], [/^sony/i, 'sony'], [/xiaomi|redmi/i, 'xiaomi'], [/huawei|honor device/i, 'huawei'],
@@ -109,6 +137,8 @@ export interface IconEvidence {
   openPorts?: number[]
   osHint?: string | null
   maker?: string | null
+  /** The network card's maker, from the MAC. Used only for makers that build whole devices (see cardDevice). */
+  card?: string | null
 }
 
 /** An icon and why it was chosen. A guess shows faded, with its reason. */
@@ -127,22 +157,32 @@ const first = (table: [RegExp, string][], value: string | null | undefined) => (
 export function deviceIcon(e: IconEvidence): IconChoice | null {
   if (e.recorded) return { code: e.recorded, guessed: false, reason: platformName(e.recorded) }
   if (e.gateway) return { code: 'router', guessed: false, reason: 'Gateway: the router for this network' }
+  const card = cardDevice(e.card)
   const steps: [string | undefined, string][] = [
     [first(byKind, e.kind), 'it says what it is'],
     [first(byModel, e.model), 'its model'],
     [first(byVendorClass, e.dhcpClass), 'its DHCP vendor class'],
     [first(byHostname, e.hostname), 'its name'],
     [portsIcon(e.openPorts), 'its open ports'],
+    [card?.code === 'camera' ? 'camera' : undefined, 'its network card: a camera maker'],
     [ttlIcon(e.osHint), 'its ping reply'],
     [first(byMaker, e.maker) ?? makerFromName(e.hostname) ?? undefined, 'its maker'],
+    [card?.code, 'its network card: this maker builds whole devices'],
   ]
   for (const [code, from] of steps) if (code) return { code, guessed: true, reason: `Likely ${platformName(code)}, from ${from}` }
   return null
 }
 
+/** Ports that name a kind of device (api/internal/scanner/ports.go). Windows services win over the rest, which a PC might also open. */
+export const devicePorts = { printer: [9100, 515, 631], windows: [3389, 135, 5985], camera: [554, 8000, 37777], tv: [8008, 8009], ios: [62078] }
+
 function portsIcon(ports: number[] = []): string | undefined {
-  if (ports.some((p) => [9100, 515, 631].includes(p))) return 'printer'
-  if (ports.some((p) => [3389, 135, 5985].includes(p))) return 'windows'
+  const has = (list: number[]) => ports.some((p) => list.includes(p))
+  if (has(devicePorts.printer)) return 'printer'
+  if (has(devicePorts.windows)) return 'windows'
+  if (has(devicePorts.ios)) return 'ios'
+  if (has(devicePorts.camera)) return 'camera'
+  if (has(devicePorts.tv)) return 'tv'
   return undefined
 }
 

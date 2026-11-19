@@ -1,4 +1,4 @@
-import { makerFromName, makers, type IconEvidence } from '../../lib/platforms'
+import { cardDevice, devicePorts, makerFromName, makers, type IconEvidence } from '../../lib/platforms'
 
 /** What the scanner knows about a device: from a finding, a device or a register entry. */
 export interface Evidence {
@@ -11,18 +11,18 @@ export const portServices: Record<number, string> = {
   21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS', 80: 'HTTP', 110: 'POP3', 135: 'Windows RPC', 139: 'NetBIOS', 143: 'IMAP',
   443: 'HTTPS', 445: 'File sharing (SMB)', 515: 'Printer (LPD)', 631: 'Printer (IPP)', 1433: 'SQL Server', 1521: 'Oracle', 3306: 'MySQL',
   3389: 'Remote Desktop', 5432: 'PostgreSQL', 5900: 'VNC', 5985: 'WinRM', 6379: 'Redis', 8080: 'HTTP (alt)', 8443: 'HTTPS (alt)',
-  9100: 'Printer (raw)', 27017: 'MongoDB',
+  9100: 'Printer (raw)', 27017: 'MongoDB', 554: 'Camera video (RTSP)', 8000: 'Camera (Hikvision)', 8008: 'Google Cast',
+  8009: 'Google Cast', 37777: 'Camera (Dahua)', 62078: 'Apple device sync (iPhone, iPad)',
 }
 
 export const serviceName = (port: number) => portServices[port] ?? `Port ${port}`
 
-/** What open ports say: Windows-only services, or printing. */
+/** What open ports say: the system (Windows services, Apple's sync port) and the kind of device (printer, camera, TV). */
 function fromPorts(ports: number[] = []): { system: string; kind: string } {
-  const has = (...p: number[]) => p.some((x) => ports.includes(x))
-  return {
-    system: has(3389, 135, 5985) ? 'Windows (Windows services open)' : '',
-    kind: has(9100, 515, 631) ? 'Printer' : '',
-  }
+  const has = (list: number[]) => list.some((x) => ports.includes(x))
+  const system = has(devicePorts.windows) ? 'Windows (Windows services open)' : has(devicePorts.ios) ? 'iOS / iPadOS (Apple sync port open)' : ''
+  const kind = has(devicePorts.printer) ? 'Printer' : has(devicePorts.camera) ? 'Camera' : has(devicePorts.tv) ? 'TV or media player (Google Cast)' : ''
+  return { system, kind }
 }
 
 /**
@@ -39,12 +39,13 @@ export function networkCard(r: Evidence): string {
 export function deviceFacts(r: Evidence): { maker: string; makerFrom: string; model: string; kind: string; system: string; dhcpClass: string } {
   const named = makerFromName(r.hostname)
   const ports = fromPorts(r.openPorts)
-  const maker = r.maker || (named ? makers[named] : '')
+  const card = cardDevice(r.nicVendor)
+  const maker = r.maker || (named ? makers[named] : '') || card?.maker || ''
   return {
     maker,
-    makerFrom: r.maker ? 'It said so itself (UPnP)' : named ? 'From its name' : '',
+    makerFrom: r.maker ? 'It said so itself (UPnP)' : named ? 'From its name' : card ? 'From its network card: this maker builds whole devices' : '',
     model: r.model,
-    kind: r.deviceKind || ports.kind,
+    kind: r.deviceKind || ports.kind || card?.kind || '',
     system: ports.system || r.osHint,
     dhcpClass: r.source === 'dhcp' ? r.vendor : '',
   }
@@ -64,6 +65,6 @@ export function iconEvidence(r: Evidence & { platform?: string | null; isGateway
   return {
     recorded: r.platform || null, gateway: r.isGateway, kind: r.deviceKind, model: r.model,
     dhcpClass: r.source === 'dhcp' ? r.vendor : null, hostname: r.hostname || r.deviceName || r.name,
-    openPorts: r.openPorts, osHint: r.osHint, maker: r.maker,
+    openPorts: r.openPorts, osHint: r.osHint, maker: r.maker, card: r.nicVendor,
   }
 }

@@ -22,7 +22,7 @@ const brand: Record<string, SimpleIcon> = {
 
 const generic: Record<string, LucideIcon> = {
   chromeos: Laptop, other: Monitor, iis: Globe, mssql: Database, oracle: Database, dns: Network, dhcp: Network, mail: Mail,
-  file: Folder, active_directory: Shield, backup: HardDrive, tv: Tv, printer: Printer, router: Router, camera: Cctv, media: Tv, network: Network,
+  file: Folder, active_directory: Shield, backup: HardDrive, tv: Tv, printer: Printer, router: Router, camera: Cctv, media: Tv, network: Network, accesspoint: Wifi,
 }
 
 /** A fallback by device or IP type when nothing names the platform. */

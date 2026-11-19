@@ -18,6 +18,7 @@ import { DeviceDetails } from './DeviceDetails'
 import { ApproveDeviceModal, type DecisionTarget, useRejectDevice } from '../shared/DeviceDecision'
 import { ExportMenu, ImportButton } from '../shared/FileTransfer'
 import { DeviceFormModal } from './DeviceFormModal'
+import { OwnerName } from '../shared/OwnerName'
 
 const tabs = ['devices', 'approved', 'rejected', 'all']
 
@@ -37,7 +38,7 @@ export function DevicesPage() {
     { key: 'device', header: 'Device', cell: (d) => (
       <WithPlatform evidence={iconEvidence(d)} type={d.deviceType}>
         <button type="button" onClick={() => setOpen(d.id)} title="Show details" className="block max-w-full cursor-pointer truncate text-left font-medium text-ink hover:text-accent hover:underline">
-          {d.name || d.hostname || <span className="font-normal text-ink-3">Unnamed</span>}
+          <OwnerName owner={d.owner} name={d.name || d.hostname} fallback={<span className="font-normal text-ink-3">Unnamed</span>} />
         </button>
         {deviceLine(d) && <div className="truncate text-[12px] text-ink-2">{deviceLine(d)}</div>}
         <div className="truncate text-[11.5px] text-ink-3"><span className="font-mono">{d.mac}</span>{networkCard(d) && ` · card: ${networkCard(d)}`}{d.isPrivateMac && ' · private MAC'}</div>

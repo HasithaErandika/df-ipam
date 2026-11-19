@@ -8,10 +8,12 @@ import { useSegments } from '../../lib/queries'
 import { useCan } from '../../lib/session'
 import { useRouteTab } from '../../lib/tabs'
 import { options, sources } from '../../lib/labels'
-import { knownPlatform, likelyPlatform } from '../../lib/platforms'
+import { deviceIcon, knownPlatform, likelyPlatform } from '../../lib/platforms'
 import type { Finding } from '../../lib/types'
 import { ApproveDeviceModal, type DecisionTarget, useRejectDevice } from '../shared/DeviceDecision'
 import { RegisterIPModal, type RegisterPrefill } from '../shared/RegisterIPModal'
+import { ipTypeFromIcon } from '../shared/registerFromDevice'
+import { iconEvidence } from './deviceInfo'
 import { DiscoverySummary } from './DiscoverySummary'
 import { FindingDetails } from './FindingDetails'
 import { attentionRow, findingColumns } from './findingColumns'
@@ -60,7 +62,7 @@ function Findings() {
   const handlers = {
     canEdit,
     onOpen: (r: Finding) => setOpen(r.id),
-    onRegister: (r: Finding) => setPrefill({ segmentId: r.segmentId ?? undefined, ip: r.ip, mac: r.mac, name: r.hostname || r.deviceName, platform: knownPlatform(r.platform), platformGuess: likelyPlatform(r) }),
+    onRegister: (r: Finding) => setPrefill({ segmentId: r.segmentId ?? undefined, ip: r.ip, mac: r.mac, name: r.deviceName || r.hostname, platform: knownPlatform(r.platform), platformGuess: likelyPlatform(r), ipType: ipTypeFromIcon(deviceIcon(iconEvidence(r))?.code) }),
     onApprove: (r: Finding) => setApprove({ id: r.deviceId!, mac: r.mac!, name: r.deviceName, hostname: r.hostname, vendor: r.vendor, platform: r.platform, model: r.model, osHint: r.osHint, lastIp: r.ip, segmentId: r.segmentId, segmentName: r.segmentName, registered: Boolean(r.registerId) }),
     onReject: (r: Finding) => void reject({ id: r.deviceId!, mac: r.mac! }),
   }

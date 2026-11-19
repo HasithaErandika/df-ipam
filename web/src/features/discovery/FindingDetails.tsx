@@ -6,7 +6,7 @@ import { label, sources } from '../../lib/labels'
 import { likelyPlatform, platformName } from '../../lib/platforms'
 import type { Finding } from '../../lib/types'
 import { deviceFacts, networkCard, serviceName } from './deviceInfo'
-import { isKnown, isRoaming, Presence, RegisterCell } from './findingColumns'
+import { DhcpNotRegistered, isDhcpClient, isKnown, isRoaming, Presence, RegisterCell } from './findingColumns'
 
 const when = (t: string | null) => (t ? <span title={formatDateTime(t)}>{formatDateTime(t)} ({formatAgo(t)})</span> : null)
 
@@ -25,6 +25,7 @@ function Verdict({ r }: { r: Finding }) {
   }
   if (isKnown(r)) return <Notice tone="ok">Known: the address is in the register{r.mac ? ' and the device is approved' : ''}. Nothing to do.</Notice>
   if (r.deviceId && r.deviceStatus !== 'approved') return <Notice>Nobody has decided on this device yet. Approve or reject it.</Notice>
+  if (!r.registerId && isDhcpClient(r)) return <Notice>On a DHCP address, which changes, so it isn't registered. Nothing to do.</Notice>
   if (!r.registerId) return <Notice>Seen on the network, not in the register. Register it if it should keep this address.</Notice>
   return null
 }
@@ -49,7 +50,7 @@ export function FindingDetails({ row, canEdit, onClose, onRegister, onApprove, o
     <Modal open onClose={onClose} size="lg" title={`${r.ip} · ${name}`}
       subtitle={r.segmentId ? <Link className="hover:text-accent hover:underline" to={`/segments/${r.segmentId}`} onClick={onClose}>{r.segmentName}</Link> : 'No segment'}
       footer={<>
-        {canEdit && !r.registerId && r.segmentId && <Button onClick={act(onRegister)}>Add to register</Button>}
+        {canEdit && !r.registerId && r.segmentId && !isDhcpClient(r) && <Button onClick={act(onRegister)}>Add to register</Button>}
         {canEdit && r.deviceId && r.deviceStatus === 'pending' && <Button variant="danger" onClick={act(onReject)}>Reject device</Button>}
         {canEdit && r.deviceId && r.deviceStatus !== 'approved' && <Button variant="primary" onClick={act(onApprove)}>Approve device</Button>}
         <Button variant="ghost" onClick={onClose}>Close</Button>
@@ -88,7 +89,7 @@ export function FindingDetails({ row, canEdit, onClose, onRegister, onApprove, o
         <Section title="In DF-IPAM">
           <Details items={[
             ['Presence', <Presence key="p" online={r.online} firstSeen={r.firstSeen} lastSeen={r.lastSeen} />],
-            ['Register', isRoaming(r) ? <RegisterCell key="r" r={r} /> : <span key="r" className="flex items-center gap-2"><RegisterBadge status={r.registerStatus} />{r.assignedName}</span>],
+            ['Register', isRoaming(r) ? <RegisterCell key="r" r={r} /> : !r.registerId && isDhcpClient(r) ? <DhcpNotRegistered key="r" /> : <span key="r" className="flex items-center gap-2"><RegisterBadge status={r.registerStatus} />{r.assignedName}</span>],
             ['Device approval', r.deviceId || (r.mac && !r.isPrivateMac) ? <DeviceBadge status={r.deviceStatus} /> : 'Not tracked (private MAC on a segment that does not watch them)'],
             ['Owner', r.owner],
             ['Seen by', label(sources, r.source)],

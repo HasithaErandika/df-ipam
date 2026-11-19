@@ -4,7 +4,7 @@ import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { Button, Field, FormError, FormSection, Input, Modal, Select, Switch, Textarea, useConfirmSave } from '../../components/ui'
+import { Button, Field, FormError, FormSection, Input, Modal, Notice, Select, Switch, Textarea, useConfirmSave } from '../../components/ui'
 import { get, post, put, queryString } from '../../lib/api'
 import { applyServerErrors } from '../../lib/forms'
 import { ipTypes, options, registerStatuses } from '../../lib/labels'
@@ -14,12 +14,14 @@ import { choose, inNetwork, ipv4, optionalInt, optionalMAC, text, toInt } from '
 import { AddressCheck } from './AddressCheck'
 import { DepartmentSelect } from './DepartmentSelect'
 import { PlatformSelect, ServicePicker } from './PlatformFields'
+import { fillFromDevice, useApprovedDevice } from './registerFromDevice'
 
 const schema = z.object({
   segmentId: choose('a segment'),
   ip: ipv4,
   status: z.enum(['assigned', 'reserved', 'blocked']),
   ipType: z.string(),
+  deviceId: z.string(),
   environmentId: z.string(),
   assignedName: text('Assigned to', 120),
   platform: z.string(),
@@ -41,10 +43,12 @@ const fields = Object.keys(schema.shape) as (keyof Values)[]
 /** What to pre-fill when registering from something seen on the network. */
 export interface RegisterPrefill { segmentId?: string; ip?: string; mac?: string | null; name?: string | null; ipType?: string; platform?: string; platformGuess?: string | null }
 
+const fillable = ['deviceId', 'ipType', 'assignedName', 'platform', 'owner', 'department'] as const
+
 function initial(entry?: RegisterEntry, prefill?: RegisterPrefill): Values {
   return {
     segmentId: entry?.segmentId ?? prefill?.segmentId ?? '', ip: entry?.ip ?? prefill?.ip ?? '', status: entry?.status ?? 'assigned',
-    ipType: entry?.ipType ?? prefill?.ipType ?? 'other', environmentId: entry?.environmentId ?? '', assignedName: entry?.assignedName ?? prefill?.name ?? '',
+    ipType: entry?.ipType ?? prefill?.ipType ?? 'other', deviceId: entry?.deviceId ?? '', environmentId: entry?.environmentId ?? '', assignedName: entry?.assignedName ?? prefill?.name ?? '',
     platform: entry?.platform ?? prefill?.platform ?? '', services: entry?.services ?? [],
     expectedMac: entry?.expectedMac ?? prefill?.mac ?? '', owner: entry?.owner ?? '', department: entry?.department ?? '',
     monitor: entry?.monitor ?? false, critical: entry?.critical ?? false, checkPort: entry?.checkPort ? String(entry.checkPort) : '', notes: entry?.notes ?? '',
@@ -68,6 +72,14 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
   const { register, handleSubmit, watch, setValue, reset, setError, formState: { errors } } = form
   useEffect(() => { if (open) { reset(initial(entry, prefill)); setFormError(null) } }, [open, entry, prefill, reset])
 
+  // A new entry for an approved device's address starts from what people recorded about the device.
+  const device = useApprovedDevice(prefill?.mac, open && !entry)
+  useEffect(() => {
+    if (!open || entry || !device.data) return
+    const changes = fillFromDevice(device.data, form.getValues(), (f) => form.getFieldState(f).isDirty)
+    for (const f of fillable) if (changes[f] !== undefined) setValue(f, changes[f]!)
+  }, [open, entry, device.data, form, setValue])
+
   const segmentId = watch('segmentId')
   const segment = segments.data?.find((s) => s.id === segmentId)
   const choices = (segments.data ?? []).filter((s) => !serverOnly || s.kind !== 'dhcp')
@@ -76,7 +88,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
   useEffect(() => {
     if (entry || !segment) return
     if (segment.kind !== 'dhcp' && !form.getValues('environmentId') && segment.defaultEnvironmentId) setValue('environmentId', segment.defaultEnvironmentId)
-    if (segment.kind !== 'dhcp' && form.getValues('ipType') === 'other') setValue('ipType', 'server')
+    if (segment.kind !== 'dhcp' && ['other', 'user_pc'].includes(form.getValues('ipType'))) setValue('ipType', 'server')
   }, [segment, entry, setValue, form])
   const environmentId = watch('environmentId')
   useEffect(() => {
@@ -146,6 +158,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
           </div>
         </FormSection>
         <FormSection title="Assignment">
+          {!entry && device.data && <Notice tone="ok">Filled in from the approved device {device.data.name || device.data.mac}: type, name, platform, owner and department. Check them before saving.</Notice>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Assigned to" htmlFor="reg-name" error={errors.assignedName?.message} hint="A device or a description, such as “HR printer, 3rd floor”.">
               <Input id="reg-name" {...register('assignedName')} />
@@ -164,7 +177,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
         )}
         <FormSection title="Monitoring">
           <Switch id="reg-monitor" checked={monitor} onChange={(v) => { setValue('monitor', v); if (!v) setValue('critical', false) }}
-            label="Monitor this address" hint="Checked every minute by ping, or the TCP port below when ping is blocked." />
+            label="Monitor this address" hint="Checked on the server check schedule (hourly by default) by ping, or the TCP port below when ping is blocked." />
           <Switch id="reg-critical" checked={watch('critical')} disabled={!monitor} onChange={(v) => setValue('critical', v)}
             label="Critical" hint="Down or a MAC change raises a Critical alert, whatever the environment." />
           {errors.critical && <p role="alert" className="text-[13px] text-danger">{errors.critical.message}</p>}

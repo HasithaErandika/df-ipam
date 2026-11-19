@@ -42,6 +42,7 @@ func TestDeviceKind(t *testing.T) {
 		"urn:schemas-upnp-org:device:MediaRenderer:1":         "TV or media player",
 		"urn:schemas-upnp-org:device:Printer:1":               "Printer",
 		"urn:schemas-upnp-org:device:InternetGatewayDevice:1": "Router",
+		"urn:schemas-wifialliance-org:device:WFADevice:1":     "Wi-Fi access point",
 		"urn:schemas-upnp-org:device:Basic:1":                 "",
 	} {
 		if got := deviceKind(urn); got != want {

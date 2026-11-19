@@ -100,10 +100,13 @@ var kinds = map[string]string{
 }
 
 // alerting, undecided, known and newWindow are shared with the summary counts.
-// Known: registered here, or an approved device registered at another address,
-// such as a laptop that moved to another Wi-Fi network.
+// Known: registered here; or an approved device on a DHCP pool address, which
+// is never registered as its address changes; or an approved device registered
+// at another address, such as a laptop that moved to another Wi-Fi network.
 const (
-	known = "((i.id IS NOT NULL AND (v.mac IS NULL OR d.status = 'approved')) OR (i.id IS NULL AND d.status = 'approved' AND EXISTS (" + homeWhere + ")))"
+	known = "((i.id IS NOT NULL AND (v.mac IS NULL OR d.status = 'approved')) OR (i.id IS NULL AND d.status = 'approved' AND (" + dhcpClient + " OR EXISTS (" + homeWhere + "))))"
+	// dhcpClient is an address the DHCP server leases: in a DHCP segment, inside its pool.
+	dhcpClient = "(s.kind = 'dhcp' AND NOT v.is_static)"
 	// homeWhere finds the device's own register entry, by its MAC or its device.
 	homeWhere = "SELECT 1 FROM ip_addresses r WHERE r.ip <> v.ip AND (r.expected_mac = v.mac OR r.device_id = d.id)"
 	alerting  = "EXISTS (SELECT 1 FROM alerts a WHERE a.ip = v.ip AND a.status <> 'closed')"

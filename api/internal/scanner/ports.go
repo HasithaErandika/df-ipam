@@ -11,10 +11,13 @@ import (
 )
 
 // commonPorts are the TCP ports checked on segments that ask for it: the usual
-// remote access, web, file, mail, database and printer services. The list is
-// fixed and short on purpose; this is a quick look, not a full port scan.
-var commonPorts = []int{21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 515, 631, 1433, 1521,
-	3306, 3389, 5432, 5900, 5985, 6379, 8080, 8443, 9100, 27017}
+// remote access, web, file, mail, database and printer services, plus a few that
+// name a kind of device: camera video and SDK ports (554 RTSP, 8000 Hikvision,
+// 37777 Dahua), Google Cast on TVs (8008, 8009) and Apple's device sync port,
+// which every iPhone and iPad keeps open (62078). The list is fixed and short on
+// purpose; this is a quick look, not a full port scan.
+var commonPorts = []int{21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 515, 554, 631, 1433, 1521,
+	3306, 3389, 5432, 5900, 5985, 6379, 8000, 8008, 8009, 8080, 8443, 9100, 27017, 37777, 62078}
 
 // presencePorts are tried on an address that doesn't answer ping: file sharing
 // and remote desktop (Windows), and SSH (Linux servers).

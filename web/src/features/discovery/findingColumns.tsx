@@ -6,20 +6,29 @@ import { formatAgo, formatDateTime } from '../../lib/format'
 import { label, sources } from '../../lib/labels'
 import type { Finding } from '../../lib/types'
 import { deviceLine, iconEvidence, networkCard, serviceName } from './deviceInfo'
+import { OwnerName } from '../shared/OwnerName'
 
 /** A MAC nobody has approved yet. Private MACs aren't devices to decide on. */
 export const isUnknown = (r: { mac: string | null; isPrivateMac?: boolean | null; deviceStatus: string | null }) =>
   Boolean(r.mac) && !r.isPrivateMac && r.deviceStatus !== 'approved'
 
+type RegisterFacts = { registerId: string | null; isGateway: boolean; isStatic: boolean | null; segmentKind?: string | null; inPool?: boolean; deviceStatus: string | null; homeIp?: string | null }
+
 /**
- * An address that should be in the register but isn't: static, on a server or
- * cloud network, or used by a device nobody approved. An approved device on a
- * DHCP pool address is expected to be unregistered: its address changes.
+ * An address the DHCP server leases: in a DHCP segment's pool. These are never
+ * registered, as the address changes; the decision is approving the device.
  */
-export function needsRegister(r: { registerId: string | null; isGateway: boolean; isStatic: boolean | null; segmentKind?: string | null; inPool?: boolean; deviceStatus: string | null; homeIp?: string | null }): boolean {
+export const isDhcpClient = (r: Pick<RegisterFacts, 'isStatic' | 'segmentKind' | 'inPool'>) =>
+  Boolean(r.segmentKind ? r.segmentKind === 'dhcp' : r.inPool) && !r.isStatic
+
+/**
+ * An address that should be in the register but isn't: a static address, or
+ * any address on a server or cloud network. DHCP pool addresses never need it:
+ * an unknown device there is flagged as unknown, and approved, not registered.
+ */
+export function needsRegister(r: RegisterFacts): boolean {
   if (r.registerId || r.isGateway || r.homeIp) return false
-  const dhcpClient = (r.segmentKind ? r.segmentKind === 'dhcp' : r.inPool) && !r.isStatic
-  return !dhcpClient || r.deviceStatus !== 'approved'
+  return !isDhcpClient(r)
 }
 
 /** Row colour in Discovery: red for open alerts or a rejected device, orange for an unknown device or a missing register entry. */
@@ -31,6 +40,11 @@ export function attentionRow(r: Parameters<typeof needsRegister>[0] & { mac: str
 
 /** First discovered within the last hour: a device that just joined. */
 export const isNew = (firstSeen: string | null) => Boolean(firstSeen) && Date.now() - new Date(firstSeen!).getTime() < 3_600_000
+
+/** A DHCP pool address: not registered, and not meant to be. */
+export function DhcpNotRegistered() {
+  return <StateBadge tone="neutral" title="DHCP addresses change, so they are not registered. Approve the device instead.">DHCP: not registered</StateBadge>
+}
 
 /** Registered and approved, here or at its own address on another network: nothing to act on. */
 export const isKnown = (r: Finding) => r.known
@@ -44,7 +58,8 @@ export function RegisterCell({ r }: { r: Finding }) {
     return <Stack main={<StateBadge tone="accent" title={`Registered at ${r.homeIp} on ${r.homeSegment}`}>Registered elsewhere</StateBadge>}
       sub={<span>at <span className="font-mono">{r.homeIp}</span> · {r.homeSegment}</span>} />
   }
-  return <Stack main={<RegisterBadge status={r.registerStatus} attention={needsRegister(r)} />} sub={r.owner ? `Owner: ${r.owner}` : (r.assignedName ?? undefined)} />
+  if (!r.registerId && isDhcpClient(r)) return <DhcpNotRegistered />
+  return <Stack main={<RegisterBadge status={r.registerStatus} attention={needsRegister(r)} />} sub={r.assignedName ?? undefined} />
 }
 
 /** First seen, last seen, and how long it has been silent once it stops answering. */
@@ -68,7 +83,7 @@ function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void })
     <WithPlatform evidence={iconEvidence(r)}>
       <div className="flex items-center gap-2 truncate text-ink">
         <button type="button" onClick={() => onOpen(r)} title="Show details" className={`cursor-pointer truncate text-left hover:text-accent hover:underline ${r.deviceStatus === 'approved' && r.deviceName ? 'font-medium' : ''}`}>
-          {r.deviceName || r.assignedName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>)}
+          <OwnerName owner={r.owner} name={r.deviceName || r.assignedName || r.hostname} fallback={r.isGateway ? 'Router' : <span className="text-ink-3">No name found</span>} />
         </button>
         {r.isGateway && <GatewayBadge />}
       </div>
@@ -87,7 +102,7 @@ function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void })
 function mainAction(r: Finding, canEdit: boolean): 'approve' | 'register' | null {
   if (!canEdit) return null
   if (r.deviceId && r.deviceStatus === 'pending') return 'approve'
-  if (!r.registerId && !isRoaming(r) && r.segmentId && r.deviceStatus !== 'rejected' && !r.isGateway) return 'register'
+  if (!r.registerId && !isRoaming(r) && !isDhcpClient(r) && r.segmentId && r.deviceStatus !== 'rejected' && !r.isGateway) return 'register'
   return null
 }
 
@@ -114,7 +129,7 @@ export function findingColumns({ canEdit, onOpen, onRegister, onApprove, onRejec
       {mainAction(r, canEdit) === 'register' && <Button className="h-7 px-2 text-[12px]" onClick={() => onRegister(r)}><PlusCircle size={13} aria-hidden />Register</Button>}
       <RowMenu actions={[
         { label: 'Details', icon: <Info size={14} aria-hidden />, onSelect: () => onOpen(r) },
-        { label: 'Add to register', icon: <PlusCircle size={14} aria-hidden />, onSelect: () => onRegister(r), hidden: !canEdit || Boolean(r.registerId) || !r.segmentId },
+        { label: 'Add to register', icon: <PlusCircle size={14} aria-hidden />, onSelect: () => onRegister(r), hidden: !canEdit || Boolean(r.registerId) || !r.segmentId || isDhcpClient(r) },
         { label: 'Approve device', icon: <CheckCircle2 size={14} aria-hidden />, onSelect: () => onApprove(r), hidden: !canEdit || !r.deviceId || r.deviceStatus === 'approved' },
         { label: 'Reject device', icon: <XCircle size={14} aria-hidden />, onSelect: () => onReject(r), danger: true, hidden: !canEdit || !r.deviceId || r.deviceStatus !== 'pending' },
       ]} />

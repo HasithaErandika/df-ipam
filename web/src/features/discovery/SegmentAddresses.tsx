@@ -1,11 +1,13 @@
 import { Badge, Card, DataTable, DeviceBadge, FilterBar, GatewayBadge, none, PrivateMacBadge, RegisterBadge, SearchInput, Segmented, Stack, type Column } from '../../components/ui'
 import { useFilters, usePagedList } from '../../lib/listing'
 import { WithPlatform } from '../../components/PlatformIcon'
-import { knownPlatform, likelyPlatform } from '../../lib/platforms'
+import { deviceIcon, knownPlatform, likelyPlatform } from '../../lib/platforms'
 import type { SegmentAddress } from '../../lib/types'
 import type { RegisterPrefill } from '../shared/RegisterIPModal'
+import { ipTypeFromIcon } from '../shared/registerFromDevice'
 import { iconEvidence } from './deviceInfo'
-import { attentionRow, needsRegister, Presence } from './findingColumns'
+import { attentionRow, DhcpNotRegistered, isDhcpClient, needsRegister, Presence } from './findingColumns'
+import { OwnerName } from '../shared/OwnerName'
 
 const states = [
   { value: '', text: 'All' }, { value: 'unregistered', text: 'Not registered' }, { value: 'registered', text: 'Registered' },
@@ -19,15 +21,15 @@ export function SegmentAddresses({ segmentId, onRegister }: { segmentId: string;
   const recent = (iso: string | null) => Boolean(iso && Date.now() - new Date(iso).getTime() < 30 * 60_000)
   const columns: Column<SegmentAddress>[] = [
     { key: 'ip', header: 'Address', cell: (r) => <div className="flex items-center gap-2"><span className="font-mono text-[12.5px]">{r.ip}</span>{r.inPool && <Badge>DHCP pool</Badge>}</div> },
-    { key: 'register', header: 'Register', cell: (r) => <Stack main={<RegisterBadge status={r.registerStatus} attention={Boolean(r.mac || r.lastSeen) && needsRegister(r)} />} sub={[r.assignedName, r.owner].filter(Boolean).join(' · ') || undefined} /> },
+    { key: 'register', header: 'Register', cell: (r) => (!r.registerId && r.lastSeen && isDhcpClient(r)) ? <DhcpNotRegistered /> : <Stack main={<RegisterBadge status={r.registerStatus} attention={Boolean(r.mac || r.lastSeen) && needsRegister(r)} />} sub={r.assignedName || undefined} /> },
     { key: 'device', header: 'Seen as', cell: (r) => (r.mac || r.hostname
-      ? <WithPlatform evidence={iconEvidence({ ...r, nicVendor: '', source: r.source ?? '' })}><div className="flex items-center gap-2 truncate">{r.deviceName || r.hostname || (r.isGateway ? 'Router' : <span className="text-ink-3">No name</span>)}{r.isGateway && <GatewayBadge />}</div>
+      ? <WithPlatform evidence={iconEvidence({ ...r, nicVendor: '', source: r.source ?? '' })}><div className="flex items-center gap-2 truncate"><OwnerName owner={r.owner} name={r.deviceName || r.hostname} fallback={r.isGateway ? 'Router' : <span className="text-ink-3">No name</span>} />{r.isGateway && <GatewayBadge />}</div>
         <div className="flex items-center gap-2 font-mono text-[11.5px] text-ink-3">{r.mac ?? ''}{r.isPrivateMac && <PrivateMacBadge />}</div></WithPlatform>
       : none) },
     { key: 'approval', header: 'Approval', hideBelow: 'lg', cell: (r) => (r.mac && !r.isPrivateMac ? <DeviceBadge status={r.deviceStatus} /> : none) },
     { key: 'presence', header: 'Presence', cell: (r) => (r.lastSeen ? <Presence online={recent(r.lastSeen)} firstSeen={r.firstSeen} lastSeen={r.lastSeen} /> : <span className="text-[12.5px] text-ink-3">Never seen</span>) },
-    { key: 'act', header: '', className: 'text-right', cell: (r) => (onRegister && !r.registerId
-      ? <button type="button" className="cursor-pointer text-[12.5px] font-medium text-accent hover:underline" onClick={() => onRegister({ segmentId, ip: r.ip, mac: r.mac, name: r.hostname ?? r.deviceName, platform: knownPlatform(r.platform), platformGuess: likelyPlatform(r) })}>Add to register</button>
+    { key: 'act', header: '', className: 'text-right', cell: (r) => (onRegister && !r.registerId && !(r.lastSeen && isDhcpClient(r))
+      ? <button type="button" className="cursor-pointer text-[12.5px] font-medium text-accent hover:underline" onClick={() => onRegister({ segmentId, ip: r.ip, mac: r.mac, name: r.deviceName || r.hostname, platform: knownPlatform(r.platform), platformGuess: likelyPlatform(r), ipType: ipTypeFromIcon(deviceIcon(iconEvidence({ ...r, nicVendor: '', source: r.source ?? '' }))?.code) })}>Add to register</button>
       : null) },
   ]
   return (

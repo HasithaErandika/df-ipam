@@ -5,6 +5,12 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 ## 2026-11-19
 
 **Discovery**
+- DHCP pool addresses are never registered, only static ones. Discovery and the segment address map show them as "DHCP: not registered" with no Register button or menu item; an unapproved device there is still orange, and an approved one counts as Known.
+- Registering an address whose device is approved fills in the type, name, platform, owner and department from the device, and links the entry to it (anything typed by hand stays). Without an approved device, the type is guessed from the evidence (camera, printer, access point, network device, PC).
+- Editing a register entry no longer drops its link to the device: the form never sent `deviceId`, so each save cleared it.
+- Devices with a recorded owner are listed as "Owner › name" in Discovery, Devices and the segment address map.
+- The register form's monitoring hint said checks run every minute; they follow the server check schedule (hourly by default).
+- Device types are recognised more often. Port checks now include camera ports (554, 8000, 37777), Google Cast (8008, 8009) and Apple's device sync port (62078, iPhone and iPad), and the icon and details read them. Network cards from makers that build whole devices name the device: cameras (Hikvision, Dahua, Uniview, Axis), and network gear (Huawei enterprise, HPE, Aruba, H3C, Cisco, Ubiquiti, MikroTik, Fortinet). UPnP Wi-Fi access points show as such.
 - NetBIOS name queries now get answers from Windows PCs on other networks. The scanner asked for the wildcard name padded with spaces and flagged as a broadcast; Windows ignores that. It now sends the query exactly as `nbtstat -A` does (`*` padded with zero bytes, unicast). On routed networks such as other floors and Wi-Fi, Windows PCs now show their computer name and network card MAC without reverse DNS or the FortiGate.
 - NetBIOS replies are now read correctly. A reply has no question section, but the reader always skipped one, so every real Windows reply was discarded as invalid and no name or MAC came from NetBIOS. A test now reads a Windows-style reply.
 - UPnP descriptions declared as ISO-8859-1 (common on printers and routers) are now read. Go's XML reader refused them, so those devices showed no maker or model.
