@@ -32,17 +32,18 @@ func netbiosStatus(parent context.Context, ip netip.Addr) (mac, hostname string,
 	return parseNetBIOS(response[:n])
 }
 
+// netbiosQuery is a node status request (RFC 1002, section 4.2.17), as Windows'
+// nbtstat -A and Samba's nmblookup -A send it: unicast, so no broadcast flag,
+// for the wildcard name "*" padded with zero bytes ("CKAAAA…" encoded). Windows
+// answers nothing to "*" padded with spaces, nor reliably to a broadcast-flagged
+// query from another network.
 func netbiosQuery() []byte {
 	packet := make([]byte, 12)
 	binary.BigEndian.PutUint16(packet[0:2], uint16(time.Now().UnixNano()))
-	binary.BigEndian.PutUint16(packet[2:4], 0x0010) // Broadcast flag, standard query.
+	binary.BigEndian.PutUint16(packet[2:4], 0x0000) // standard query, unicast
 	binary.BigEndian.PutUint16(packet[4:6], 1)
-	name := make([]byte, 16)
+	name := make([]byte, 16) // "*" then 15 zero bytes
 	name[0] = '*'
-	for i := 1; i < 15; i++ {
-		name[i] = ' '
-	}
-	name[15] = 0
 	encoded := make([]byte, 34)
 	encoded[0] = 32
 	for i, b := range name {
