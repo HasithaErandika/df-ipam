@@ -6,6 +6,7 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 **Discovery**
 - NetBIOS name queries now get answers from Windows PCs on other networks. The scanner asked for the wildcard name padded with spaces and flagged as a broadcast; Windows ignores that. It now sends the query exactly as `nbtstat -A` does (`*` padded with zero bytes, unicast). On routed networks such as other floors and Wi-Fi, Windows PCs now show their computer name and network card MAC without reverse DNS or the FortiGate.
+- NetBIOS replies are now read correctly. A reply has no question section, but the reader always skipped one, so every real Windows reply was discarded as invalid and no name or MAC came from NetBIOS. A test now reads a Windows-style reply.
 - The UPnP search sent to each device is now a proper unicast search: `HOST` names the device and there is no `MX`. Some printers, TVs and routers ignored the multicast-style search and so gave no maker or model.
 - **Stop** next to Scan now ends a running scan (`POST /api/v1/discovery/stop`, permission `discovery:scan`, audited as `scan_stop`, after a confirmation). Segments already scanned keep their results and the alert rules still run; the segment in progress saves nothing and isn't marked as failed. The status line then says "Last scan stopped".
 

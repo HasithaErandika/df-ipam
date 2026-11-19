@@ -59,12 +59,16 @@ func parseNetBIOS(packet []byte) (string, string, error) {
 	if len(packet) < 12 || binary.BigEndian.Uint16(packet[6:8]) == 0 {
 		return "", "", fmt.Errorf("NetBIOS status response has no answer")
 	}
+	// A node status response (RFC 1002, section 4.2.18) has no question section:
+	// the answer follows the header. Skip a question only if one was echoed.
 	offset := 12
 	var err error
-	if offset, err = skipDNSName(packet, offset); err != nil || offset+4 > len(packet) {
-		return "", "", fmt.Errorf("invalid NetBIOS question")
+	for range int(binary.BigEndian.Uint16(packet[4:6])) {
+		if offset, err = skipDNSName(packet, offset); err != nil || offset+4 > len(packet) {
+			return "", "", fmt.Errorf("invalid NetBIOS question")
+		}
+		offset += 4
 	}
-	offset += 4
 	if offset, err = skipDNSName(packet, offset); err != nil || offset+10 > len(packet) {
 		return "", "", fmt.Errorf("invalid NetBIOS answer")
 	}
