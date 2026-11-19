@@ -39,7 +39,8 @@ func identify(ctx context.Context, p probePlan, ip netip.Addr) (sighting, bool) 
 	nbDone := false
 	if !alive {
 		// Windows blocks ping by default, and so do many servers. NetBIOS and a
-		// few TCP ports find them; a refused connection still proves a host.
+		// few TCP ports find them. Only a completed connection counts: a router
+		// can refuse on an absent host's behalf (see dial).
 		mac, nbName, _ = netbiosStatus(ctx, ip)
 		nbDone = true
 		alive = mac != "" || nbName != "" || answersTCP(ctx, p, ip)

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -107,10 +108,31 @@ func fetchDescription(ctx context.Context, ip netip.Addr, location string) upnpI
 	}
 	defer res.Body.Close()
 	var d description
-	if res.StatusCode != http.StatusOK || xml.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&d) != nil {
+	dec := xml.NewDecoder(io.LimitReader(res.Body, 64<<10))
+	dec.CharsetReader = latin1Reader
+	if res.StatusCode != http.StatusOK || dec.Decode(&d) != nil {
 		return upnpInfo{}
 	}
 	return upnpInfo{Name: clip(d.Device.FriendlyName), Maker: clip(d.Device.Manufacturer), Model: clip(d.Device.ModelName), Kind: deviceKind(d.Device.DeviceType)}
+}
+
+// latin1Reader lets descriptions declared as ISO-8859-1 or ASCII be read, as
+// many printers and routers send them; Go's XML decoder refuses any encoding
+// but UTF-8 without one. Latin-1 bytes are widened to UTF-8.
+func latin1Reader(label string, input io.Reader) (io.Reader, error) {
+	switch strings.ToLower(strings.TrimSpace(label)) {
+	case "iso-8859-1", "iso8859-1", "latin1", "latin-1", "us-ascii", "ascii", "windows-1252":
+		raw, err := io.ReadAll(input)
+		if err != nil {
+			return nil, err
+		}
+		runes := make([]rune, len(raw))
+		for i, b := range raw {
+			runes[i] = rune(b)
+		}
+		return strings.NewReader(string(runes)), nil
+	}
+	return nil, fmt.Errorf("unsupported encoding %q", label)
 }
 
 // deviceKind turns a UPnP device type URN into a plain word.

@@ -2,7 +2,10 @@ package scanner
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"testing"
@@ -74,5 +77,18 @@ func TestParseNetBIOSReadsAWindowsReply(t *testing.T) {
 		if err != nil || host != "DFHO-PC-12" || gotMAC != "3c:52:82:1a:2b:3c" {
 			t.Errorf("question echoed %v: got %q %q %v", echo, gotMAC, host, err)
 		}
+	}
+}
+
+// Descriptions declared as ISO-8859-1, as many printers send them, are read.
+func TestFetchDescriptionReadsLatin1(t *testing.T) {
+	body := "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n<root xmlns=\"urn:schemas-upnp-org:device-1-0\"><device>" +
+		"<deviceType>urn:schemas-upnp-org:device:Printer:1</deviceType><friendlyName>Floor 2 printer</friendlyName>" +
+		"<manufacturer>Kyocera\xae</manufacturer><modelName>ECOSYS M2540dn</modelName></device></root>"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
+	defer srv.Close()
+	got := fetchDescription(context.Background(), netip.MustParseAddr("127.0.0.1"), srv.URL+"/desc.xml")
+	if got.Name != "Floor 2 printer" || got.Maker != "Kyocera®" || got.Model != "ECOSYS M2540dn" || got.Kind != "Printer" {
+		t.Errorf("latin-1 description: %+v", got)
 	}
 }
