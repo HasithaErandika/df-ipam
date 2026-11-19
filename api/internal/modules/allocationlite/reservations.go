@@ -142,7 +142,7 @@ func (h *Handler) createReservation(c *gin.Context) {
 			return err
 		}
 		if busy {
-			return httpx.NewError(http.StatusConflict, "RANGE_IN_USE", "The range includes an address that is registered, reserved or was seen in use in the last 24 hours.")
+			return httpx.NewError(http.StatusConflict, "RANGE_IN_USE", "The range includes an address that is registered, reserved, or seen in use recently (in the last 30 days outside the DHCP pool, or 24 hours inside it).")
 		}
 		if err := tx.QueryRow(c, `INSERT INTO reservations (segment_id, start_ip, end_ip, reason, owner_id, owner_name, expires_at, created_by, updated_by)
 			VALUES ($1::uuid, $2::inet, $3::inet, $4, $5::uuid, $6, NULLIF($7, '')::date + interval '1 day', $8::uuid, $8::uuid) RETURNING id::text`,

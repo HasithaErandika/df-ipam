@@ -2,6 +2,12 @@
 
 What changed, day by day, on branch `lite`. Newest first. The specification is in [product/](product/overview.md); what is and isn't built is in [status.md](status.md).
 
+## 2026-11-19
+
+**IP register and reservations**
+- An address held by an active reservation can't be registered by hand (409 `IP_RESERVED`) or by import (the row is skipped and reported). Before, it could, and the address ended up both assigned and still reserved. Convert the reservation instead. Approving a request already checked this.
+- The message when a new reservation overlaps an address in use now gives the real rule: 30 days outside the DHCP pool, 24 hours inside it. It said 24 hours.
+
 ## 2026-11-17
 
 **Sign-in: production only**

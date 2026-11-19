@@ -25,6 +25,9 @@ func (h *Handler) createIP(c *gin.Context) {
 	}
 	var id string
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
+		if err := refuseReserved(c, tx, in.SegmentID, in.IP); err != nil {
+			return err
+		}
 		if err := tx.QueryRow(c, `INSERT INTO ip_addresses (segment_id, ip, status, ip_type, environment_id, device_id, assigned_name,
 			expected_mac, owner, department, monitor, critical, check_port, notes, created_by, updated_by, platform, services)
 			SELECT s.id, $2::inet, $3, $4, COALESCE(NULLIF($5, '')::uuid, s.default_environment_id), NULLIF($6, '')::uuid, $7,
@@ -105,6 +108,24 @@ func (h *Handler) releaseIP(c *gin.Context) {
 	}
 	h.recheck(c)
 	c.Status(http.StatusNoContent)
+}
+
+// refuseReserved stops an address held by an active reservation from being
+// registered by hand: the hold's owner converts it instead. The segment is
+// locked first, as creating a reservation does, so the two can't cross.
+func refuseReserved(c *gin.Context, tx pgx.Tx, segmentID, ip string) error {
+	if _, err := tx.Exec(c, "SELECT 1 FROM segments WHERE id = $1::uuid FOR UPDATE", segmentID); err != nil {
+		return err
+	}
+	var held bool
+	if err := tx.QueryRow(c, `SELECT EXISTS (SELECT 1 FROM reservations
+		WHERE status = 'active' AND $1::inet BETWEEN start_ip AND end_ip)`, ip).Scan(&held); err != nil {
+		return err
+	}
+	if held {
+		return httpx.NewError(http.StatusConflict, "IP_RESERVED", "This IP is held by a reservation. Convert or release the reservation first.")
+	}
+	return nil
 }
 
 func friendlyIP(err error) error {

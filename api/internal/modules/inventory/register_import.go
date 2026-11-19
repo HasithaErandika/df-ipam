@@ -25,8 +25,8 @@ type importRow struct {
 // columns as the export, so an export can be edited and imported back. Each IP
 // goes to the segment whose network holds it; the segment column is ignored.
 // With ?as=server, a blank type means Server, and blank Monitor and Critical
-// take the environment's defaults. Rows with problems, IPs outside every segment
-// and IPs already registered are skipped and reported. One statement inserts the rest.
+// take the environment's defaults. Rows with problems, IPs outside every segment,
+// IPs already registered and IPs held by a reservation are skipped and reported. One statement inserts the rest.
 func (h *Handler) importRegister(c *gin.Context) {
 	rows, ok := readTable(c, "ip")
 	if !ok {
@@ -71,7 +71,7 @@ func (h *Handler) importRegister(c *gin.Context) {
 		return
 	}
 	for ip, n := range line {
-		result.Issues = append(result.Issues, rowIssue{n, ip + " is already registered, or no segment contains it."})
+		result.Issues = append(result.Issues, rowIssue{n, ip + " is already registered, held by a reservation, or no segment contains it."})
 	}
 	result.Skipped = len(rows) - result.Imported
 	slices.SortFunc(result.Issues, func(a, b rowIssue) int { return a.Row - b.Row })
@@ -179,6 +179,7 @@ func insertImported(c *gin.Context, tx pgx.Tx, valid []importRow, asServer bool)
 			platform, services, monitor, critical, check_port, created_by, updated_by)
 		SELECT segment_id, ip::inet, st, ty, env_id, nm, NULLIF(mac, '')::macaddr, ow, dp, nt, pf, COALESCE(string_to_array(NULLIF(sv, ''), ' '), '{}'),
 			monitor, critical AND monitor, NULLIF(port, '')::integer, $15::uuid, $15::uuid FROM y
+		WHERE NOT EXISTS (SELECT 1 FROM reservations r WHERE r.status = 'active' AND y.ip::inet BETWEEN r.start_ip AND r.end_ip)
 		ON CONFLICT (ip) DO NOTHING RETURNING id::text, host(ip)`,
 		cols[0], cols[1], cols[2], cols[3], cols[4], cols[5], cols[6], cols[7], cols[8], cols[9], cols[10], cols[11], cols[12], cols[13], uid, asServer)
 	if err != nil {
