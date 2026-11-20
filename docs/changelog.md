@@ -4,6 +4,9 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 ## 2026-11-20
 
+**Default departments**
+- New installs and existing databases start with IT, Finance, Marketing, Cyber Security, Management and HR (migration 000025). Added once, so a department someone deletes or renames does not come back.
+
 **Monitor view fits one screen**
 - The monitor shows only summary charts. It no longer fetches the alert list or the list of servers down, and the Needs attention, Servers down, Waiting for someone and Busiest networks panels are gone (their counts stay in the tiles and charts).
 - On a wide screen it fills exactly one screen and does not scroll. The page behind it is locked, so Chrome no longer scrolls past the monitor into empty space.
