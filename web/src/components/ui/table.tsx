@@ -11,6 +11,8 @@ export interface Column<T> {
   header: ReactNode
   cell: (row: T) => ReactNode
   className?: string
+  /** Column width in a fixed table, as a class such as `w-32` or `w-[18%]`. Columns without one share what is left. */
+  width?: string
   /** Hidden below this width, for columns that matter less on small screens. */
   hideBelow?: 'md' | 'lg' | 'xl'
 }
@@ -21,7 +23,7 @@ const hide = { md: 'max-md:hidden', lg: 'max-lg:hidden', xl: 'max-xl:hidden' }
  * A table with its loading, error and empty states, and paging. Every list in the
  * app uses it, so they all behave the same way.
  */
-export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging, rowClassName, filtered, pageSizes }: {
+export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging, rowClassName, filtered, pageSizes, fixed }: {
   columns: Column<T>[]
   rows: T[]
   query: Pick<UseQueryResult, 'isPending' | 'isError' | 'error' | 'refetch' | 'isFetching' | 'isPlaceholderData'>
@@ -34,6 +36,8 @@ export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging
   filtered?: { active: number; clear: () => void }
   /** Rows-per-page choices, when a list needs its own. */
   pageSizes?: number[]
+  /** Fit the table to its container: set column widths, cut long text, never scroll sideways. */
+  fixed?: boolean
 }) {
   if (query.isPending) return <SkeletonRows rows={6} />
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />
@@ -45,12 +49,12 @@ export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging
   }
   return (
     <div className={cx('relative', query.isPlaceholderData && 'opacity-60 transition-opacity')} aria-busy={query.isFetching}>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
+      <div className={fixed ? undefined : 'overflow-x-auto'}>
+        <table className={cx('w-full border-collapse', fixed && 'table-fixed')}>
           <thead className="sticky top-0 z-[1]">
             <tr>
               {columns.map((c) => (
-                <th key={c.key} scope="col" className={cx('border-b border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold tracking-[.04em] whitespace-nowrap text-ink-3 uppercase', c.hideBelow && hide[c.hideBelow], c.className)}>
+                <th key={c.key} scope="col" className={cx('border-b border-line bg-surface-2 px-3 py-2 text-left text-[11px] font-semibold tracking-[.04em] whitespace-nowrap text-ink-3 uppercase', fixed && 'truncate', fixed && c.width, c.hideBelow && hide[c.hideBelow], c.className)}>
                   {c.header}
                 </th>
               ))}
@@ -60,7 +64,7 @@ export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging
             {rows.map((row) => (
               <tr key={rowKey(row)} className={cx('group hover:bg-surface-2/70', rowClassName?.(row))}>
                 {columns.map((c) => (
-                  <td key={c.key} className={cx('border-b border-line px-3 py-2 align-middle text-[13px]', c.hideBelow && hide[c.hideBelow], c.className)}>{c.cell(row)}</td>
+                  <td key={c.key} className={cx('border-b border-line px-3 py-2 align-middle text-[13px]', fixed && 'overflow-hidden break-words', c.hideBelow && hide[c.hideBelow], c.className)}>{c.cell(row)}</td>
                 ))}
               </tr>
             ))}

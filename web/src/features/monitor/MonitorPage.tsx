@@ -1,17 +1,17 @@
-import { Activity, AlertTriangle, BellRing, Cable, Gauge, HeartPulse, Inbox, KeyRound, MonitorSmartphone, Network, Radar, ServerCrash, ShieldQuestion, Siren, Sparkles } from 'lucide-react'
+import { Activity, BellRing, Cable, Gauge, HeartPulse, Inbox, KeyRound, MonitorSmartphone, Network, ServerCrash, ShieldQuestion, Siren, Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ErrorState, SkeletonRows } from '../../components/ui'
 import { formatAgo, formatCount } from '../../lib/format'
-import { AlertsDonut, Issues, Panel, Pools, ServerHealth, ServersDown, Tile, Traffic } from './MonitorPanels'
-import { BusiestNetworks, NetworksByKind } from './NetworksPanel'
+import { AlertsDonut, Panel, Pools, ServerHealth, Tile, Traffic } from './MonitorPanels'
+import { NetworksByKind } from './NetworksPanel'
 import { MonitorHeader } from './MonitorHeader'
-import { LinksSummary, WaitingFor } from './MorePanels'
+import { LinksSummary } from './MorePanels'
 import { useClock, useMonitorData } from './useMonitorData'
 
 /**
- * The monitor view, for a TV on the wall: everything that needs attention,
- * in large type, refreshing on its own. Full screen hides the browser too.
+ * The monitor view, for a TV on the wall: summary charts only, sized to one
+ * screen with no scrolling, refreshing on its own. Full screen hides the browser too.
  */
 export function MonitorPage() {
   const navigate = useNavigate()
@@ -22,6 +22,13 @@ export function MonitorPage() {
     const change = () => setFull(Boolean(document.fullscreenElement))
     document.addEventListener('fullscreenchange', change)
     return () => document.removeEventListener('fullscreenchange', change)
+  }, [])
+  // The page behind the monitor must not scroll, or Chrome shows empty space under it.
+  useEffect(() => {
+    const els = [document.documentElement, document.body]
+    const before = els.map((e) => e.style.overflow)
+    els.forEach((e) => { e.style.overflow = 'hidden' })
+    return () => els.forEach((e, i) => { e.style.overflow = before[i] })
   }, [])
   const toggleFull = () => void (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => undefined)
   const d = m.dashboard.data
@@ -41,15 +48,15 @@ export function MonitorPage() {
     { n: tunnelsDown, text: `tunnel${tunnelsDown === 1 ? '' : 's'} down` },
   ]
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-bg">
-      <div className="mx-auto max-w-[1920px] space-y-4 p-5">
+    <div className="fixed inset-0 z-50 h-dvh overflow-hidden bg-bg max-xl:overflow-y-auto">
+      <div className="mx-auto flex h-full max-w-[1920px] flex-col gap-3 p-4 max-xl:h-auto">
         <MonitorHeader now={now} loading={!d} full={full} onFull={toggleFull} problems={problems}
           onClose={() => { if (document.fullscreenElement) void document.exitFullscreen(); navigate('/') }} />
 
         {m.dashboard.isError && <ErrorState error={m.dashboard.error} onRetry={() => void m.dashboard.refetch()} />}
         {!d ? <SkeletonRows rows={10} /> : (
           <>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 2xl:grid-cols-7">
+            <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-4 2xl:grid-cols-7">
               <Tile icon={Siren} label="Urgent alerts" value={urgent} state={urgent ? 'danger' : 'ok'} hint={urgent ? 'High or Critical, open' : 'None High or Critical'} />
               <Tile icon={ServerCrash} label="Servers down" value={down} state={down ? 'danger' : 'ok'} hint={`${formatCount(d.servers.reduce((n, s) => n + s.total, 0))} monitored`} />
               <Tile icon={ShieldQuestion} label="Unknown devices" value={formatCount(d.totals.unknownDevices)} state={d.totals.unknownDevices ? 'warn' : 'ok'} hint="Seen, never approved" />
@@ -62,26 +69,19 @@ export function MonitorPage() {
               <Tile icon={Inbox} label="Waiting for someone" value={formatCount(waiting)} state={waiting ? 'warn' : 'ok'} hint={expiring ? `${expiring} contracts within 30 days` : 'Decisions, requests, holds'} />
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-12">
+            <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-12">
               {m.canNetwork && <Panel icon={Network} title="Networks" note={`${formatCount(segs.length)} segments`} className="xl:col-span-5"><NetworksByKind segments={segs} /></Panel>}
               <Panel icon={BellRing} title="Open alerts" note="by severity" className="xl:col-span-3"><AlertsDonut d={d} /></Panel>
               <Panel icon={HeartPulse} title="Server health" note="by environment" className={m.canNetwork ? 'xl:col-span-4' : 'xl:col-span-9'}><ServerHealth d={d} /></Panel>
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-12">
-              <Panel icon={Activity} title="WAN traffic" note={fw ? `${fw.firewall} · ${formatAgo(fw.at)}` : 'last 15 minutes'} className="xl:col-span-6">
+            <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-12">
+              <Panel icon={Activity} title="WAN traffic" note={fw ? `${fw.firewall} · ${formatAgo(fw.at)}` : 'last 15 minutes'} className={m.links.data ? 'xl:col-span-6' : 'xl:col-span-8'}>
                 {fw ? <Traffic points={m.traffic} live={fw} /> : <p className="py-4 text-[13px] text-ink-3">{m.canLinks ? 'No firewall connected. Connect the FortiGate in System > FortiGate to see live traffic.' : 'Live traffic needs the See network links permission.'}</p>}
               </Panel>
-              <Panel icon={AlertTriangle} title="Needs attention" note={m.alerts.data ? `${m.alerts.data.meta.total} open` : undefined} className="xl:col-span-3"><Issues alerts={m.alerts.data?.data ?? []} /></Panel>
-              <Panel icon={ServerCrash} title="Servers down" className="xl:col-span-3"><ServersDown rows={m.down.data?.data ?? []} /></Panel>
+              {m.links.data && <Panel icon={Cable} title="Network links" note="by status and type" className="xl:col-span-3"><LinksSummary l={m.links.data} fw={fw} settings={m.linkSettings.data} /></Panel>}
+              <Panel icon={Gauge} title="DHCP pool use" note="fullest first" className={m.links.data ? 'xl:col-span-3' : 'xl:col-span-4'}><Pools d={d} /></Panel>
             </div>
-
-            <div className="grid gap-4 xl:grid-cols-12">
-              {m.links.data && <Panel icon={Cable} title="Network links" note="by status and type" className="xl:col-span-4"><LinksSummary l={m.links.data} fw={fw} settings={m.linkSettings.data} /></Panel>}
-              <Panel icon={Inbox} title="Waiting for someone" className={m.links.data ? 'xl:col-span-4' : 'xl:col-span-6'}><WaitingFor d={d} l={m.links.data} /></Panel>
-              <Panel icon={Gauge} title="DHCP pool use" note="fullest first" className={m.links.data ? 'xl:col-span-4' : 'xl:col-span-6'}><Pools d={d} /></Panel>
-            </div>
-            {m.canNetwork && <Panel icon={Radar} title="Busiest networks" note="alerts first, then devices online"><BusiestNetworks segments={segs} /></Panel>}
           </>
         )}
       </div>

@@ -1,8 +1,6 @@
-import { CalendarClock, ClipboardList, Hourglass, MonitorSmartphone, ShieldQuestion, Timer, type LucideIcon } from 'lucide-react'
 import { formatCount } from '../../lib/format'
-import type { Dashboard, FirewallLive, LinkDashboard, LinkSettings } from '../../lib/types'
+import type { FirewallLive, LinkDashboard, LinkSettings } from '../../lib/types'
 import { formatMoney, linkStatuses, typeName } from '../links/labels'
-import { AllClear } from './MonitorPanels'
 
 const statusColor: Record<string, string> = { active: 'var(--ok)', pending: 'var(--meter-warning)', inactive: 'var(--line-strong)', terminated: 'var(--danger)' }
 
@@ -38,34 +36,5 @@ export function LinksSummary({ l, fw, settings }: { l: LinkDashboard; fw?: Firew
         <p className="border-t border-line pt-2 text-[12.5px] text-ink-2">Monthly cost: <span className="font-medium text-ink">{l.monthlyByCurrency!.map((m) => formatMoney(m.amount, m.currency)).join(' + ')}</span></p>
       )}
     </div>
-  )
-}
-
-interface Waiting { icon: LucideIcon; label: string; n: number; detail: string; tone: 'warn' | 'danger' | 'neutral' }
-
-/** Everything waiting for a person: decisions, requests, expiring holds and contracts. */
-export function WaitingFor({ d, l }: { d: Dashboard; l?: LinkDashboard }) {
-  const soon = l?.renewals?.filter((r) => r.daysLeft <= 30).length ?? 0
-  const items: Waiting[] = [
-    { icon: MonitorSmartphone, label: 'Devices to approve or reject', n: d.totals.pendingDevices, detail: 'New MACs seen on the network', tone: 'warn' },
-    { icon: ShieldQuestion, label: 'Unknown devices', n: d.totals.unknownDevices, detail: 'Seen, never approved', tone: 'warn' },
-    { icon: ClipboardList, label: 'IP requests to decide', n: d.totals.pendingRequests, detail: 'Waiting for an approver', tone: 'warn' },
-    { icon: Timer, label: 'Reservations expiring', n: d.totals.expiringReservations, detail: 'Within 7 days', tone: 'neutral' },
-    ...(l ? [{ icon: Hourglass, label: 'Links pending', n: l.totals.pending, detail: 'Not yet in service', tone: 'neutral' } as Waiting] : []),
-    ...(l && !l.commercialHidden ? [{ icon: CalendarClock, label: 'Contracts to renew', n: l.totals.expiring, detail: soon ? `${soon} within 30 days` : 'Within 90 days', tone: soon ? 'danger' : 'warn' } as Waiting] : []),
-  ]
-  const open = items.filter((i) => i.n > 0)
-  if (open.length === 0) return <AllClear text="Nothing is waiting for anyone" />
-  const tint = { warn: 'bg-warn-soft text-warn', danger: 'bg-danger-soft text-danger', neutral: 'bg-surface-2 text-ink-2' }
-  return (
-    <ul className="space-y-1.5">
-      {open.map(({ icon: Icon, label, n, detail, tone }) => (
-        <li key={label} className="flex items-center gap-3 rounded-lg px-1 py-1">
-          <span aria-hidden className={`grid size-8 shrink-0 place-items-center rounded-lg ${tint[tone]}`}><Icon size={15} /></span>
-          <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-ink">{label}</span><span className="block truncate text-[11.5px] text-ink-3">{detail}</span></span>
-          <span className="text-[18px] font-semibold text-ink tabular-nums">{formatCount(n)}</span>
-        </li>
-      ))}
-    </ul>
   )
 }

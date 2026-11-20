@@ -4,6 +4,13 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 ## 2026-11-20
 
+**Monitor view fits one screen**
+- The monitor shows only summary charts. It no longer fetches the alert list or the list of servers down, and the Needs attention, Servers down, Waiting for someone and Busiest networks panels are gone (their counts stay in the tiles and charts).
+- On a wide screen it fills exactly one screen and does not scroll. The page behind it is locked, so Chrome no longer scrolls past the monitor into empty space.
+
+**Tables fit the page**
+- The Devices, Servers and IP register tables no longer scroll sideways. They use fixed column widths, long text is cut short or wraps inside its cell, and less important columns still hide on narrow screens. Other tables are unchanged.
+
 **Network Links** (new module, [network-links.md](product/network-links.md))
 - A new menu section records the company's internet lines, broadband, VPN tunnels, MPLS, leased lines, 4G/5G, cloud connections and third-party links: **Overview**, **All Network Links**, **Add Network Link**, **Service Providers**, **Contract Renewals** and **Import / Export**. Records are administrative; nothing is polled or configured.
 - Each link has basic, technical, VPN (for VPN types only), commercial and support details, related links (secondary, backup, or the underlying line a VPN runs over; never itself, one row per pair), remarks, attachments and a field-by-field change history. Link IDs are `DF-LNK-0001` onwards. Links are archived and restored, never deleted.

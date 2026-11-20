@@ -9,7 +9,7 @@ const dot: Record<Tone, string> = { neutral: 'bg-ink-3', accent: 'bg-accent', ok
 /** A badge with a coloured dot, for states that change, such as health. */
 export function StateBadge({ tone, children, title }: { tone: Tone; children: React.ReactNode; title?: string }) {
   return (
-    <span title={title} className="inline-flex items-center gap-1.5 text-[12.5px] whitespace-nowrap text-ink">
+    <span title={title} className="inline-flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink">
       <span aria-hidden className={cx('size-2 shrink-0 rounded-full', dot[tone])} />{children}
     </span>
   )

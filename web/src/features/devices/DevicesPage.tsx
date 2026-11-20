@@ -34,6 +34,7 @@ export function DevicesPage() {
   const reject = useRejectDevice()
   const [openId, setOpen] = useDialogParam('device')
 
+  const actionsWidth = !canEdit ? 'w-24' : rows.some((d) => d.status === 'pending') ? 'w-48' : 'w-12'
   const columns: Column<Device>[] = [
     { key: 'device', header: 'Device', cell: (d) => (
       <WithPlatform evidence={iconEvidence(d)} type={d.deviceType}>
@@ -45,22 +46,22 @@ export function DevicesPage() {
         {d.openPorts.length > 0 && <div className="truncate text-[11.5px] text-ink-3" title={d.openPorts.join(', ')}>Open: {d.openPorts.map(serviceName).join(', ')}</div>}
       </WithPlatform>
     ) },
-    { key: 'type', header: 'Type', hideBelow: 'md', cell: (d) => label(deviceTypes, d.deviceType) },
-    { key: 'owner', header: 'Owner', hideBelow: 'lg', cell: (d) => <Stack main={d.owner || none} sub={d.department || undefined} /> },
-    { key: 'ip', header: 'Last seen address', cell: (d) => (d.lastIp
-      ? <Stack mono main={d.lastIp} sub={<span className="font-sans">
+    { key: 'type', header: 'Type', width: 'w-[11%]', hideBelow: 'md', cell: (d) => label(deviceTypes, d.deviceType) },
+    { key: 'owner', header: 'Owner', width: 'w-[13%]', hideBelow: 'lg', cell: (d) => <Stack main={d.owner || none} sub={d.department || undefined} /> },
+    { key: 'ip', header: 'Last seen address', width: 'w-[19%]', cell: (d) => (d.lastIp
+      ? <Stack mono main={d.lastIp} sub={<span className="block font-sans whitespace-normal">
           {d.segmentId ? <Link className="hover:text-accent hover:underline" to={`/segments/${d.segmentId}`}>{d.segmentName}</Link> : null}
           <span className="block text-ink-3">Observed address; DHCP may assign a different one.</span>
           {d.registeredIp ? <span className="block text-ok">Register entry at {d.registeredIp}</span> : null}
           {d.addresses > 1 ? <span className="block">{d.addresses} addresses seen</span> : null}
         </span>} />
       : none) },
-    { key: 'presence', header: 'Presence', cell: (d) => <Presence online={d.online} firstSeen={d.firstSeen} lastSeen={d.lastSeen} showFirstSeen={false} /> },
-    { key: 'status', header: 'Status', cell: (d) => <DeviceBadge status={d.status} /> },
-    { key: 'alerts', header: '', className: 'w-8', cell: (d) => (d.openAlerts > 0
+    { key: 'presence', header: 'Presence', width: 'w-[13%]', cell: (d) => <Presence online={d.online} firstSeen={d.firstSeen} lastSeen={d.lastSeen} showFirstSeen={false} /> },
+    { key: 'status', header: 'Status', width: 'w-[10%]', cell: (d) => <DeviceBadge status={d.status} /> },
+    { key: 'alerts', header: '', width: 'w-10', cell: (d) => (d.openAlerts > 0
       ? <Link to={`/alerts?q=${encodeURIComponent(d.mac)}`} title={`${d.openAlerts} open alert${d.openAlerts > 1 ? 's' : ''}`} className="text-warn"><AlertTriangle size={15} aria-label="Open alerts" /></Link>
       : null) },
-    { key: 'actions', header: '', className: 'text-right whitespace-nowrap', cell: (d) => (!canEdit ? <Button variant="ghost" onClick={() => setOpen(d.id)}>Details</Button> : d.status === 'pending' ? (
+    { key: 'actions', header: '', width: actionsWidth, className: 'text-right whitespace-nowrap', cell: (d) => (!canEdit ? <Button variant="ghost" onClick={() => setOpen(d.id)}>Details</Button> : d.status === 'pending' ? (
       <div className="flex justify-end gap-1">
         <Button onClick={() => setApprove({ ...d })}><CheckCircle2 size={14} aria-hidden />Approve</Button>
         <Button variant="ghost" className="text-danger" onClick={() => void reject(d)}>Reject</Button>
@@ -90,7 +91,7 @@ export function DevicesPage() {
           <FilterSelect label="Type" value={f.values.deviceType} onChange={(v) => f.set('deviceType', v)} options={options(deviceTypes)} />
           <FilterSelect label="Sort" value={f.values.sort} onChange={(v) => f.set('sort', v)} anyLabel="Most recent" options={[{ value: 'name', text: 'By name' }, { value: 'mac', text: 'By MAC' }, { value: 'lastSeen', text: 'Seen longest ago' }]} />
         </FilterBar>
-        <DataTable columns={columns} rows={rows} query={query} rowKey={(d) => d.id} meta={meta} paging={paging} filtered={f}
+        <DataTable fixed columns={columns} rows={rows} query={query} rowKey={(d) => d.id} meta={meta} paging={paging} filtered={f}
           empty={tab === 'devices'
             ? { title: 'Nothing waiting for review', body: 'New MAC addresses seen on the network appear here. Randomised (private) MACs are left out.' }
             : { title: 'No devices here yet', body: 'Add devices by hand, or import your asset list from a CSV or Excel file.' }} />

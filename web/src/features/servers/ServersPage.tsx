@@ -77,7 +77,7 @@ export function ServersPage() {
               </>}
           <FilterSelect label="Sort" value={f.values.sort} onChange={(v) => f.set('sort', v)} anyLabel="By IP" options={[{ value: 'name', text: 'By name' }, { value: 'health', text: 'By status' }, { value: 'segment', text: 'By segment' }, { value: '-updated', text: 'Recently changed' }]} />
         </FilterBar>
-        <DataTable columns={servers ? serverColumns(actions) : registerColumns(actions)} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
+        <DataTable fixed columns={servers ? serverColumns(actions) : registerColumns(actions)} rows={rows} query={query} rowKey={(r) => r.id} meta={meta} paging={paging} filtered={f}
           rowClassName={(r) => (r.monitor && r.health === 'down' ? 'bg-danger-soft/40' : undefined)}
           empty={servers
             ? { title: 'No servers yet', body: 'Import your verified server list, add a server with an Available candidate IP, or register a server found in Discovery. Discovery findings stay separate until you review and register them.' }

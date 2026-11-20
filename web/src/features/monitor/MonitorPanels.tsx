@@ -1,22 +1,22 @@
 import type { ReactNode } from 'react'
-import { AlertTriangle, CheckCircle2, ServerCrash, type LucideIcon } from 'lucide-react'
+import { type LucideIcon } from 'lucide-react'
 import { Donut, LineChart, UseBar } from '../../components/monitorCharts'
-import { formatAgo, formatCount } from '../../lib/format'
+import { formatCount } from '../../lib/format'
 import { severities } from '../../lib/labels'
-import type { Alert, Dashboard, FirewallLive, RegisterEntry } from '../../lib/types'
+import type { Dashboard, FirewallLive } from '../../lib/types'
 import { formatRate } from '../firewall/format'
 import type { TrafficPoint } from './useMonitorData'
 
 /** A panel on the monitor, with an icon that says what it is about. */
 export function Panel({ title, icon: Icon, note, children, className = '' }: { title: string; icon: LucideIcon; note?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={`flex flex-col rounded-xl border border-line bg-surface p-4 shadow-[0_1px_2px_rgba(11,18,32,.04)] ${className}`}>
-      <header className="mb-3 flex items-center gap-2">
+    <section className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface p-4 shadow-[0_1px_2px_rgba(11,18,32,.04)] ${className}`}>
+      <header className="mb-3 flex shrink-0 items-center gap-2">
         <span aria-hidden className="grid size-7 place-items-center rounded-md bg-accent-soft text-accent"><Icon size={15} /></span>
         <h2 className="text-[14px] font-semibold text-ink">{title}</h2>
         {note && <span className="ml-auto truncate text-[12px] text-ink-3">{note}</span>}
       </header>
-      <div className="min-h-0 flex-1">{children}</div>
+      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
     </section>
   )
 }
@@ -90,45 +90,8 @@ export function Traffic({ points, live }: { points: TrafficPoint[]; live?: Firew
   )
 }
 
-export function Issues({ alerts }: { alerts: Alert[] }) {
-  if (alerts.length === 0) return <AllClear text="No open alerts" />
-  return (
-    <ul className="space-y-2">
-      {alerts.map((a) => (
-        <li key={a.id} className="flex items-start gap-2.5 rounded-lg bg-surface-2 px-3 py-2">
-          <AlertTriangle size={15} aria-hidden className={a.severity === 'critical' ? 'mt-0.5 text-danger' : a.severity === 'high' ? 'mt-0.5 text-warn' : 'mt-0.5 text-ink-3'} />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px] text-ink">{a.message}</span>
-            <span className="text-[13px] text-ink-3">{severities[a.severity]}{a.segmentName ? ` · ${a.segmentName}` : ''} · {formatAgo(a.openedAt)}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-export function ServersDown({ rows }: { rows: RegisterEntry[] }) {
-  if (rows.length === 0) return <AllClear text="Every monitored server answers" />
-  return (
-    <ul className="space-y-2">
-      {rows.map((r) => (
-        <li key={r.id} className="flex items-center gap-3 rounded-lg bg-danger-soft/60 px-3 py-2.5">
-          <ServerCrash size={15} aria-hidden className="text-danger" />
-          <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{r.assignedName || r.deviceName || r.ip}</span>
-            <span className="text-[13px] text-ink-3"><span className="font-mono">{r.ip}</span>{r.environmentName ? ` · ${r.environmentName}` : ''}</span></span>
-          <span className="shrink-0 text-[13px] font-medium text-danger">Down{r.healthChangedAt ? ` ${formatAgo(r.healthChangedAt)}` : ''}</span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 export function Pools({ d }: { d: Dashboard }) {
   const pools = d.floors.filter((f) => f.poolSize > 0).map((f) => ({ ...f, pct: (f.poolUsed / f.poolSize) * 100 })).sort((a, b) => b.pct - a.pct)
   if (pools.length === 0) return <p className="text-[13px] text-ink-3">No DHCP pools set up.</p>
-  return <div className="space-y-3">{pools.slice(0, 8).map((f) => <UseBar key={f.id} label={f.name} pct={f.pct} detail={`${formatCount(f.poolUsed)} of ${formatCount(f.poolSize)} addresses`} />)}</div>
-}
-
-export function AllClear({ text }: { text: string }) {
-  return <p className="flex items-center gap-2 py-4 text-[14px] text-ok"><CheckCircle2 size={17} aria-hidden />{text}</p>
+  return <div className="space-y-3">{pools.slice(0, 6).map((f) => <UseBar key={f.id} label={f.name} pct={f.pct} detail={`${formatCount(f.poolUsed)} of ${formatCount(f.poolSize)} addresses`} />)}</div>
 }
