@@ -5,6 +5,7 @@ import { ipTypes, label } from '../../lib/labels'
 import { platformName, services } from '../../lib/platforms'
 import type { RegisterEntry } from '../../lib/types'
 import { EvidenceDetails, PortList, Section, when } from '../shared/DetailParts'
+import { LinkedLinks } from '../links/LinkedLinks'
 
 /** The one line that says whether the entry needs anyone. */
 function Verdict({ r }: { r: RegisterEntry }) {
@@ -75,6 +76,7 @@ export function EntryDetails({ entry: r, canEdit, onClose, onEdit, onRelease }: 
           ]} />
           {r.notes && <p className="mt-3 rounded-md bg-surface-2 px-3 py-2 text-[13px] whitespace-pre-wrap text-ink-2">{r.notes}</p>}
         </Section>
+        <LinkedLinks ip={r.ip} title={() => <h3 className="mb-2 text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase">Network links using this address</h3>} />
       </div>
     </Modal>
   )

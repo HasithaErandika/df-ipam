@@ -16,6 +16,7 @@ import { GatewayHint } from './GatewayHint'
 import { SegmentAddresses } from './SegmentAddresses'
 import { AvailableList, type FreeRange, NetworkFacts, type NetworkInfo } from './SegmentFacts'
 import { notSwept } from '../network/segmentList'
+import { LinkedLinks } from '../links/LinkedLinks'
 
 interface AddressMapData { usable: number; mapped: boolean; first?: string; counts: Record<string, number>; runs: Run[]; network: NetworkInfo; available: FreeRange[] }
 
@@ -72,6 +73,7 @@ export function SegmentPage() {
           <AvailableList segment={segment} ranges={map.data.available} onRegister={canEdit ? (ip) => setPrefill({ segmentId: id, ip }) : undefined} />
         </div>
       )}
+      <LinkedLinks segmentId={id} card={(n) => `Network links on this subnet (${n})`} />
       <SegmentAddresses segmentId={id} onRegister={canEdit ? setPrefill : undefined} />
       <RegisterIPModal open={prefill !== null} prefill={prefill ?? undefined} onClose={() => setPrefill(null)} />
     </>

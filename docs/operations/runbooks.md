@@ -7,6 +7,8 @@ For the people on call, assuming the setup in [setup.md](setup.md). **None has b
 | Restore the database | Not yet | |
 | Rebuild the server | Not yet | |
 | Rotate the encryption key | Not yet | |
+| Deploy or roll back Network Links | Not yet | |
+| Restore link attachments | Not yet | |
 
 ## Restore the database
 
@@ -47,6 +49,36 @@ First agree with the business whether the data lost since the last backup is acc
 
 4. `sudo make docker-up`, then check `/ready` and sign in.
 5. Delete `restore.dump`, which is unencrypted, and drop `dfipam_old` once you are sure.
+
+## Restore link attachments
+
+Network link attachments are backed up next to the database dump, as `df-ipam-<stamp>.attachments.tar.gpg`. Restore them with the database from the same backup, so records and files match.
+
+```bash
+sha256sum -c df-ipam-<stamp>.attachments.tar.gpg.sha256
+gpg --decrypt --output attachments.tar df-ipam-<stamp>.attachments.tar.gpg
+cd /opt/df-ipam
+sudo bash -c 'set -a; . api/.env; set +a; docker compose run --rm -T --no-deps --user root -v "$PWD/attachments.tar:/restore.tar:ro" --entrypoint sh backend \
+  -c "tar -C /data -xf /restore.tar && chown -R 10001:10001 /data/attachments && chmod 700 /data/attachments"'
+rm attachments.tar
+```
+
+A file whose record exists but whose file is missing downloads as "This file is missing from the server's attachment storage".
+
+## Deploy or roll back Network Links
+
+**Deploy.** Take a backup (`sudo make db-backup`), then `git pull` and `sudo make docker-up`. Migration 000023 adds five tables and the `links.*` settings and gives the starting roles their `links:*` permissions; nothing existing changes. Docker creates the `df-ipam-lite-link-files` volume. If Apache serves the app, reload it so the 15 MB attachment limit applies (`deploy/apache/df-ipam.conf`). Then check: sign in as an Administrator, open **Network Links > Overview**, add a provider and a link, attach a small PDF, and download it again.
+
+**Roll back.** This deletes every network link, provider and attachment record, so export the links first (Import / Export > Export all links) and keep the attachment volume.
+
+```bash
+cd /opt/df-ipam
+sudo bash -c 'set -a; . api/.env; set +a; docker compose run --rm --no-deps migrate /app/migrate down'   # undoes 000023 only; run once
+git checkout <the previous release>
+sudo make docker-up
+```
+
+The attachment volume is left as it is; remove it with `docker volume rm df-ipam-lite-link-files` only once nothing more is needed from it.
 
 ## Rebuild the server
 

@@ -53,11 +53,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             {collapsed ? (gi > 0 && <div className="mx-2 mb-2 h-px bg-side-border" />)
               : <div className="px-2.5 pb-1.5 text-[10.5px] font-semibold tracking-[.09em] text-side-ink-3 uppercase">{group}</div>}
             <ul className="space-y-0.5">
-              {items.map(({ to, label, icon: Icon, badge }) => {
+              {items.map(({ to, label, icon: Icon, badge, end }) => {
                 const count = badge ? counts[badge] : 0
                 return (
                   <li key={to}>
-                    <NavLink to={to} end={to === '/'} title={collapsed ? (count ? `${label} (${count})` : label) : undefined} aria-label={count ? `${label}, ${count}` : label}
+                    <NavLink to={to} end={to === '/' || end} title={collapsed ? (count ? `${label} (${count})` : label) : undefined} aria-label={count ? `${label}, ${count}` : label}
                       className={({ isActive }) => cx('group relative flex h-9 items-center gap-3 rounded-md text-[13.5px] transition-colors',
                         collapsed ? 'justify-center' : 'px-2.5',
                         isActive ? 'bg-side-active font-semibold text-side-active-ink shadow-[inset_0_0_0_1px_rgba(27,71,166,.12)]' : 'text-side-ink-2 hover:bg-side-hover hover:text-side-ink')}>

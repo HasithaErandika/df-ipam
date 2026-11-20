@@ -27,12 +27,34 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/reports/:key", h.download, auth.ReportsExport)
 }
 
-func (h *Handler) list(c *gin.Context) { httpx.OK(c, http.StatusOK, catalogue) }
+// allowed says whether this person holds what the report also needs.
+func allowed(c *gin.Context, r Report) bool {
+	for _, p := range r.Needs {
+		if !auth.Current(c).Has(p) {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *Handler) list(c *gin.Context) {
+	out := []Report{}
+	for _, r := range all() {
+		if allowed(c, r) {
+			out = append(out, r)
+		}
+	}
+	httpx.OK(c, http.StatusOK, out)
+}
 
 func (h *Handler) download(c *gin.Context) {
 	r, ok := find(c.Param("key"))
 	if !ok {
 		httpx.Fail(c, httpx.ErrNotFound)
+		return
+	}
+	if !allowed(c, r) {
+		httpx.Fail(c, httpx.ErrForbidden)
 		return
 	}
 	format := c.DefaultQuery("format", "csv")

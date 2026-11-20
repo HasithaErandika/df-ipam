@@ -79,6 +79,10 @@ services:
       TRUSTED_PROXIES: ${WEB_ADDRESS:-172.30.0.10}
       API_MAX_IN_FLIGHT:
       DB_MAX_CONNS: ${BACKEND_DB_MAX_CONNS:-30}
+      ATTACHMENTS_DIR: /data/attachments
+    # Network link attachments. The container is read-only apart from this volume.
+    volumes:
+      - link-files:/data/attachments
     networks:
       default:
         ipv4_address: ${BACKEND_ADDRESS:-172.30.0.11}
@@ -134,3 +138,5 @@ volumes:
     # Lite has a new schema that cannot upgrade the previous enterprise DB.
     # Keep the old project's volume intact and give Lite its own fresh database.
     name: df-ipam-lite-db-data
+  link-files:
+    name: df-ipam-lite-link-files

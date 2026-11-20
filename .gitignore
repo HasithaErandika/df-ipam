@@ -12,6 +12,9 @@ Thumbs.db
 .vscode/
 *.swp
 
+# Network link attachments when the API runs outside Docker (make backend)
+api/data/
+
 # Logs
 *.log
 logs/

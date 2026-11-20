@@ -15,6 +15,7 @@ import (
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/integrations/fortigate"
 	"dfipam/api/internal/integrations/intune"
+	"dfipam/api/internal/modules/links"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/signin"
 	"dfipam/api/internal/platform/config"
@@ -66,6 +67,13 @@ func run() error {
 	}
 	go notifications.RunOutbox(ctx, pool, mailer, cfg.AppBaseURL)
 	go notifications.RunReservationReminders(ctx, pool)
+	go links.RunReminders(ctx, pool)
+	// Network link attachments live on their own volume, never in the database.
+	linkFiles, err := links.OpenStore(cfg.AttachmentsDir)
+	if err != nil {
+		slog.Warn("network link attachments are unavailable", "reason", err.Error())
+		linkFiles = nil
+	}
 
 	// The FortiGate token is stored encrypted, so the integration needs the master key.
 	keys, err := secrets.FromEnv()
@@ -91,7 +99,7 @@ func run() error {
 		slog.Warn("nobody can sign in: set ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET")
 	}
 	deps := server.Deps{Sessions: sessions, SignIn: signIn, Conn: pool, Ready: pool.Ping, Origins: cfg.AllowedOrigins,
-		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, Intune: directory, SMTPConfigured: mailEnabled}
+		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, Intune: directory, LinkFiles: linkFiles, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 
 	// API_LISTEN_ADDR may list several addresses, for host networking: loopback

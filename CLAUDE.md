@@ -2,7 +2,7 @@
 
 Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web/`, design docs in `docs/`, Docker in `docker-compose.yml`. Run `make help` for commands. Before finishing a change, run `make lint test`.
 
-**On branch `lite`, the product documents in `docs/product/` are the specification and override everything below.** Lite is one building, IPv4 only, one routing table, roles that administrators set up from fixed permissions (`admin` has full access), and 16 tables. Sign-in is Microsoft Entra ID (`@dialogfinance.lk`) only; there is no development or password-free sign-in. There is no Supabase. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
+**On branch `lite`, the product documents in `docs/product/` are the specification and override everything below.** Lite is one building, IPv4 only, one routing table, roles that administrators set up from fixed permissions (`admin` has full access), and 21 tables (16 core, 5 for Network Links). Sign-in is Microsoft Entra ID (`@dialogfinance.lk`) only; there is no development or password-free sign-in. There is no Supabase. Rules about routing domains, IPv6 counting, agents, integrations and multi-step workflows don't apply there. The rest still does: permissions not role names, audit in the same transaction, RLS on every table, no fake data, read-only towards the network.
 
 ## Read first
 

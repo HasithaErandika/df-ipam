@@ -24,6 +24,19 @@ export const permissionGroups: { group: string; items: PermissionInfo[] }[] = [
     ],
   },
   {
+    group: 'Network links',
+    items: [
+      { key: 'links:view', label: 'See network links', detail: 'Links, providers, the links overview and attachments other than contracts and quotations.' },
+      { key: 'links:create', label: 'Add network links', detail: 'Register new internet lines, VPN tunnels and leased lines.' },
+      { key: 'links:edit', label: 'Edit network links', detail: 'Change links, their related links and attachments.' },
+      { key: 'links:archive', label: 'Archive network links', detail: 'Archive a link and bring it back. Links are never deleted.' },
+      { key: 'links:commercial_view', label: 'See link costs and contracts', detail: 'Rentals, contract dates and references, cost totals, renewals, and contract and quotation files.' },
+      { key: 'links:commercial_manage', label: 'Manage link costs and contracts', detail: 'Change commercial details, add contract files, and receive contract expiry reminders.' },
+      { key: 'links:providers', label: 'Manage service providers', detail: 'Add providers and change their contacts.' },
+      { key: 'links:import_export', label: 'Import and export links', detail: 'Download links as Excel, CSV or text, and import them from Excel.' },
+    ],
+  },
+  {
     group: 'Reports and oversight',
     items: [
       { key: 'reports:export', label: 'Export reports', detail: 'Download any report as CSV, Excel or PDF.' },

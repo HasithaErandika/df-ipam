@@ -129,8 +129,9 @@ export async function download(path: string, fallbackName: string): Promise<void
   URL.revokeObjectURL(url)
 }
 
-export async function upload<T>(path: string, file: File): Promise<T> {
+export async function upload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
   const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.append(k, v)
   form.append('file', file)
   const res = await send(path, { method: 'POST', body: form })
   return (await res.json()).data

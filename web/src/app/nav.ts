@@ -1,5 +1,6 @@
 import {
-  Bell, BookCheck, ClipboardList, FileBarChart, History, LayoutDashboard, MonitorSmartphone, Network, Radar, Server, SlidersHorizontal, UsersRound, type LucideIcon,
+  ArrowLeftRight, Bell, BookCheck, Building2, Cable, CalendarClock, ClipboardList, FileBarChart, History, LayoutDashboard, List, MonitorSmartphone, Network,
+  PlusCircle, Radar, Server, SlidersHorizontal, UsersRound, type LucideIcon,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -13,6 +14,8 @@ export interface NavItem {
   hidden?: boolean
   /** A count shown beside the item, from the sidebar's badge source of this name. */
   badge?: 'alerts' | 'devices' | 'requests'
+  /** Active only on this exact address, not on the pages under it. */
+  end?: boolean
 }
 
 const view = ['inventory:view']
@@ -30,6 +33,17 @@ export const nav: { group: string; items: NavItem[] }[] = [
       { to: '/devices', label: 'Devices', icon: MonitorSmartphone, anyOf: view, summary: 'Known MAC addresses, and new ones waiting for a decision.', badge: 'devices' },
       { to: '/alerts', label: 'Alerts', icon: Bell, anyOf: view, summary: 'Unknown devices, unregistered IPs, conflicts and servers down.', badge: 'alerts' },
       { to: '/segments', label: 'Segment', icon: Radar, anyOf: view, summary: 'Every registered and seen address in one segment.', hidden: true },
+    ],
+  },
+  {
+    group: 'Network Links',
+    items: [
+      { to: '/network-links', label: 'Overview', icon: Cable, anyOf: ['links:view'], end: true, summary: 'Internet lines, VPN tunnels and leased lines at a glance: counts, costs and renewals.' },
+      { to: '/network-links/all', label: 'All Network Links', icon: List, anyOf: ['links:view'], summary: 'Every connectivity link, with search, filters and export.' },
+      { to: '/network-links/new', label: 'Add network link', icon: PlusCircle, anyOf: ['links:create'], hidden: true, summary: 'Register a new internet line, VPN tunnel or leased line.' },
+      { to: '/network-links/providers', label: 'Service Providers', icon: Building2, anyOf: ['links:view'], summary: 'The companies that provide links, with their contacts.' },
+      { to: '/network-links/renewals', label: 'Contract Renewals', icon: CalendarClock, anyOf: ['links:commercial_view'], summary: 'Link contracts ending soon, and those already ended.' },
+      { to: '/network-links/import-export', label: 'Import / Export', icon: ArrowLeftRight, anyOf: ['links:import_export'], summary: 'Bring links in from Excel, and take them out.' },
     ],
   },
   {
@@ -64,8 +78,10 @@ export const canSee = (item: Pick<NavItem, 'anyOf'>, permissions: string[]) => !
 export const navFor = (permissions: string[]) =>
   nav.map((g) => ({ ...g, items: g.items.filter((i) => !i.hidden && canSee(i, permissions)) })).filter((g) => g.items.length > 0)
 
+/** The page an address belongs to: the item whose address matches the most of it. */
 export const pageFor = (pathname: string) =>
-  allItems.find((p) => (p.to === '/' ? pathname === '/' : pathname === p.to || pathname.startsWith(`${p.to}/`)))
+  allItems.filter((p) => (p.to === '/' ? pathname === '/' : pathname === p.to || pathname.startsWith(`${p.to}/`)))
+    .sort((a, b) => b.to.length - a.to.length)[0]
 
 /** Whether this address is open to someone holding these permissions. */
 export function canOpen(pathname: string, permissions: string[]): boolean {

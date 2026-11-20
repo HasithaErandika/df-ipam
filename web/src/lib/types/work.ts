@@ -108,6 +108,8 @@ export interface ReportDefinition {
   description: string
   dated: boolean
   environment: boolean
+  /** The date range looks forward (contract renewals) instead of back. */
+  ahead: boolean
   columns: string[]
 }
 

@@ -21,7 +21,7 @@ const hide = { md: 'max-md:hidden', lg: 'max-lg:hidden', xl: 'max-xl:hidden' }
  * A table with its loading, error and empty states, and paging. Every list in the
  * app uses it, so they all behave the same way.
  */
-export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging, rowClassName, filtered }: {
+export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging, rowClassName, filtered, pageSizes }: {
   columns: Column<T>[]
   rows: T[]
   query: Pick<UseQueryResult, 'isPending' | 'isError' | 'error' | 'refetch' | 'isFetching' | 'isPlaceholderData'>
@@ -32,6 +32,8 @@ export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging
   rowClassName?: (row: T) => string | undefined
   /** When filters are on, an empty result says so instead of "nothing yet". */
   filtered?: { active: number; clear: () => void }
+  /** Rows-per-page choices, when a list needs its own. */
+  pageSizes?: number[]
 }) {
   if (query.isPending) return <SkeletonRows rows={6} />
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />
@@ -65,7 +67,7 @@ export function DataTable<T>({ columns, rows, query, rowKey, empty, meta, paging
           </tbody>
         </table>
       </div>
-      {meta && paging && <Pagination meta={meta} onPage={paging.setPage} onPageSize={paging.setPageSize} />}
+      {meta && paging && <Pagination meta={meta} onPage={paging.setPage} onPageSize={paging.setPageSize} pageSizes={pageSizes} />}
     </div>
   )
 }

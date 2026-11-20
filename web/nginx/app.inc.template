@@ -57,8 +57,14 @@ location /api/ {
     proxy_read_timeout 60s;
 
     # Import files reach 5 MB; the API allows 6 MB with the form around them.
-    location ~ ^/api/v1/(devices|ip-addresses|segments)/import$ {
+    location ~ ^/api/v1/(devices|ip-addresses|segments|network-links)/import$ {
         client_max_body_size 8m;
+        proxy_pass http://dfipam_api;
+    }
+
+    # Network link attachments reach 15 MB; the API allows 16 MB with the form.
+    location ~ ^/api/v1/network-links/[0-9a-f-]+/attachments$ {
+        client_max_body_size 17m;
         proxy_pass http://dfipam_api;
     }
 }

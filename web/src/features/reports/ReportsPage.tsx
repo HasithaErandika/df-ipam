@@ -11,8 +11,8 @@ const presets = [{ days: 7, label: '7 days' }, { days: 30, label: '30 days' }, {
 
 function Download({ report }: { report: ReportDefinition }) {
   const environments = useEnvironments()
-  const [from, setFrom] = useState(isoDate(-30))
-  const [to, setTo] = useState(isoDate())
+  const [from, setFrom] = useState(report.ahead ? isoDate() : isoDate(-30))
+  const [to, setTo] = useState(report.ahead ? isoDate(90) : isoDate())
   const [env, setEnv] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -35,9 +35,11 @@ function Download({ report }: { report: ReportDefinition }) {
           <div className="space-y-2">
             <div className="flex flex-wrap items-end gap-3">
               <Field label="From" htmlFor="rp-from"><Input id="rp-from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} /></Field>
-              <Field label="To" htmlFor="rp-to" error={bad ? 'The end is before the start.' : undefined}><Input id="rp-to" type="date" value={to} min={from} max={isoDate()} onChange={(e) => setTo(e.target.value)} /></Field>
+              <Field label="To" htmlFor="rp-to" error={bad ? 'The end is before the start.' : undefined}><Input id="rp-to" type="date" value={to} min={from} max={report.ahead ? undefined : isoDate()} onChange={(e) => setTo(e.target.value)} /></Field>
             </div>
-            <div className="flex flex-wrap gap-1">{presets.map((p) => <Button key={p.days} variant="ghost" className="h-7" onClick={() => { setFrom(isoDate(-p.days)); setTo(isoDate()) }}>Last {p.label}</Button>)}</div>
+            <div className="flex flex-wrap gap-1">{presets.map((p) => report.ahead
+              ? <Button key={p.days} variant="ghost" className="h-7" onClick={() => { setFrom(isoDate()); setTo(isoDate(p.days)) }}>Next {p.label}</Button>
+              : <Button key={p.days} variant="ghost" className="h-7" onClick={() => { setFrom(isoDate(-p.days)); setTo(isoDate()) }}>Last {p.label}</Button>)}</div>
           </div>
         )}
         {report.environment && (

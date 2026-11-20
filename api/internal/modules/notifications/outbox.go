@@ -108,4 +108,5 @@ func deliverBatch(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL
 var subjects = map[string]string{
 	"alert": "network alert", "server_up": "server back up", "request": "new IP request",
 	"request_decision": "your IP request", "reservation_expiry": "reservation expiring",
+	"link_contract_expiry": "network link contract expiring",
 }

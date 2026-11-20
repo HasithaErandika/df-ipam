@@ -17,12 +17,22 @@ const (
 	AuditView       = "audit:view"
 	UsersManage     = "users:manage"
 	SystemManage    = "system:manage"
+
+	LinksView             = "links:view"
+	LinksCreate           = "links:create"
+	LinksEdit             = "links:edit"
+	LinksArchive          = "links:archive"
+	LinksCommercialView   = "links:commercial_view"
+	LinksCommercialManage = "links:commercial_manage"
+	LinksProviders        = "links:providers"
+	LinksImportExport     = "links:import_export"
 )
 
 // AllPermissions lists every permission, in a stable order.
 var AllPermissions = []string{
 	InventoryView, InventoryEdit, NetworkManage, DiscoveryScan, IPRequest, IPReserve, RequestsApprove,
 	AlertsManage, ReportsExport, AuditView, UsersManage, SystemManage,
+	LinksView, LinksCreate, LinksEdit, LinksArchive, LinksCommercialView, LinksCommercialManage, LinksProviders, LinksImportExport,
 }
 
 // KnownPermission reports whether name is a permission the API checks.

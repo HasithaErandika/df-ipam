@@ -11,7 +11,7 @@ import (
 )
 
 // Kinds a person can switch email on or off for.
-var Kinds = []string{"alert", "server_up", "request", "request_decision", "reservation_expiry"}
+var Kinds = []string{"alert", "server_up", "request", "request_decision", "reservation_expiry", "link_contract_expiry"}
 
 // User notifies one person. email asks for an email too, if their preference allows.
 func User(ctx context.Context, tx pgx.Tx, userID, kind, message, link string, email bool) error {

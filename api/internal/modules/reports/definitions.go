@@ -1,5 +1,7 @@
 package reports
 
+import "strings"
+
 // Report is one downloadable report from docs/product/screens.md#reports. Every column
 // is selected as text, so any report renders the same way. Queries are constants;
 // only the date range and environment are bound, as $1, $2 and $3.
@@ -9,8 +11,11 @@ type Report struct {
 	Description string   `json:"description"`
 	Dated       bool     `json:"dated"`       // uses the date range
 	ByEnv       bool     `json:"environment"` // can filter by environment
+	Ahead       bool     `json:"ahead"`       // the date range looks forward, as for renewals
 	Columns     []string `json:"columns"`
-	sql         string
+	// Needs lists permissions a person must also hold, beyond reports:export.
+	Needs []string `json:"-"`
+	sql   string
 }
 
 // $1 from, $2 to (exclusive end, as dates), $3 environment ID or ”.
@@ -109,11 +114,16 @@ var catalogue = []Report{
 			WHERE a.occurred_at >= $1::date AND a.occurred_at < $2::date + 1 AND $3::text IS NOT NULL ORDER BY a.occurred_at DESC`},
 }
 
+// all is every report, the Network Links ones last.
+func all() []Report { return append(append([]Report{}, catalogue...), linkReports...) }
+
 func find(key string) (Report, bool) {
-	for _, r := range catalogue {
+	for _, r := range all() {
 		if r.Key == key {
 			return r, true
 		}
 	}
 	return Report{}, false
 }
+
+func sprintf(format, v string) string { return strings.ReplaceAll(format, "%s", v) }

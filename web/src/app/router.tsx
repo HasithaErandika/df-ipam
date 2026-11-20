@@ -19,6 +19,12 @@ const NetworkSetup = page(() => import('../features/network/NetworkSetupPage'), 
 const Access = page(() => import('../features/access/AccessPage'), 'AccessPage')
 const Audit = page(() => import('../features/audit/AuditPage'), 'AuditPage')
 const System = page(() => import('../features/system/SystemPage'), 'SystemPage')
+const LinksOverview = page(() => import('../features/links/LinksOverviewPage'), 'LinksOverviewPage')
+const LinksList = page(() => import('../features/links/LinksListPage'), 'LinksListPage')
+const LinkDetail = page(() => import('../features/links/LinkDetailPage'), 'LinkDetailPage')
+const LinkProviders = page(() => import('../features/links/ProvidersPage'), 'ProvidersPage')
+const LinkRenewals = page(() => import('../features/links/RenewalsPage'), 'RenewalsPage')
+const LinkTransfer = page(() => import('../features/links/ImportExportPage'), 'ImportExportPage')
 
 // Settings was split into separate pages; old links land on the right one.
 const moved: Record<string, string> = {
@@ -49,6 +55,15 @@ export const router = createBrowserRouter([
       { path: 'access/:tab?', element: <Access /> },
       { path: 'audit', element: <Audit /> },
       { path: 'system/:tab?', element: <System /> },
+      { path: 'network-links', element: <LinksOverview /> },
+      { path: 'network-links/all', element: <LinksList /> },
+      // Add and Edit open as dialogs over the list and the link's page.
+      { path: 'network-links/new', element: <LinksList /> },
+      { path: 'network-links/providers', element: <LinkProviders /> },
+      { path: 'network-links/renewals', element: <LinkRenewals /> },
+      { path: 'network-links/import-export', element: <LinkTransfer /> },
+      { path: 'network-links/:id', element: <LinkDetail /> },
+      { path: 'network-links/:id/edit', element: <LinkDetail /> },
       { path: 'settings/:tab?', element: <OldSettings /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],

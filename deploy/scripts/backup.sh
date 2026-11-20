@@ -24,9 +24,16 @@ gpg --batch --yes --trust-model always --encrypt --recipient "$BACKUP_GPG_RECIPI
     --output "$dir/df-ipam-$stamp.dump.gpg" "$work/dump"
 sha256sum "$dir/df-ipam-$stamp.dump.gpg" > "$dir/df-ipam-$stamp.dump.gpg.sha256"
 
-find "$dir" -name 'df-ipam-*.dump.gpg*' -mtime +"$keep" -delete
+# Network link attachments live on their own volume, not in the database.
+docker compose exec -T backend tar -C /data -cf - attachments > "$work/attachments.tar"
+tar -tf "$work/attachments.tar" > /dev/null
+gpg --batch --yes --trust-model always --encrypt --recipient "$BACKUP_GPG_RECIPIENT" \
+    --output "$dir/df-ipam-$stamp.attachments.tar.gpg" "$work/attachments.tar"
+sha256sum "$dir/df-ipam-$stamp.attachments.tar.gpg" > "$dir/df-ipam-$stamp.attachments.tar.gpg.sha256"
+
+find "$dir" \( -name 'df-ipam-*.dump.gpg*' -o -name 'df-ipam-*.attachments.tar.gpg*' \) -mtime +"$keep" -delete
 
 # Shown on the System Administration page.
-docker compose exec -T db psql -U postgres -d "$database" -q -c "INSERT INTO system_settings (key, value)
+docker compose exec -T db psql -U postgres -d "$database" -q -c "INSERT INTO settings (key, value)
   VALUES ('backup.last_success', to_jsonb(now())) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()"
 echo "backup written: $dir/df-ipam-$stamp.dump.gpg"

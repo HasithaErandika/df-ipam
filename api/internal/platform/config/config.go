@@ -21,7 +21,9 @@ type Config struct {
 	AppBaseURL     string
 	// Microsoft Entra ID sign-in. Off until the tenant, client ID and secret are set.
 	EntraAuthority, EntraTenantID, EntraClientID, EntraClientSecret, EntraRedirectURL string
-	AllowedEmailDomains                                                               []string
+	// AttachmentsDir holds network link attachments: a Docker volume in production.
+	AttachmentsDir      string
+	AllowedEmailDomains []string
 }
 
 func get(key, fallback string) string {
@@ -55,6 +57,7 @@ func Load() (Config, error) {
 		EntraTenantID:     get("ENTRA_TENANT_ID", ""),
 		EntraClientID:     get("ENTRA_CLIENT_ID", ""),
 		EntraClientSecret: get("ENTRA_CLIENT_SECRET", ""),
+		AttachmentsDir:    get("ATTACHMENTS_DIR", "data/attachments"),
 	}
 	c.EntraRedirectURL = get("ENTRA_REDIRECT_URL", c.AppBaseURL+"/api/v1/auth/microsoft/callback")
 	for _, d := range splitList(strings.ToLower(get("AUTH_ALLOWED_EMAIL_DOMAINS", "dialogfinance.lk"))) {

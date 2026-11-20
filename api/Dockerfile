@@ -14,7 +14,8 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates \
- && adduser -D -H -u 10001 dfipam
+ && adduser -D -H -u 10001 dfipam \
+ && mkdir -p /data/attachments && chown dfipam:dfipam /data/attachments && chmod 700 /data/attachments
 COPY --from=build /out/ /app/
 USER dfipam
 EXPOSE 8080

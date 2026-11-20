@@ -1,0 +1,10 @@
+UPDATE roles SET permissions = ARRAY(SELECT p FROM unnest(permissions) p WHERE p NOT LIKE 'links:%');
+DELETE FROM settings WHERE key LIKE 'links.%';
+DELETE FROM notification_preferences WHERE kind = 'link_contract_expiry';
+DROP TABLE network_link_attachments;
+DROP TABLE network_link_segments;
+DROP TABLE network_link_relations;
+DROP TABLE network_links;
+DROP SEQUENCE network_link_no;
+DROP TABLE network_link_providers;
+DROP FUNCTION all_ipv4(cidr[]);

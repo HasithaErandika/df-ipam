@@ -41,6 +41,7 @@ export const sources: Record<string, string> = { arp: 'ARP', ping: 'Ping', netbi
 export const notificationKinds: Record<string, string> = {
   alert: 'High and Critical alerts', server_up: 'Server back up', request: 'New IP requests (Admins)',
   request_decision: 'Decisions on my IP requests', reservation_expiry: 'Reservations about to expire',
+  link_contract_expiry: 'Network link contracts about to expire',
 }
 
 export const severityTone: Record<string, Tone> = { critical: 'danger', high: 'warn', medium: 'accent', low: 'neutral' }

@@ -6,7 +6,7 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 
 | Area | Status |
 | --- | --- |
-| Foundation | 16 tables with RLS, policies and grants; roles and permissions; route guard; audit in the same transaction; Docker (`db`, `migrate`, `backend`, `web`) |
+| Foundation | 21 tables with RLS, policies and grants (16 core, 5 for Network Links); roles and permissions; route guard; audit in the same transaction; Docker (`db`, `migrate`, `backend`, `web`, and the link attachment volume) |
 | Segments | Floor, server and cloud segments; DHCP pools; gateways (set or detected); host-address and pool checks; warnings for segments too large to scan or without a pool; private-MAC alerts and port checks per segment |
 | IP register | Create, edit, release; Available candidate; range reservations; CSV, text and Excel import and export, including servers |
 | Devices | Pending, approve, reject; register on approval; departments; import and export |
@@ -17,12 +17,13 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 | Requests and reservations | One-step approval; holds with reminders, extend, convert, release |
 | Notifications | Bell, email outbox (off by default), per-type preferences, hourly limit |
 | Reports and audit | Nine reports in CSV, Excel and PDF; audit screen with filters and export |
-| Roles and users | Roles set up by administrators from twelve permissions, six starting roles, never locked out; users given roles |
+| Roles and users | Roles set up by administrators from twenty permissions, six starting roles, never locked out; users given roles |
 | Administration | Network setup (segments with import from text, environments, departments), Users and roles, Audit log, System (settings, FortiGate, Microsoft Intune) as separate pages; every edit confirmed with its list of changes |
 | Imports | Devices, register and servers from CSV, text or Excel, and segments from FortiGate output; every import reviewed in a dry run first |
 | Apache | Optional host Apache in place of the web container: site file, compose override, `make apache-up` and `make apache-web`; syntax and a live proxy test passed |
 | FortiGate | Optional read-only ARP, DHCP leases (counted as present only when ARP confirms them) and VPN sessions with their user, VPN kind and origin; VPN client pools as their own segment type, never swept |
 | Microsoft Intune | Optional read-only Graph read of managed devices: each discovered device's primary user, serial, maker and model, OS, compliance, disk encryption and last check-in, matched by MAC or a unique computer name. Needs the `DeviceManagementManagedDevices.Read.All` application permission with admin consent. Each read also lists Entra ID devices and their registered owner, matched by computer name (needs `Device.Read.All` and `User.Read.All`; the Graph query works against the tenant, but owners mostly cover registered devices, not hybrid-joined PCs) |
+| Network Links | Links with basic, technical, VPN, commercial and support details; providers; primary, secondary, backup and underlying links; overview with counts, per-currency costs and renewals; list with search, filters, sorting, column chooser and 10–100 rows; details page with change history; attachments on a private volume (15 MB, type checked against content); archive and restore; contract reminders at 90, 60, 30, 7 and 0 days; Excel template, import with dry run and confirmed updates, export with VPN subnet and related link sheets; links shown on segment pages and register entries; eight permissions with commercial information hidden server side. Not yet tried in a browser signed in through Entra ID, and the backup and restore of attachments has not been rehearsed |
 | Microsoft sign-in | Entra ID authorization code flow with PKCE and a nonce, pinned tenant, `@dialogfinance.lk` only, HttpOnly session cookie with idle and 10-hour limits, CSRF header, audited. The only way in, locally and on servers; the API won't start in production without it or HTTPS. Supabase and the development sign-in are removed |
 | First administrator | `make admin EMAIL=…`; pending accounts that a person's first Microsoft sign-in takes over |
 

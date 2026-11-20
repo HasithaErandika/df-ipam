@@ -13,7 +13,8 @@
 | Reservations | Active and expiring holds |
 | Reports | Pick a report, range and format |
 | Audit log | Every change, with filters and export |
-| Network setup | Segments (with import from text), environments, departments |
+| Network Links | Overview, all links, add a link, service providers, contract renewals, import and export. See [network-links.md](network-links.md) |
+| Network setup | Segments (with import from text), environments, departments, and the network link types, sites, reminder days and USD rate |
 | Users and roles | People and their roles; roles and their permissions |
 | System | Intervals, email, sessions, and the FortiGate connection |
 
@@ -21,7 +22,7 @@ Lists refresh on their own (Discovery every 30 seconds, most others every minute
 
 ## Reports
 
-On demand, as CSV, tab-separated text, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices (with domain or workgroup, and whether Intune knows them), Device users and management (user from Intune or VPN, domain, Windows version, serial, model, OS, compliance, encryption), VPN sessions (the latest session per tunnel address), Static IPs on floors, Server availability, Alert history, Requests and reservations, and Audit log.
+On demand, as CSV, tab-separated text, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices (with domain or workgroup, and whether Intune knows them), Device users and management (user from Intune or VPN, domain, Windows version, serial, model, OS, compliance, encryption), VPN sessions (the latest session per tunnel address), Static IPs on floors, Server availability, Alert history, Requests and reservations, Audit log, and for people with the links permissions Network links, Network link costs and Network link contract renewals (the last looks ahead: its dates default to the next 90 days).
 
 ## System settings
 
@@ -54,10 +55,10 @@ A role is a job and the permissions it grants; each person holds one. People who
 | Starting role | Grants |
 | --- | --- |
 | Administrator | Every permission, including ones added later. A system role: it can be renamed but not limited or deleted |
-| Network engineer | See and change the register and devices, set up the network, start scans, request and reserve, approve requests, handle alerts, export reports |
-| IT officer | See and change the register and devices, request and reserve, handle alerts, export reports |
-| Security auditor | See the network, read the audit log, export reports |
-| Requester | See the network, request and reserve, export reports |
-| Viewer | See the network, export reports |
+| Network engineer | See and change the register and devices, set up the network, start scans, request and reserve, approve requests, handle alerts, export reports, and everything in Network Links |
+| IT officer | See and change the register and devices, request and reserve, handle alerts, export reports, see network links |
+| Security auditor | See the network, read the audit log, export reports, see network links with their costs and contracts |
+| Requester | See the network, request and reserve, export reports, see network links |
+| Viewer | See the network, export reports, see network links |
 
 People sign in with their **Microsoft** `@dialogfinance.lk` account (Entra ID). A signed-in person with no role sees nothing. Nobody changes their own role or access, and no change may leave nobody active who can manage users. The code checks permissions, never role names. See [authentication.md](../engineering/authentication.md).

@@ -458,3 +458,116 @@ paths:
       summary: "Read Intune's managed devices now and name each discovered device's primary user. Spaced a minute apart"
       description: "Permission: system:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links:
+    get:
+      summary: "Network links, with search, filters and sorting. Commercial fields are empty without links:commercial_view"
+      description: "Permission: links:view."
+      parameters: [{ name: q, in: query, schema: { type: string } }, { name: linkType, in: query, schema: { type: string } }, { name: providerId, in: query, schema: { type: string } }, { name: site, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: criticality, in: query, schema: { type: string } }, { name: vpn, in: query, schema: { type: string } }, { name: archived, in: query, schema: { type: string } }, { name: segmentId, in: query, schema: { type: string } }, { name: ip, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Add a network link with its related links and local subnets. Commercial fields need links:commercial_manage"
+      description: "Permission: links:create."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/dashboard:
+    get:
+      summary: "Counts by status, type, provider and site, recently updated links; monthly cost per currency and renewals for commercial viewers"
+      description: "Permission: links:view."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/renewals:
+    get:
+      summary: "Contracts ending within ?days (default 90), and ended ones on links not terminated"
+      description: "Permission: links:commercial_view."
+      parameters: [{ name: days, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/options:
+    get:
+      summary: "What the link form picks from: active people, subnets, approved devices, links and register addresses"
+      description: "Permission: links:create or links:edit."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/export:
+    get:
+      summary: "Download the filtered links as Excel (with VPN subnet and related link sheets), CSV or text"
+      description: "Permission: links:import_export."
+      parameters: [{ name: format, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: linkType, in: query, schema: { type: string } }, { name: providerId, in: query, schema: { type: string } }, { name: site, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: criticality, in: query, schema: { type: string } }, { name: archived, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/template:
+    get:
+      summary: "The Excel import template, with the accepted values"
+      description: "Permission: links:import_export."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/import:
+    post:
+      summary: "Import links from Excel or CSV. dryRun=true previews; update=true confirms updating existing links"
+      description: "Permission: links:import_export."
+      parameters: [{ name: dryRun, in: query, schema: { type: string } }, { name: update, in: query, schema: { type: string } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/{id}:
+    get:
+      summary: "One link with its related links, local subnets, register entries and attachments"
+      description: "Permission: links:view."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    put:
+      summary: "Edit a link. Commercial fields change only with links:commercial_manage"
+      description: "Permission: links:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/{id}/archive:
+    post:
+      summary: "Archive a link: it leaves lists, totals and reminders, and keeps its history"
+      description: "Permission: links:archive."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/{id}/restore:
+    post:
+      summary: "Bring an archived link back"
+      description: "Permission: links:archive."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/{id}/history:
+    get:
+      summary: "The link's change history, field by field; commercial fields only for commercial viewers"
+      description: "Permission: audit:view and links:view."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/{id}/attachments:
+    post:
+      summary: "Attach a file (multipart: file, category) of up to 15 MB. Contracts and quotations need links:commercial_manage"
+      description: "Permission: links:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/{id}/attachments/{file}:
+    get:
+      summary: "Download an attachment. Contracts and quotations need links:commercial_view"
+      description: "Permission: links:view."
+      parameters: [{ $ref: '#/components/parameters/id' }, { name: file, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    delete:
+      summary: "Take an attachment off a link; the record and file are kept"
+      description: "Permission: links:edit."
+      parameters: [{ $ref: '#/components/parameters/id' }, { name: file, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /link-providers:
+    get:
+      summary: "Service providers with how many links each has"
+      description: "Permission: links:view."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    post:
+      summary: "Add a service provider"
+      description: "Permission: links:providers."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /link-providers/{id}:
+    put:
+      summary: "Edit a provider, or switch it off"
+      description: "Permission: links:providers."
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /link-settings:
+    get:
+      summary: "Link types, sites, contract reminder days and the LKR per USD rate"
+      description: "Permission: links:view or network:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+    put:
+      summary: "Change the link types, sites, reminder days and exchange rate"
+      description: "Permission: network:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }

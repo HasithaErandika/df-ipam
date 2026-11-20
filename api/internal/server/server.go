@@ -17,6 +17,7 @@ import (
 	"dfipam/api/internal/modules/discovery"
 	"dfipam/api/internal/modules/integrations"
 	"dfipam/api/internal/modules/inventory"
+	"dfipam/api/internal/modules/links"
 	"dfipam/api/internal/modules/notifications"
 	"dfipam/api/internal/modules/reports"
 	"dfipam/api/internal/modules/signin"
@@ -31,9 +32,12 @@ const defaultMaxInFlight = 200
 // importPaths take files of up to 5 MB; every other route takes 1 MB. Room is
 // left for the multipart framing around the file.
 var importPaths = map[string]int64{
-	"/api/v1/devices/import":      6 << 20,
-	"/api/v1/ip-addresses/import": 6 << 20,
-	"/api/v1/segments/import":     6 << 20,
+	"/api/v1/devices/import":       6 << 20,
+	"/api/v1/ip-addresses/import":  6 << 20,
+	"/api/v1/segments/import":      6 << 20,
+	"/api/v1/network-links/import": 6 << 20,
+	// Attachments of up to 15 MB, with room for the form around them.
+	"/api/v1/network-links/:id/attachments": links.MaxFileBytes + 1<<20,
 }
 
 type Deps struct {
@@ -51,6 +55,8 @@ type Deps struct {
 	FortiGate *fortigate.Syncer
 	// Intune names each device's user when an Admin switches it on. Nil in tests.
 	Intune *intune.Syncer
+	// LinkFiles keeps network link attachments. Nil answers their routes with 503.
+	LinkFiles *links.Store
 	// SMTPConfigured says whether api/.env has a mail server, shown in Settings.
 	SMTPConfigured bool
 	// Sessions resolves sign-in cookies, the only way in. Nil refuses every request.
@@ -104,5 +110,6 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	reports.New(d.Conn).Register(guard)
 	integrations.New(d.Conn, d.FortiGate).Register(guard)
 	integrations.NewIntune(d.Conn, d.Intune).Register(guard)
+	links.New(d.Conn, d.LinkFiles).Register(guard)
 	return r, guard
 }

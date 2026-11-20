@@ -1,0 +1,70 @@
+/** One network link (api/internal/modules/links/dto.go). Bandwidth is in Mbps. */
+export interface NetworkLink {
+  id: string; code: string; name: string; linkType: string
+  providerId: string | null; providerName: string | null; circuitId: string
+  sourceSite: string; destination: string; purpose: string; environment: string
+  linkRole: string; criticality: string; officerId: string | null; officerEmail: string | null; officerName: string | null
+  status: string; archivedAt: string | null
+  downMbps: number | null; upMbps: number | null; medium: string; wanIp: string | null; wanSegmentId: string | null; wanSegment: string | null
+  publicIps: string | null; gatewayIp: string | null; deviceId: string | null; deviceName: string | null; deviceText: string
+  interface: string; vlan: number | null; vrf: string; routing: string
+  vpnTunnel: string; vpnType: string; localPeer: string; remotePeer: string; remoteSubnets: string[]
+  remoteOrg: string; remoteContact: string; lastTestDate: string | null; vaultRef: string
+  /** True when this person may not see commercial information: those fields are then empty. */
+  commercialHidden: boolean
+  noSeparateCost: boolean; billingAccount: string; monthlyRental: number | null; currency: string; installCost: number | null
+  annualCost: number | null; contractRef: string; poRef: string; activationDate: string | null; contractStart: string | null
+  contractEnd: string | null; renewalNoticeDays: number | null; costCentre: string
+  supportContact: string; supportEmail: string; supportHotline: string; accountManager: string
+  slaPct: number | null; resolutionHours: number | null; remarks: string
+  createdAt: string; updatedAt: string
+}
+
+export interface LinkType { key: string; label: string; vpn: boolean; active: boolean }
+
+export interface LinkSettings { types: LinkType[]; sites: string[]; reminderDays: number[]; usdRate: number | null }
+
+export interface LinkProvider {
+  id: string; name: string; accountManager: string; contactNumber: string; email: string; supportHotline: string
+  supportEmail: string; website: string; remarks: string; active: boolean; links: number
+}
+
+export interface RelatedLink { id: string; code: string; name: string; linkType: string; linkRole: string; status: string; kind: string; direction: 'outgoing' | 'incoming' }
+
+export interface LinkAttachment { id: string; category: string; fileName: string; contentType: string; size: number; uploadedBy: string | null; uploadedAt: string; removedAt: string | null }
+
+export interface LinkDetail {
+  link: NetworkLink
+  related: RelatedLink[]
+  localSegments: { id: string; name: string; network: string }[]
+  registerEntries: { id: string; ip: string; name: string; segmentId: string; segmentName: string; use: string }[]
+  attachments: LinkAttachment[]
+}
+
+export interface LinkOption { id: string; label: string; detail: string }
+
+export interface LinkOptions { officers: LinkOption[]; segments: LinkOption[]; devices: LinkOption[]; links: LinkOption[]; registerIps: LinkOption[] }
+
+export interface LinkHistoryEntry { at: string; actor: string; action: string; changes: { field: string; old: unknown; new: unknown }[] }
+
+export interface LinkCount { key: string; label: string; count: number }
+export interface LinkAmount { key: string; label: string; currency: string; amount: number }
+
+export interface LinkRenewal {
+  id: string; code: string; name: string; provider: string | null; contractEnd: string; daysLeft: number; noticeDays: number | null
+  monthlyRental: number | null; currency: string; officer: string | null; contractRef: string
+}
+
+export interface LinkDashboard {
+  totals: { total: number; active: number; inactive: number; pending: number; vpn: number; expiring: number }
+  byType: LinkCount[]; byProvider: LinkCount[]; bySite: LinkCount[]; byStatus: LinkCount[]
+  recent: { id: string; code: string; name: string; status: string; updatedAt: string }[]
+  commercialHidden?: boolean
+  monthlyByCurrency?: LinkAmount[]; monthlyByProvider?: LinkAmount[]; monthlyCombinedLkr?: number; renewals?: LinkRenewal[]
+}
+
+export interface LinkImportResult {
+  dryRun: boolean; imported: number; added: number; updated: number; skipped: number
+  issues: { row: number; issue: string }[]
+  preview: { row: number; key: string; label: string; action: 'add' | 'update' }[]
+}

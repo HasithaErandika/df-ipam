@@ -10,6 +10,7 @@ The product documents in this folder are the specification: what is described he
 | [discovery.md](discovery.md) | What the scanner asks, how it identifies devices, how it keeps the network steady, FortiGate |
 | [register.md](register.md) | The IP register, servers and their checks, devices, requests and reservations |
 | [alerts.md](alerts.md) | Alert rules and notifications |
+| [network-links.md](network-links.md) | Network Links: internet lines, VPN tunnels and leased lines, providers, contracts, attachments |
 | [screens.md](screens.md) | Screens, reports, settings and roles |
 
 ## Scope
@@ -38,7 +39,7 @@ One building, IPv4 only, one routing table. No agents on PCs: the DF-IPAM server
 
 ## Data model
 
-Sixteen tables: `users`, `roles`, `sessions`, `segments`, `environments`, `departments`, `devices`, `ip_addresses`, `reservations`, `ip_requests`, `sightings`, `alerts`, `notifications`, `notification_preferences`, `settings`, `audit_logs`. See [database.md](../engineering/database.md).
+Twenty-one tables. Sixteen hold the network and its register: `users`, `roles`, `sessions`, `segments`, `environments`, `departments`, `devices`, `ip_addresses`, `reservations`, `ip_requests`, `sightings`, `alerts`, `notifications`, `notification_preferences`, `settings`, `audit_logs`. Five hold Network Links: `network_link_providers`, `network_links`, `network_link_relations`, `network_link_segments`, `network_link_attachments`. See [database.md](../engineering/database.md).
 
 ## Questions to answer before go-live
 
