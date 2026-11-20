@@ -7,7 +7,7 @@ export const tabLabels: Record<TabKey, string> = {
 
 const fields: Record<TabKey, string[]> = {
   basic: ['name', 'linkType', 'providerId', 'circuitId', 'sourceSite', 'destination', 'purpose', 'environment', 'linkRole', 'criticality', 'officerId', 'status'],
-  technical: ['downMbps', 'upMbps', 'medium', 'wanSegmentId', 'wanIp', 'gatewayIp', 'publicIps', 'localSegmentIds', 'deviceId', 'deviceText', 'interface', 'vlan', 'vrf', 'routing'],
+  technical: ['downMbps', 'upMbps', 'medium', 'wanSegmentId', 'wanIp', 'extraWanIps', 'gatewayIp', 'publicIps', 'localSegmentIds', 'deviceIds', 'deviceText', 'interface', 'vlan', 'vrf', 'routing'],
   vpn: ['vpnTunnel', 'vpnType', 'localPeer', 'remotePeer', 'remoteSubnets', 'remoteOrg', 'remoteContact', 'lastTestDate', 'vaultRef'],
   related: ['relations'],
   commercial: ['noSeparateCost', 'billingAccount', 'monthlyRental', 'currency', 'installCost', 'contractRef', 'poRef', 'activationDate', 'contractStart', 'contractEnd', 'renewalNoticeDays', 'costCentre'],

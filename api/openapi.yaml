@@ -470,7 +470,7 @@ paths:
       parameters: [{ name: q, in: query, schema: { type: string } }, { name: linkType, in: query, schema: { type: string } }, { name: providerId, in: query, schema: { type: string } }, { name: site, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: criticality, in: query, schema: { type: string } }, { name: vpn, in: query, schema: { type: string } }, { name: archived, in: query, schema: { type: string } }, { name: segmentId, in: query, schema: { type: string } }, { name: ip, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     post:
-      summary: "Add a network link with its related links and local subnets. Commercial fields need links:commercial_manage"
+      summary: "Add a network link with its related links, segments, WAN addresses (extraWanIps) and connected devices (deviceIds). Commercial fields need links:commercial_manage"
       description: "Permission: links:create."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /network-links/dashboard:
@@ -489,9 +489,15 @@ paths:
       summary: "What the link form picks from: active people, subnets, approved devices, links and register addresses"
       description: "Permission: links:create or links:edit."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /network-links/seen-devices:
+    get:
+      summary: "Devices the scan saw in the last 30 days on these addresses (a link's WAN IPs and gateway), with their approval status. Evidence only"
+      description: "Permission: links:create or links:edit."
+      parameters: [{ name: ip, in: query, description: "An IPv4 address; repeat for more, up to 20", schema: { type: array, items: { type: string } }, style: form, explode: true }]
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /network-links/export:
     get:
-      summary: "Download the filtered links as Excel (with VPN subnet and related link sheets), CSV or text"
+      summary: "Download the filtered links as Excel (with subnet and related link sheets), CSV or text"
       description: "Permission: links:import_export."
       parameters: [{ name: format, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: linkType, in: query, schema: { type: string } }, { name: providerId, in: query, schema: { type: string } }, { name: site, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: criticality, in: query, schema: { type: string } }, { name: archived, in: query, schema: { type: string } }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }

@@ -19,7 +19,7 @@ const fieldNames: Record<string, string> = {
   po_ref: 'PO reference', activation_date: 'Activation date', contract_start: 'Contract start', contract_end: 'Contract expiry', contractEnd: 'Contract expiry',
   renewal_notice_days: 'Renewal notice', cost_centre: 'Cost centre', support_contact: 'Support contact', support_email: 'Support email',
   support_hotline: 'Hotline', account_manager: 'Account manager', sla_pct: 'SLA %', resolution_hours: 'Resolution hours', archived_at: 'Archived',
-  local_subnets: 'Segments', relations: 'Related links',
+  local_subnets: 'Segments', extra_wan_ips: 'More WAN addresses', relations: 'Related links',
 }
 
 const label = (f: string) => fieldNames[f] ?? f.charAt(0).toUpperCase() + f.slice(1).replace(/_/g, ' ')

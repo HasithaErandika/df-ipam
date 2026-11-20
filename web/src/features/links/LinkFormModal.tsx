@@ -111,7 +111,8 @@ function FormDialog({ title, detail, settings, onClose, onSaved }: { title: stri
         <div className="min-w-0 space-y-4">
           {(providers.isError || options.isError) && <ErrorState error={providers.error ?? options.error} />}
           {panel('basic', <BasicSection p={p} settings={settings} providers={providers.data ?? []} options={options.data} editing={Boolean(detail)} />)}
-          {panel('technical', <TechnicalSection p={p} options={options.data} />)}
+          {panel('technical', <TechnicalSection p={p} options={options.data} isNew={!detail}
+            known={detail ? detail.link.deviceIds.map((id, i) => ({ id, label: detail.link.deviceNames[i] ?? 'Device' })) : []} />)}
           {vpn && panel('vpn', <VpnSection p={p} />)}
           {panel('related', <RelationsSection p={p} options={options.data} selfId={detail?.link.id} />)}
           {canManage && panel('commercial', <CommercialSection p={p} canManage={canManage} canView={canView} />)}

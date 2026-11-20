@@ -15,7 +15,7 @@ var linkReports = []Report{
 		Needs:   []string{"links:view"},
 		Columns: []string{"Link ID", "Name", "Type", "Provider", "Circuit ID", "Source location", "Destination", "Role", "Criticality", "Status", "Download Mbps", "Upload Mbps", "WAN IP", "Public IPs", "Responsible officer", "Last changed"},
 		sql: `SELECT l.code, l.name, ` + linkType + `, COALESCE(p.name, ''), l.circuit_id, l.source_site, l.destination, initcap(l.link_role), initcap(l.criticality), initcap(l.status),
-			COALESCE(trim_scale(l.down_mbps)::text, ''), COALESCE(trim_scale(l.up_mbps)::text, ''), COALESCE(host(l.wan_ip), ''), COALESCE(l.public_ips::text, ''),
+			COALESCE(trim_scale(l.down_mbps)::text, ''), COALESCE(trim_scale(l.up_mbps)::text, ''), concat_ws('; ', host(l.wan_ip), NULLIF(array_to_string(l.extra_wan_ips, '; '), '')), COALESCE(l.public_ips::text, ''),
 			COALESCE(u.email, ''), to_char(l.updated_at AT TIME ZONE 'Asia/Colombo', 'YYYY-MM-DD HH24:MI')` + linkFrom + `
 			WHERE l.archived_at IS NULL AND $1::date IS NOT NULL AND $2::date IS NOT NULL AND $3::text IS NOT NULL ORDER BY l.code`},
 	{Key: "network-link-costs", Title: "Network link costs", Description: "Monthly and annual cost of each link that isn't archived or terminated, in its own currency, with billing and contract details.",

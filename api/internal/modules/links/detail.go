@@ -71,7 +71,12 @@ func (h *Handler) detail(c *gin.Context) {
 	if !money {
 		link.hideCommercial()
 	}
-	out := gin.H{"link": link}
+	seen, err := devicesSeenAt(c, h.conn, linkAddresses(&link))
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	out := gin.H{"link": link, "seenDevices": seen}
 	if err := h.attachRefs(c, id, money, out); err != nil {
 		httpx.Fail(c, err)
 		return
@@ -97,8 +102,9 @@ func (h *Handler) attachRefs(c *gin.Context, id string, money bool, out gin.H) e
 		return err
 	}
 	register, err := db.All[registerRef](c, h.conn, `SELECT i.id::text AS id, host(i.ip) AS ip, i.assigned_name AS name, s.id::text AS segment_id,
-		s.name AS segment_name, CASE WHEN i.ip = l.wan_ip THEN 'wan' WHEN i.ip = l.gateway_ip THEN 'gateway' ELSE 'public' END AS use
-		FROM network_links l JOIN ip_addresses i ON i.ip = l.wan_ip OR i.ip = l.gateway_ip OR l.public_ips >>= i.ip
+		s.name AS segment_name, CASE WHEN i.ip = l.wan_ip OR i.ip = ANY(x.extra) THEN 'wan' WHEN i.ip = l.gateway_ip THEN 'gateway' ELSE 'public' END AS use
+		FROM network_links l CROSS JOIN LATERAL (SELECT array(SELECT set_masklen(e, 32) FROM unnest(l.extra_wan_ips) e) AS extra) x
+		JOIN ip_addresses i ON i.ip = l.wan_ip OR i.ip = ANY(x.extra) OR i.ip = l.gateway_ip OR l.public_ips >>= i.ip
 		JOIN segments s ON s.id = i.segment_id WHERE l.id = $1::uuid ORDER BY i.ip LIMIT 50`, id)
 	if err != nil {
 		return err

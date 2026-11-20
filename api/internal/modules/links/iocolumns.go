@@ -1,6 +1,7 @@
 package links
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -13,6 +14,9 @@ type ioRow struct {
 	LocalSubnets []string
 	Related      []string // "DF-LNK-0002:backup"
 }
+
+// oldHeaders are columns' names in older files, still read on import.
+var oldHeaders = map[string]string{"Segments": "local subnets", "Connected Devices": "connected device"}
 
 // ioColumn is one spreadsheet column: its header, how a link fills it, and how
 // an imported cell sets the form. Commercial columns need commercial access.
@@ -89,13 +93,12 @@ var ioColumns = []ioColumn{
 			in.WANSegmentID = x.ids["segments"][wanNetwork(in.WANIP)] // a guess: no issue when it isn't a segment
 		}
 	}),
+	plain("More WAN IPs", func(r *ioRow) string { return strings.Join(r.ExtraWANIPs, "; ") }, func(in *linkInput, v string) { in.ExtraWANIPs = split(v) }),
 	plain("Public IPs", func(r *ioRow) string { return strings.TrimSuffix(str(r.PublicIPs), "/32") }, func(in *linkInput, v string) { in.PublicIPs = v }),
 	plain("Gateway IP", func(r *ioRow) string { return str(r.GatewayIP) }, func(in *linkInput, v string) { in.GatewayIP = v }),
-	col2("Connected Device", false, func(r *ioRow) string { return firstOf(str(r.DeviceName), r.DeviceText) }, func(in *linkInput, v string, x *resolver) {
-		if in.DeviceID = x.find("devices", v); in.DeviceID == "" {
-			in.DeviceText = v
-		}
-	}),
+	col2("Connected Devices", false, func(r *ioRow) string {
+		return strings.Join(append(slices.Clone(r.DeviceNames), split(r.DeviceText)...), "; ")
+	}, setDevices),
 	plain("Interface", func(r *ioRow) string { return r.Interface }, func(in *linkInput, v string) { in.Interface = v }),
 	plain("VLAN", func(r *ioRow) string { return i32(r.VLAN) }, func(in *linkInput, v string) { in.VLAN = parseInt(v) }),
 	plain("VDOM / VRF", func(r *ioRow) string { return r.VRF }, func(in *linkInput, v string) { in.VRF = v }),

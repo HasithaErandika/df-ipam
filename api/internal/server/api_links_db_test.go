@@ -142,3 +142,53 @@ func upload(t *testing.T, e *apiEnv, path, csv string) map[string]any {
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return out["data"].(map[string]any)
 }
+
+// DAP_ILL at head office: one link, two public /32 addresses.
+func TestLinkWithTwoWANAddresses(t *testing.T) {
+	e := newAPI(t)
+	dap := id(e.call("POST", "/network-links", link("DAP_ILL", "ill", map[string]any{"wanIp": "122.255.36.14 255.255.255.255",
+		"extraWanIps": []string{"122.255.35.1", "122.255.36.14"}, "interface": "WAN 1", "circuitId": "994621202"}), 201))
+	l := e.call("GET", "/network-links/"+dap, nil, 200)["data"].(map[string]any)["link"].(map[string]any)
+	if l["wanIp"] != "122.255.36.14" || fmt.Sprint(l["extraWanIps"]) != "[122.255.35.1/32]" {
+		t.Fatalf("stored: %v %v", l["wanIp"], l["extraWanIps"])
+	}
+	if got := e.call("GET", "/network-links?ip=122.255.35.1", nil, 200); total(got) != 1 {
+		t.Fatalf("the second address finds its link: %v", got)
+	}
+	if got := e.call("GET", "/network-links?q=122.255.35", nil, 200); total(got) != 1 {
+		t.Fatalf("search by the second address: %v", got)
+	}
+	e.call("PUT", "/network-links/"+dap, link("DAP_ILL", "ill", map[string]any{"extraWanIps": []string{"172,22,60.145"}}), 422)
+}
+
+// Devices the scan saw on a link's addresses are offered; a link keeps several,
+// and only approved ones can be added.
+func TestLinkDevicesFromTheScan(t *testing.T) {
+	e := newAPI(t)
+	if _, err := e.tx.Exec(e.ctx, `INSERT INTO sightings (ip, mac, source) VALUES
+		('10.10.40.253', '00:ee:00:00:00:01', 'arp'), ('10.10.40.254', '00:ee:00:00:00:02', 'arp'), ('10.10.40.1', '00:ee:00:00:00:03', 'arp')`); err != nil {
+		t.Fatal(err)
+	}
+	var fw, cpe, pending string
+	if err := e.tx.QueryRow(e.ctx, `WITH d AS (INSERT INTO devices (mac, name, status, decided_at) VALUES
+		('00:ee:00:00:00:01', 'FW-HO', 'approved', now()), ('00:ee:00:00:00:02', 'Fintech CPE', 'approved', now()),
+		('00:ee:00:00:00:03', '', 'pending', NULL) RETURNING id::text, mac)
+		SELECT (SELECT id FROM d WHERE mac = '00:ee:00:00:00:01'), (SELECT id FROM d WHERE mac = '00:ee:00:00:00:02'),
+		(SELECT id FROM d WHERE mac = '00:ee:00:00:00:03')`).Scan(&fw, &cpe, &pending); err != nil {
+		t.Fatal(err)
+	}
+	seen := e.call("GET", "/network-links/seen-devices?ip=10.10.40.253&ip=10.10.40.254&ip=nonsense", nil, 200)["data"].([]any)
+	if len(seen) != 2 || seen[0].(map[string]any)["name"] != "FW-HO" {
+		t.Fatalf("seen: %v", seen)
+	}
+	vpn := id(e.call("POST", "/network-links", link("Fintech_VPN", "site_vpn", map[string]any{"wanIp": "10.10.40.253 /24",
+		"gatewayIp": "10.10.40.254", "deviceIds": []string{fw, cpe, fw}, "deviceText": "Provider switch"}), 201))
+	d := e.call("GET", "/network-links/"+vpn, nil, 200)["data"].(map[string]any)
+	if l := d["link"].(map[string]any); len(l["deviceIds"].([]any)) != 2 || len(l["deviceNames"].([]any)) != 2 {
+		t.Fatalf("devices: %v %v", l["deviceIds"], l["deviceNames"])
+	}
+	if s := d["seenDevices"].([]any); len(s) != 2 {
+		t.Fatalf("the link page shows what the scan saw: %v", s)
+	}
+	e.call("PUT", "/network-links/"+vpn, link("Fintech_VPN", "site_vpn", map[string]any{"deviceIds": []string{fw, pending}}), 422)
+}

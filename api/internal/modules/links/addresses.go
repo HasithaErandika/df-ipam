@@ -97,3 +97,31 @@ func wanNetwork(value string) string {
 	}
 	return netip.PrefixFrom(a, bits).Masked().String()
 }
+
+// extraWANIPs checks a link's further WAN addresses. Each keeps its subnet's
+// prefix ("122.255.35.1/32", "10.10.40.253/24"); one without a prefix is a /32.
+// The main WAN IP and repeats are left out.
+func extraWANIPs(v *validate.V, list []string, main string) []string {
+	if len(list) > 16 {
+		v.Add("extraWanIps", "List at most 16 more WAN addresses.")
+	}
+	out, seen := []string{}, map[string]bool{main: true}
+	for _, s := range list {
+		if strings.TrimSpace(s) == "" {
+			continue
+		}
+		a, bits, ok := splitAddress(s)
+		if !ok {
+			v.Add("extraWanIps", "Each WAN address must be an IPv4 address such as 122.255.35.1, optionally with its prefix (/32) or mask.")
+			continue
+		}
+		if bits < 0 {
+			bits = 32
+		}
+		if !seen[a.String()] {
+			seen[a.String()] = true
+			out = append(out, netip.PrefixFrom(a, bits).String())
+		}
+	}
+	return out
+}

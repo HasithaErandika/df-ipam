@@ -33,10 +33,11 @@ type linkDTO struct {
 	WANIP        *string  `db:"wan_ip" json:"wanIp"`
 	WANSegmentID *string  `db:"wan_segment_id" json:"wanSegmentId"`
 	WANSegment   *string  `db:"wan_segment" json:"wanSegment"`
+	ExtraWANIPs  []string `db:"extra_wan_ips" json:"extraWanIps"`
 	PublicIPs    *string  `db:"public_ips" json:"publicIps"`
 	GatewayIP    *string  `db:"gateway_ip" json:"gatewayIp"`
-	DeviceID     *string  `db:"device_id" json:"deviceId"`
-	DeviceName   *string  `db:"device_name" json:"deviceName"`
+	DeviceIDs    []string `db:"device_ids" json:"deviceIds"`
+	DeviceNames  []string `db:"device_names" json:"deviceNames"` // in the order of DeviceIDs
 	DeviceText   string   `db:"device_text" json:"deviceText"`
 	Interface    string   `db:"interface" json:"interface"`
 	VLAN         *int32   `db:"vlan" json:"vlan"`
@@ -85,8 +86,9 @@ const linkColumns = `SELECT l.id::text AS id, l.code, l.name, l.link_type, l.pro
 	l.circuit_id, l.source_site, l.destination, l.purpose, l.environment, l.link_role, l.criticality,
 	l.officer_id::text AS officer_id, u.email AS officer_email, NULLIF(u.display_name, '') AS officer_name, l.status, l.archived_at,
 	l.down_mbps::float8 AS down_mbps, l.up_mbps::float8 AS up_mbps, l.medium, host(l.wan_ip) AS wan_ip,
-	l.wan_segment_id::text AS wan_segment_id, ws.name AS wan_segment, l.public_ips::text AS public_ips, host(l.gateway_ip) AS gateway_ip,
-	l.device_id::text AS device_id, NULLIF(d.name, '') AS device_name, l.device_text, l.interface, l.vlan, l.vrf, l.routing,
+	l.wan_segment_id::text AS wan_segment_id, ws.name AS wan_segment, l.extra_wan_ips::text[] AS extra_wan_ips, l.public_ips::text AS public_ips, host(l.gateway_ip) AS gateway_ip,
+	l.device_ids::text[] AS device_ids, array(SELECT COALESCE(NULLIF(d.name, ''), d.mac::text) FROM unnest(l.device_ids) WITH ORDINALITY u(id, n)
+		JOIN devices d ON d.id = u.id ORDER BY u.n)::text[] AS device_names, l.device_text, l.interface, l.vlan, l.vrf, l.routing,
 	l.vpn_tunnel, l.vpn_type, l.local_peer, l.remote_peer, l.remote_subnets::text[] AS remote_subnets, l.remote_org, l.remote_contact,
 	l.last_test_date::text AS last_test_date, l.vault_ref,
 	l.no_separate_cost, l.billing_account, l.monthly_rental::float8 AS monthly_rental, l.currency, l.install_cost::float8 AS install_cost,
@@ -98,8 +100,7 @@ const linkColumns = `SELECT l.id::text AS id, l.code, l.name, l.link_type, l.pro
 const linkFrom = ` FROM network_links l
 	LEFT JOIN network_link_providers p ON p.id = l.provider_id
 	LEFT JOIN users u ON u.id = l.officer_id
-	LEFT JOIN segments ws ON ws.id = l.wan_segment_id
-	LEFT JOIN devices d ON d.id = l.device_id`
+	LEFT JOIN segments ws ON ws.id = l.wan_segment_id`
 
 // hideCommercial clears what only commercial viewers may see.
 func (l *linkDTO) hideCommercial() {
@@ -108,7 +109,7 @@ func (l *linkDTO) hideCommercial() {
 		SourceSite: l.SourceSite, Destination: l.Destination, Purpose: l.Purpose, Environment: l.Environment, Role: l.Role,
 		Criticality: l.Criticality, OfficerID: l.OfficerID, OfficerEmail: l.OfficerEmail, OfficerName: l.OfficerName, Status: l.Status,
 		ArchivedAt: l.ArchivedAt, DownMbps: l.DownMbps, UpMbps: l.UpMbps, Medium: l.Medium, WANIP: l.WANIP, WANSegmentID: l.WANSegmentID,
-		WANSegment: l.WANSegment, PublicIPs: l.PublicIPs, GatewayIP: l.GatewayIP, DeviceID: l.DeviceID, DeviceName: l.DeviceName,
+		WANSegment: l.WANSegment, ExtraWANIPs: l.ExtraWANIPs, PublicIPs: l.PublicIPs, GatewayIP: l.GatewayIP, DeviceIDs: l.DeviceIDs, DeviceNames: l.DeviceNames,
 		DeviceText: l.DeviceText, Interface: l.Interface, VLAN: l.VLAN, VRF: l.VRF, Routing: l.Routing, VPNTunnel: l.VPNTunnel,
 		VPNType: l.VPNType, LocalPeer: l.LocalPeer, RemotePeer: l.RemotePeer, RemoteSubnets: l.RemoteSubnets, RemoteOrg: l.RemoteOrg,
 		RemoteContact: l.RemoteContact, LastTestDate: l.LastTestDate, VaultRef: l.VaultRef, CommercialHidden: true,

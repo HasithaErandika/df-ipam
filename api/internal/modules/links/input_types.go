@@ -8,9 +8,10 @@ type technical struct {
 	Medium       string   `json:"medium"`
 	WANIP        string   `json:"wanIp"`
 	WANSegmentID string   `json:"wanSegmentId"`
+	ExtraWANIPs  []string `json:"extraWanIps"` // more WAN addresses, each with its prefix: 122.255.35.1/32
 	PublicIPs    string   `json:"publicIps"`
 	GatewayIP    string   `json:"gatewayIp"`
-	DeviceID     string   `json:"deviceId"`
+	DeviceIDs    []string `json:"deviceIds"`
 	DeviceText   string   `json:"deviceText"`
 	Interface    string   `json:"interface"`
 	VLAN         *int     `json:"vlan"`

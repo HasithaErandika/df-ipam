@@ -54,8 +54,8 @@ func (r *importRun) input(tx pgx.Tx, id string, cells map[string]string) (*linkI
 	r.x.issues = nil
 	for _, c := range ioColumns {
 		v, ok := cells[strings.ToLower(c.Header)]
-		if !ok && c.Header == "Segments" {
-			v, ok = cells["local subnets"] // the column's name in older files
+		if old, renamed := oldHeaders[c.Header]; !ok && renamed {
+			v, ok = cells[old]
 		}
 		if ok {
 			c.set(in, v, r.x)
@@ -88,7 +88,8 @@ func inputFrom(r *ioRow, x *resolver) *linkInput {
 		Destination: r.Destination, Purpose: r.Purpose, Environment: r.Environment, Role: r.Role, Criticality: r.Criticality,
 		OfficerID: deref(r.OfficerID), Status: r.Status, Remarks: r.Remarks,
 		technical: technical{DownMbps: r.DownMbps, UpMbps: r.UpMbps, Medium: r.Medium, WANIP: deref(r.WANIP), WANSegmentID: deref(r.WANSegmentID),
-			PublicIPs: deref(r.PublicIPs), GatewayIP: deref(r.GatewayIP), DeviceID: deref(r.DeviceID), DeviceText: r.DeviceText,
+			ExtraWANIPs: r.ExtraWANIPs,
+			PublicIPs:   deref(r.PublicIPs), GatewayIP: deref(r.GatewayIP), DeviceIDs: r.DeviceIDs, DeviceText: r.DeviceText,
 			Interface: r.Interface, VLAN: intOf(r.VLAN), VRF: r.VRF, Routing: r.Routing},
 		vpn: vpn{VPNTunnel: r.VPNTunnel, VPNType: r.VPNType, LocalPeer: r.LocalPeer, RemotePeer: r.RemotePeer, RemoteSubnets: r.RemoteSubnets,
 			RemoteOrg: r.RemoteOrg, RemoteContact: r.RemoteContact, LastTestDate: deref(r.LastTestDate), VaultRef: r.VaultRef},

@@ -5,8 +5,8 @@ export interface NetworkLink {
   sourceSite: string; destination: string; purpose: string; environment: string
   linkRole: string; criticality: string; officerId: string | null; officerEmail: string | null; officerName: string | null
   status: string; archivedAt: string | null
-  downMbps: number | null; upMbps: number | null; medium: string; wanIp: string | null; wanSegmentId: string | null; wanSegment: string | null
-  publicIps: string | null; gatewayIp: string | null; deviceId: string | null; deviceName: string | null; deviceText: string
+  downMbps: number | null; upMbps: number | null; medium: string; wanIp: string | null; wanSegmentId: string | null; wanSegment: string | null; extraWanIps: string[]
+  publicIps: string | null; gatewayIp: string | null; deviceIds: string[]; deviceNames: string[]; deviceText: string
   interface: string; vlan: number | null; vrf: string; routing: string
   vpnTunnel: string; vpnType: string; localPeer: string; remotePeer: string; remoteSubnets: string[]
   remoteOrg: string; remoteContact: string; lastTestDate: string | null; vaultRef: string
@@ -39,7 +39,11 @@ export interface LinkDetail {
   localSegments: { id: string; name: string; network: string }[]
   registerEntries: { id: string; ip: string; name: string; segmentId: string; segmentName: string; use: string }[]
   attachments: LinkAttachment[]
+  seenDevices: SeenDevice[]
 }
+
+/** A device the scan saw on one of a link's addresses in the last 30 days. Evidence, not inventory. */
+export interface SeenDevice { id: string; name: string; mac: string; status: 'pending' | 'approved' | 'rejected'; ip: string; lastSeen: string }
 
 export interface LinkOption { id: string; label: string; detail: string }
 

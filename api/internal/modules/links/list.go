@@ -52,20 +52,22 @@ func linkFilter(c *gin.Context, set Settings) (db.Where, error) {
 	}
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		w.Add(`(l.name ILIKE ? ESCAPE '\' OR l.code ILIKE ? ESCAPE '\' OR l.circuit_id ILIKE ? ESCAPE '\' OR p.name ILIKE ? ESCAPE '\'
-			OR l.destination ILIKE ? ESCAPE '\' OR l.vpn_tunnel ILIKE ? ESCAPE '\' OR host(l.wan_ip) ILIKE ? ESCAPE '\'
+			OR l.destination ILIKE ? ESCAPE '\' OR l.vpn_tunnel ILIKE ? ESCAPE '\' OR host(l.wan_ip) ILIKE ? ESCAPE '\' OR array_to_string(l.extra_wan_ips, ' ') ILIKE ? ESCAPE '\'
 			OR host(l.gateway_ip) ILIKE ? ESCAPE '\' OR l.public_ips::text ILIKE ? ESCAPE '\' OR l.remote_peer ILIKE ? ESCAPE '\'
 			OR l.local_peer ILIKE ? ESCAPE '\' OR array_to_string(l.remote_subnets, ' ') ILIKE ? ESCAPE '\')`, db.Contains(q))
 	}
 	if s := c.Query("segmentId"); s != "" {
 		v.UUID("segmentId", s, true, "a subnet")
 		w.Add(`(l.wan_segment_id = ?::uuid OR EXISTS (SELECT 1 FROM network_link_segments x WHERE x.link_id = l.id AND x.segment_id = ?::uuid)
-			OR EXISTS (SELECT 1 FROM segments sg WHERE sg.id = ?::uuid AND (sg.network >>= l.wan_ip OR sg.network >>= l.gateway_ip)))`, s)
+			OR EXISTS (SELECT 1 FROM segments sg WHERE sg.id = ?::uuid AND (sg.network >>= l.wan_ip OR sg.network >>= l.gateway_ip
+				OR EXISTS (SELECT 1 FROM unnest(l.extra_wan_ips) e WHERE sg.network >>= set_masklen(e, 32)))))`, s)
 	}
 	if s := c.Query("ip"); s != "" {
 		if a, err := netip.ParseAddr(s); err != nil || !a.Is4() {
 			v.Add("ip", "Enter an IPv4 address.")
 		}
-		w.Add("(l.wan_ip = ?::inet OR l.gateway_ip = ?::inet OR l.public_ips >>= ?::inet)", s)
+		w.Add(`(l.wan_ip = ?::inet OR l.gateway_ip = ?::inet OR l.public_ips >>= ?::inet
+			OR EXISTS (SELECT 1 FROM unnest(l.extra_wan_ips) e WHERE set_masklen(e, 32) = ?::inet))`, s)
 	}
 	return w, v.Err()
 }

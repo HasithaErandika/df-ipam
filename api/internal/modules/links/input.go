@@ -2,6 +2,7 @@ package links
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"dfipam/api/internal/validate"
@@ -86,10 +87,17 @@ func (t *technical) check(v *validate.V) {
 	positive(v, "upMbps", t.UpMbps, "Upload bandwidth")
 	v.OneOf("medium", t.Medium, mediums, "connection medium")
 	hostAddress(v, "wanIp", &t.WANIP, "WAN IP")
+	t.ExtraWANIPs = extraWANIPs(v, t.ExtraWANIPs, t.WANIP)
 	hostAddress(v, "gatewayIp", &t.GatewayIP, "Gateway IP")
 	t.PublicIPs = ipOrNetwork(v, "publicIps", t.PublicIPs, "Public IP or range")
 	v.UUID("wanSegmentId", t.WANSegmentID, false, "a listed subnet")
-	v.UUID("deviceId", t.DeviceID, false, "a listed device")
+	if len(t.DeviceIDs) > 50 {
+		v.Add("deviceIds", "List at most 50 connected devices.")
+	}
+	t.DeviceIDs = slices.Compact(slices.Sorted(slices.Values(t.DeviceIDs)))
+	for _, id := range t.DeviceIDs {
+		v.UUID("deviceIds", id, true, "listed devices")
+	}
 	v.Text("deviceText", &t.DeviceText, 120, false, "Connected device")
 	v.Text("interface", &t.Interface, 80, false, "Interface / port")
 	v.IntRange("vlan", t.VLAN, 1, 4094, "VLAN ID")

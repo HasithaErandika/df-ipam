@@ -19,6 +19,7 @@ import (
 type current struct {
 	Type, Site, ProviderID, OfficerID, ContractEnd string
 	Archived                                       bool
+	DeviceIDs                                      []string
 }
 
 func (h *Handler) create(c *gin.Context) { h.save(c, "") }
@@ -75,8 +76,8 @@ func writeLink(c *gin.Context, tx pgx.Tx, in *linkInput, id string, s Settings, 
 		}
 		old = raw
 		if err := tx.QueryRow(c, `SELECT link_type, source_site, COALESCE(provider_id::text, ''), COALESCE(officer_id::text, ''),
-			COALESCE(contract_end::text, ''), archived_at IS NOT NULL FROM network_links WHERE id = $1::uuid`, id).
-			Scan(&was.Type, &was.Site, &was.ProviderID, &was.OfficerID, &was.ContractEnd, &was.Archived); err != nil {
+			COALESCE(contract_end::text, ''), archived_at IS NOT NULL, device_ids::text[] FROM network_links WHERE id = $1::uuid`, id).
+			Scan(&was.Type, &was.Site, &was.ProviderID, &was.OfficerID, &was.ContractEnd, &was.Archived, &was.DeviceIDs); err != nil {
 			return id, err
 		}
 		if was.Archived {
@@ -84,6 +85,9 @@ func writeLink(c *gin.Context, tx pgx.Tx, in *linkInput, id string, s Settings, 
 		}
 	}
 	if err := checkChoices(c, tx, in, was, s); err != nil {
+		return id, err
+	}
+	if err := checkDevices(c, tx, in.DeviceIDs, was.DeviceIDs); err != nil {
 		return id, err
 	}
 	cols := in.baseCols()

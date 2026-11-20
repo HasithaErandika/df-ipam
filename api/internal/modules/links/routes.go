@@ -35,6 +35,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/network-links/dashboard", h.dashboard, view)
 	g.Handle(http.MethodGet, "/network-links/renewals", h.renewals, auth.LinksCommercialView)
 	g.Handle(http.MethodGet, "/network-links/options", h.options, auth.LinksCreate, auth.LinksEdit)
+	g.Handle(http.MethodGet, "/network-links/seen-devices", h.seenDevices, auth.LinksCreate, auth.LinksEdit)
 	g.Handle(http.MethodGet, "/network-links/export", h.export, auth.LinksImportExport)
 	g.Handle(http.MethodGet, "/network-links/template", h.template, auth.LinksImportExport)
 	g.Handle(http.MethodPost, "/network-links/import", h.importLinks, auth.LinksImportExport)

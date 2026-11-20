@@ -48,3 +48,16 @@ func TestWANNetwork(t *testing.T) {
 		}
 	}
 }
+
+// DAP_ILL at head office: two public /32s on one link.
+func TestExtraWANIPs(t *testing.T) {
+	var v validate.V
+	got := extraWANIPs(&v, []string{"122.255.35.1", "122.255.36.14 255.255.255.255", "", "10.10.40.253 /24", "122.255.35.1/32"}, "122.255.36.14")
+	if !v.OK() || len(got) != 2 || got[0] != "122.255.35.1/32" || got[1] != "10.10.40.253/24" {
+		t.Fatalf("got %v, ok %v", got, v.OK())
+	}
+	extraWANIPs(&v, []string{"172,22,60.145"}, "")
+	if v.OK() {
+		t.Fatal("a mistyped address was accepted")
+	}
+}

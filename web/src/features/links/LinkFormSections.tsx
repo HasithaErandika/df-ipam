@@ -1,6 +1,8 @@
 import { Field, Input, SearchSelect } from '../../components/ui'
 import type { LinkOptions, LinkProvider, LinkSettings } from '../../lib/types'
 import { criticalities, linkEnvironments, linkRoles, linkStatuses, mediums, routings } from './labels'
+import { DevicesField } from './DevicesField'
+import { MoreWanField } from './MoreWanField'
 import { HostField, PublicIpsField, SegmentsField, WanFields } from './AddressFields'
 import { BandwidthField, ChoiceField, FormBlock, type SectionProps, TextField } from './formParts'
 import { SiteField } from './SiteField'
@@ -38,7 +40,9 @@ export function BasicSection({ p, settings, providers, options, editing }: {
 }
 
 /** Section B: how the link is built. Every field is optional. */
-export function TechnicalSection({ p, options }: { p: SectionProps; options?: LinkOptions }) {
+export function TechnicalSection({ p, options, known = [], isNew = true }: {
+  p: SectionProps; options?: LinkOptions; known?: { id: string; label: string }[]; isNew?: boolean
+}) {
   const { f, set, errors } = p
   return (
     <FormBlock title="Technical information" hint="All optional. Addresses are IPv4.">
@@ -46,13 +50,12 @@ export function TechnicalSection({ p, options }: { p: SectionProps; options?: Li
       <BandwidthField p={p} k="up" unit="upUnit" label="Upload bandwidth" error="upMbps" />
       <ChoiceField p={p} k="medium" label="Connection medium" choices={mediums} emptyLabel="Not set" />
       <WanFields p={p} options={options} />
+      <MoreWanField p={p} options={options} />
       <HostField p={p} k="gatewayIp" label="Gateway IP" placeholder="122.255.4.225" />
       <PublicIpsField p={p} />
       <SegmentsField p={p} options={options} />
-      <Field label="Connected device" htmlFor="link-deviceId" error={errors.deviceId} hint="An approved device, or type a name below.">
-        <SearchSelect id="link-deviceId" value={f.deviceId} onChange={(v) => set('deviceId', v)} options={opts(options?.devices)} emptyLabel="Not in Devices" />
-      </Field>
-      {!f.deviceId && <TextField p={p} k="deviceText" label="Connected device (not in Devices)" placeholder="FW-01" />}
+      <DevicesField p={p} options={options} known={known} isNew={isNew} />
+      <TextField p={p} k="deviceText" label="Other devices (not in Devices)" placeholder="Provider CPE; FW-01" />
       <TextField p={p} k="interface" label="Interface / port" mono placeholder="LAN 6 or WAN 11" />
       <Field label="VLAN ID" htmlFor="link-vlan" error={errors.vlan}><Input id="link-vlan" inputMode="numeric" value={f.vlan} onChange={(e) => set('vlan', e.target.value)} /></Field>
       <TextField p={p} k="vrf" label="VDOM / VRF" />
