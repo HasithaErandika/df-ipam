@@ -20,7 +20,7 @@ Per segment, off by default:
 
 ### Rules
 
-- Networks are IPv4, `/16` to `/30`, written as their network address, and never overlap.
+- Networks are IPv4, `/16` to `/32`, written as their network address, and never overlap. A `/31` or `/32` is a point-to-point hand-off or a single address (such as a WAN IP): every address in it is usable, and a `/32` has no gateway or DHCP pool. Text import keeps `/31` and `/32` lines too.
 - The gateway and the DHCP pool use host addresses: never the network or broadcast address. The gateway may sit inside the pool, where the DHCP server leases the whole range and excludes its own address.
 - A segment can't be moved away from the register entries and reservations inside it, and only an empty segment can be deleted.
 - **A swept segment with more than 4,096 usable addresses (larger than a /20) is never scanned.** The form warns, and the segment card says "Too large to scan". Split it.

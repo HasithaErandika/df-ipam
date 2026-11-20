@@ -35,6 +35,7 @@ const schema = z.object({
   if (v.kind === 'dhcp' && Boolean(v.dhcpStart) !== Boolean(v.dhcpEnd)) ctx.addIssue({ code: 'custom', path: ['dhcpEnd'], message: 'Enter both the first and last pool address.' })
   if (v.dhcpStart && v.dhcpEnd && ipToInt(v.dhcpEnd) < ipToInt(v.dhcpStart)) ctx.addIssue({ code: 'custom', path: ['dhcpEnd'], message: 'The last pool address must not be before the first.' })
   if (!ok) return
+  if (v.network.endsWith('/32') && (v.gateway || v.dhcpStart)) ctx.addIssue({ code: 'custom', path: ['network'], message: 'A single-address segment (/32) has no gateway or DHCP pool.' })
   const host = (k: 'gateway' | 'dhcpStart' | 'dhcpEnd', message: string) => {
     if (v[k] && inNetwork(v[k], v.network) && !isHostAddress(v[k], v.network)) ctx.addIssue({ code: 'custom', path: [k], message })
   }
@@ -113,7 +114,7 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
             <Field label="Type" htmlFor="sg-kind" hint={kindHelp[kind]}>
               <Select id="sg-kind" {...register('kind')}><option value="dhcp">DHCP network (floor, Wi-Fi)</option><option value="server">Server</option><option value="cloud">Cloud</option><option value="vpn">VPN client pool</option></Select>
             </Field>
-            <Field label="Network" htmlFor="sg-net" error={errors.network?.message} hint="IPv4, /16 to /30. Networks can't overlap.">
+            <Field label="Network" htmlFor="sg-net" error={errors.network?.message} hint="IPv4, /16 to /32. Use /30, /31 or /32 for a WAN hand-off or a single address. Networks can't overlap.">
               <Input id="sg-net" className="font-mono" placeholder="192.168.4.0/24" {...register('network')} />
             </Field>
             <Field label="Gateway (optional)" htmlFor="sg-gw" error={errors.gateway?.message}

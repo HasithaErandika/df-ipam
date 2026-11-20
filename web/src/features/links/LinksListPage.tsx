@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Eye, Pencil, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, Eye, Pencil, Plus, Upload } from 'lucide-react'
 import { Link, useMatch, useNavigate } from 'react-router'
 import { Button, Card, DataTable, FilterBar, FilterSelect, none, PageHeader, RowMenu, SearchInput, Stack, StateBadge, type Column } from '../../components/ui'
 import { useFilters, usePagedList } from '../../lib/listing'
@@ -71,6 +71,7 @@ export function LinksListPage() {
     <>
       <PageHeader title="All network links" description="Internet lines, VPN tunnels, leased lines and third-party connections. Status is administrative: it says whether a link is in service, not whether it is up right now."
         actions={<>
+          {can.io && <Button onClick={() => navigate('/network-links/import-export')}><Upload size={14} aria-hidden />Import</Button>}
           {can.io && <ExportMenu path="/network-links/export" params={exportFilters} name="network-links" />}
           {can.create && <Button variant="primary" onClick={() => navigate('/network-links/new')}><Plus size={14} aria-hidden />Add network link</Button>}
         </>} />

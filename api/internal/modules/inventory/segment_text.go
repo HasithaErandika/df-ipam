@@ -101,14 +101,11 @@ func parseCIDRLine(line string) (textSegment, bool) {
 }
 
 // setNetwork takes an interface address and prefix length. The address becomes
-// the gateway when it is a host address inside the network.
+// the gateway when it is a host address inside the network. A /32 is the
+// address itself, with no gateway.
 func setNetwork(s *textSegment, ip netip.Addr, bits int) {
-	if bits > 30 {
-		s.Skip = "Too small for a segment (/31 or /32)"
-		return
-	}
 	s.Network = netip.PrefixFrom(ip, bits).Masked()
-	if ip != s.Network.Addr() {
+	if bits < 32 && ip != s.Network.Addr() {
 		s.Gateway = ip
 	}
 }

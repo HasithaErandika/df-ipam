@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Plus, Upload } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Button, Card, DataTable, EmptyState, ErrorState, PageHeader, SkeletonRows, Stat, StateBadge } from '../../components/ui'
@@ -45,11 +45,15 @@ function Money({ d }: { d: LinkDashboard }) {
 export function LinksOverviewPage() {
   const navigate = useNavigate()
   const canCreate = useCan('links:create')
+  const canImport = useCan('links:import_export')
   const [adding, setAdding] = useState(false)
   const settings = useLinkSettings()
   const q = useQuery({ queryKey: ['/network-links', 'dashboard'], queryFn: () => get<LinkDashboard>('/network-links/dashboard'), refetchInterval: 60_000 })
   const header = <><LinkFormModal open={adding} onClose={() => setAdding(false)} onSaved={(id) => navigate(`/network-links/${id}`)} /><PageHeader title="Network links" description="Administrative records of the company's connectivity. Status says whether a link is in service, not whether it is up right now: monitoring tools show that."
-    actions={canCreate && <Button variant="primary" onClick={() => setAdding(true)}><Plus size={14} aria-hidden />Add network link</Button>} /></>
+    actions={<>
+      {canImport && <Button onClick={() => navigate('/network-links/import-export')}><Upload size={14} aria-hidden />Import</Button>}
+      {canCreate && <Button variant="primary" onClick={() => setAdding(true)}><Plus size={14} aria-hidden />Add network link</Button>}
+    </>} /></>
   if (q.isPending) return <>{header}<Card><SkeletonRows rows={8} /></Card></>
   if (q.isError) return <>{header}<Card><ErrorState error={q.error} onRetry={() => void q.refetch()} /></Card></>
   const d = q.data

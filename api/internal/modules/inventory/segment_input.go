@@ -49,6 +49,9 @@ func (in *segmentInput) validate() error {
 	case start.IsValid() && end.IsValid() && end.Less(start):
 		v.Add("dhcpEnd", "The last pool address must not be before the first.")
 	}
+	if p.IsValid() && p.Bits() == 32 && (in.Gateway != "" || in.DHCPStart != "") {
+		v.Add("network", "A single-address segment (/32) has no gateway or DHCP pool.")
+	}
 	hostAddresses(&v, p, gw, start, end)
 	v.UUID("defaultEnvironmentId", in.EnvironmentID, false, "an environment")
 	if in.Kind == "dhcp" || in.Kind == "vpn" {

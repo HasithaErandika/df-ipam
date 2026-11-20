@@ -82,7 +82,13 @@ var ioColumns = []ioColumn{
 	plain("Upload Mbps", func(r *ioRow) string { return num(r.UpMbps) }, func(in *linkInput, v string) { in.UpMbps = parseNum(v) }),
 	plain("Connection Medium", func(r *ioRow) string { return r.Medium }, func(in *linkInput, v string) { in.Medium = lower(v) }),
 	plain("WAN IP", func(r *ioRow) string { return str(r.WANIP) }, func(in *linkInput, v string) { in.WANIP = v }),
-	col2("WAN Subnet", false, func(r *ioRow) string { return str(r.WANSegment) }, func(in *linkInput, v string, x *resolver) { in.WANSegmentID = x.find("segments", v) }),
+	col2("WAN Subnet", false, func(r *ioRow) string { return str(r.WANSegment) }, func(in *linkInput, v string, x *resolver) {
+		if strings.TrimSpace(v) != "" {
+			in.WANSegmentID = x.find("segments", v)
+		} else {
+			in.WANSegmentID = x.ids["segments"][wanNetwork(in.WANIP)] // a guess: no issue when it isn't a segment
+		}
+	}),
 	plain("Public IPs", func(r *ioRow) string { return strings.TrimSuffix(str(r.PublicIPs), "/32") }, func(in *linkInput, v string) { in.PublicIPs = v }),
 	plain("Gateway IP", func(r *ioRow) string { return str(r.GatewayIP) }, func(in *linkInput, v string) { in.GatewayIP = v }),
 	col2("Connected Device", false, func(r *ioRow) string { return firstOf(str(r.DeviceName), r.DeviceText) }, func(in *linkInput, v string, x *resolver) {

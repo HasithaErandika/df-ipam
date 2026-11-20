@@ -28,7 +28,7 @@ export interface IPv4NetworkInfo {
   usableAddresses: number
 }
 
-/** Subnet facts for the /16–/30 networks accepted by segment setup. */
+/** Subnet facts for the /16–/32 networks accepted by segment setup. /31 and /32 have no network or broadcast address. */
 export function ipv4NetworkInfo(cidr: string): IPv4NetworkInfo | null {
   if (cidrIssue(cidr)) return null
   const [address, prefixText] = cidr.trim().split('/')
@@ -39,21 +39,51 @@ export function ipv4NetworkInfo(cidr: string): IPv4NetworkInfo | null {
   return {
     network: intToIP(network), prefixLength,
     mask: intToIP(0xffffffff - size + 1), broadcast: intToIP(broadcast),
-    firstUsable: intToIP(network + 1), lastUsable: intToIP(broadcast - 1),
-    totalAddresses: size, usableAddresses: size - 2,
+    firstUsable: intToIP(size <= 2 ? network : network + 1), lastUsable: intToIP(size <= 2 ? broadcast : broadcast - 1),
+    totalAddresses: size, usableAddresses: size <= 2 ? size : size - 2,
   }
 }
 
-/** A network written as its network address with a /16 to /30 prefix. */
+/** A network written as its network address with a /16 to /32 prefix. */
 export function cidrIssue(v: string): string | undefined {
   const [address, prefix, extra] = v.trim().split('/')
   if (extra !== undefined || !prefix || !/^\d{1,2}$/.test(prefix) || !isIPv4(address)) return 'Enter a network such as 192.168.4.0/24.'
   const bits = Number(prefix)
-  if (bits < 16 || bits > 30) return 'Use a prefix from /16 to /30.'
+  if (bits < 16 || bits > 32) return 'Use a prefix from /16 to /32.'
   const size = 2 ** (32 - bits)
   const start = ipToInt(address)
   if (start % size !== 0) return `Use the network address: ${intToIP(start - (start % size))}/${bits}.`
   return undefined
+}
+
+/** A contiguous dotted mask (255.255.255.248) as a prefix length, or null. */
+export function maskBits(mask: string): number | null {
+  if (!isIPv4(mask)) return null
+  const bin = ipToInt(mask).toString(2).padStart(32, '0')
+  return /^1*0*$/.test(bin) ? bin.indexOf('0') === -1 ? 32 : bin.indexOf('0') : null
+}
+
+/**
+ * Reads an address the way network diagrams write it: "10.10.40.253",
+ * "10.10.40.253 /24" or "122.255.4.226 255.255.255.248". bits is null when no
+ * prefix or mask is given; the result is null when it can't be read.
+ */
+export function splitAddress(v: string): { ip: string; bits: number | null } | null {
+  const t = v.trim()
+  const slash = t.indexOf('/')
+  const parts = t.split(/\s+/)
+  const [ip, prefix] = slash >= 0 ? [t.slice(0, slash).trim(), t.slice(slash + 1).trim()] : parts.length === 2 ? parts : [t, '']
+  if (!isIPv4(ip)) return null
+  if (prefix === '') return slash >= 0 ? null : { ip, bits: null }
+  const bits = /^\d{1,2}$/.test(prefix) ? Number(prefix) : maskBits(prefix)
+  return bits == null || bits > 32 ? null : { ip, bits }
+}
+
+/** The network an address sits in, such as 10.10.40.0/24 for 10.10.40.253 and 24. */
+export function networkOf(ip: string, bits: number): string {
+  const size = 2 ** (32 - bits)
+  const n = ipToInt(ip)
+  return `${intToIP(n - (n % size))}/${bits}`
 }
 
 /** The scanner skips segments with more usable addresses than this (a /20). */

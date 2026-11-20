@@ -71,7 +71,9 @@ func (v *V) IPv4(field string, value *string, required bool) netip.Addr {
 	return a
 }
 
-// CIDR checks an IPv4 network written as its network address, such as 192.168.4.0/24.
+// CIDR checks an IPv4 network written as its network address, such as
+// 192.168.4.0/24. /31 and /32 are allowed for point-to-point links and single
+// addresses.
 func (v *V) CIDR(field string, value *string) netip.Prefix {
 	*value = strings.TrimSpace(*value)
 	p, err := netip.ParsePrefix(*value)
@@ -82,8 +84,8 @@ func (v *V) CIDR(field string, value *string) netip.Prefix {
 		v.Add(field, "Enter an IPv4 network in CIDR form, such as 192.168.4.0/24.")
 	case p.Masked() != p:
 		v.Add(field, "Use the network address: "+p.Masked().String()+".")
-	case p.Bits() < 16 || p.Bits() > 30:
-		v.Add(field, "Use a prefix from /16 to /30.")
+	case p.Bits() < 16:
+		v.Add(field, "Use a prefix from /16 to /32.")
 	default:
 		return p
 	}

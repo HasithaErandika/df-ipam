@@ -4,7 +4,6 @@ import (
 	"net/mail"
 	"net/netip"
 	"net/url"
-	"strings"
 
 	"dfipam/api/internal/validate"
 )
@@ -29,26 +28,6 @@ func money(v *validate.V, field string, n *float64, label string) {
 	if n != nil && (*n < 0 || *n > 1e12) {
 		v.Add(field, label+" can't be negative.")
 	}
-}
-
-// ipOrNetwork accepts an IPv4 address or network and returns it in canonical form.
-func ipOrNetwork(v *validate.V, field, value, label string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	if a, err := netip.ParseAddr(value); err == nil && a.Is4() {
-		return a.String() + "/32"
-	}
-	p, err := netip.ParsePrefix(value)
-	if err != nil || !p.Addr().Is4() {
-		v.Add(field, label+" must be an IPv4 address or network such as 203.0.113.0/29.")
-		return value
-	}
-	if p.Masked() != p {
-		v.Add(field, label+": use the network address "+p.Masked().String()+".")
-	}
-	return p.String()
 }
 
 // peer accepts an IPv4 address or a host name.

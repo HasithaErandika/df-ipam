@@ -6,6 +6,12 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 - The app version is 0.4.0 (side panel and API description).
 
+**Network links from more than one site, and addresses as the diagrams write them**
+- **Source location** in the link dialog has a **+** for people with `network:manage`: a new location (such as "BCP - Nugegoda") is added to the list in Network setup > Network links and chosen for the link. Others are told who adds locations.
+- **WAN IP and gateway** accept an address with its prefix or mask (`10.10.40.253 /24`, `122.255.4.226 255.255.255.248`) and keep the address. Leaving the WAN IP picks the matching segment as the WAN subnet, or says which network isn't a segment yet. **Public IP / range** accepts a dotted mask. The API and the import accept the same forms.
+- **Import** sits beside Add network link on the Overview and All Network Links (for `links:import_export`). In the file, an empty **WAN Subnet** uses the WAN IP's prefix when that network is a segment, and the template's help sheet shows the accepted address forms.
+- **Segments can be `/31` or `/32`**, for WAN hand-offs and single addresses. A `/32` has no gateway or DHCP pool; text import keeps such lines instead of skipping them.
+
 **FortiGate connection on or off, and deleting the token**
 - **System > FortiGate** has a **Connection on** switch. Off, DF-IPAM doesn't contact the firewall at all: scheduled reads, Read now, Test connection, Firewall > Live and Firewall > Import stop, and the settings and token are kept. It is on unless switched off, so existing setups carry on. Saved through the usual confirmation and audit record.
 - **Delete** beside the API token erases the stored token (`DELETE /integrations/fortigate/token`, `system:manage`) after a confirmation, and switches the scheduled read off. The address and other settings stay. Recorded in the audit log.

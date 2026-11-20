@@ -22,3 +22,26 @@ func TestSegmentHostAddresses(t *testing.T) {
 		}
 	}
 }
+
+// A WAN hand-off or a single public address is a segment too.
+func TestSmallSegments(t *testing.T) {
+	cases := []struct {
+		network, gateway string
+		ok               bool
+	}{
+		{"122.255.36.14/32", "", true},
+		{"122.255.36.14/32", "122.255.36.14", false},
+		{"172.16.5.6/31", "172.16.5.7", true},
+		{"172.16.5.4/30", "172.16.5.5", true},
+		{"10.0.0.0/8", "", false},
+	}
+	for _, c := range cases {
+		in := segmentInput{Name: "WAN", Kind: "server", Network: c.network, Gateway: c.gateway}
+		if err := in.validate(); (err == nil) != c.ok {
+			t.Errorf("%s gw %q: got %v", c.network, c.gateway, err)
+		}
+	}
+	if got := parseSegmentText("DAP ILL 122.255.36.14/32\n"); len(got) != 1 || got[0].Skip != "" || got[0].Gateway.IsValid() {
+		t.Errorf("a /32 line: %+v", got)
+	}
+}
