@@ -32,6 +32,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPut, "/integrations/fortigate", h.save, auth.SystemManage)
 	g.Handle(http.MethodPost, "/integrations/fortigate/test", h.test, auth.SystemManage)
 	g.Handle(http.MethodPost, "/integrations/fortigate/sync", h.syncNow, auth.SystemManage)
+	g.Handle(http.MethodDelete, "/integrations/fortigate/token", h.deleteToken, auth.SystemManage)
 }
 
 var errOff = httpx.NewError(http.StatusServiceUnavailable, "INTEGRATION_UNAVAILABLE", "The FortiGate connection is not running in this process.")
@@ -51,6 +52,7 @@ func (h *Handler) get(c *gin.Context) {
 }
 
 type saveInput struct {
+	Active          *bool  `json:"active"` // absent keeps the stored value
 	Enabled         bool   `json:"enabled"`
 	URL             string `json:"url"`
 	VDOM            string `json:"vdom"`
@@ -88,6 +90,9 @@ func (h *Handler) save(c *gin.Context) {
 	values := map[string]string{
 		"fortigate.enabled": strconv.FormatBool(in.Enabled), "fortigate.url": quote(in.URL), "fortigate.vdom": quote(in.VDOM),
 		"fortigate.verify_tls": strconv.FormatBool(in.VerifyTLS), "fortigate.interval_minutes": strconv.Itoa(interval),
+	}
+	if in.Active != nil {
+		values["fortigate.active"] = strconv.FormatBool(*in.Active)
 	}
 	if in.Token != "" {
 		sealed, err := fortigate.SealToken(h.sync.Keys(), in.Token)

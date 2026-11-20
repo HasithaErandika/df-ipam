@@ -6,6 +6,10 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 - The app version is 0.4.0 (side panel and API description).
 
+**FortiGate connection on or off, and deleting the token**
+- **System > FortiGate** has a **Connection on** switch. Off, DF-IPAM doesn't contact the firewall at all: scheduled reads, Read now, Test connection, Firewall > Live and Firewall > Import stop, and the settings and token are kept. It is on unless switched off, so existing setups carry on. Saved through the usual confirmation and audit record.
+- **Delete** beside the API token erases the stored token (`DELETE /integrations/fortigate/token`, `system:manage`) after a confirmation, and switches the scheduled read off. The address and other settings stay. Recorded in the audit log.
+
 **Firewall Import** (was Review and import)
 - Renamed to **Import** at `/firewall/import`; the old address redirects.
 - One **Fetch from firewall** reads networks, devices, servers and network links together, from a start panel that explains the three steps.

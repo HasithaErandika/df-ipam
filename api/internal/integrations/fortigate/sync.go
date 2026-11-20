@@ -46,7 +46,8 @@ func NewSyncer(conn db.Conn, keys *secrets.Keyring) *Syncer {
 func (s *Syncer) Keys() *secrets.Keyring { return s.keys }
 
 // Connect builds a client from the saved connection, for readers other than
-// the scheduled sync (Network Links). It works while the schedule is off.
+// the scheduled sync (Network Links). It works while the schedule is off, but
+// not while the connection is switched off.
 func (s *Syncer) Connect(ctx context.Context) (*Client, error) {
 	cfg, err := Load(ctx, s.conn, s.keys)
 	if err != nil {
@@ -97,9 +98,10 @@ func (s *Syncer) Run(ctx context.Context) {
 		if err == nil && cfg.IntervalMinutes > 0 {
 			wait = time.Duration(cfg.IntervalMinutes) * time.Minute
 		}
-		// A scheduled read needs the connection switched on; "Read now" works
-		// while it is off, so an Admin can try it before enabling the schedule.
-		if err != nil || (!cfg.Enabled && !manual) {
+		// A scheduled read needs the schedule on; "Read now" works while it is
+		// off, so an Admin can try it before enabling the schedule. Neither runs
+		// while the connection is off (Client refuses, and says so).
+		if err != nil || (!manual && (!cfg.Enabled || !cfg.Active)) {
 			if manual && err != nil {
 				s.fail(err)
 			}

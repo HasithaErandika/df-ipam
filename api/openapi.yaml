@@ -431,7 +431,12 @@ paths:
       description: "Permission: system:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     put:
-      summary: "Save the FortiGate connection. The API token is stored encrypted and never returned"
+      summary: "Save the FortiGate connection, including active (off stops every read of the firewall). The API token is stored encrypted and never returned"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /integrations/fortigate/token:
+    delete:
+      summary: "Delete the stored FortiGate API token and switch the scheduled read off. Other settings stay"
       description: "Permission: system:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /integrations/fortigate/test:

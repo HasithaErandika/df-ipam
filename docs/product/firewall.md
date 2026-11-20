@@ -1,6 +1,6 @@
 # Firewall
 
-The **Firewall** section of the menu is DF-IPAM's view of the connected FortiGate. DF-IPAM **only reads** the firewall, with GET requests over its REST API, and never changes it. The connection (address, read-only API token, VDOM, certificate check) is set in **System > FortiGate** (`system:manage`).
+The **Firewall** section of the menu is DF-IPAM's view of the connected FortiGate. DF-IPAM **only reads** the firewall, with GET requests over its REST API, and never changes it. The connection (address, read-only API token, VDOM, certificate check) is set in **System > FortiGate** (`system:manage`). There the whole connection can be switched off, which stops every read (scheduled, Read now, Test, Live and Import) and keeps the settings, and the stored token can be deleted, which also switches the scheduled read off.
 
 The API token's admin profile needs read access to: System (interfaces, DHCP servers, status and resources), Network (routes), VPN (IPsec, SSL VPN), Firewall (addresses and virtual IPs), and User & Device (device identification). A part the profile can't read is named on screen, and the rest still works.
 

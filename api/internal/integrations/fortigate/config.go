@@ -17,8 +17,12 @@ var tokenAAD = []byte("settings:fortigate.token")
 // ErrNoKey means SECRET_ENCRYPTION_KEY is missing, so a token can't be stored.
 var ErrNoKey = errors.New("set SECRET_ENCRYPTION_KEY in api/.env before saving a FortiGate token")
 
+// ErrSwitchedOff means an Admin switched the connection off: nothing reads the firewall.
+var ErrSwitchedOff = errors.New("the FortiGate connection is switched off in System > FortiGate")
+
 // Config is the connection an Admin set up in Settings.
 type Config struct {
+	Active          bool   `json:"active"` // the whole connection; Enabled is only the schedule
 	Enabled         bool   `json:"enabled"`
 	URL             string `json:"url"`
 	VDOM            string `json:"vdom"`
@@ -35,7 +39,7 @@ type sealed struct {
 
 // Load reads the settings and decrypts the token when there is one.
 func Load(ctx context.Context, conn db.Conn, keys *secrets.Keyring) (Config, error) {
-	cfg := Config{VerifyTLS: true, IntervalMinutes: 10}
+	cfg := Config{Active: true, VerifyTLS: true, IntervalMinutes: 10}
 	rows, err := conn.Query(ctx, `SELECT key, value FROM settings WHERE key LIKE 'fortigate.%'`)
 	if err != nil {
 		return cfg, err
@@ -49,6 +53,8 @@ func Load(ctx context.Context, conn db.Conn, keys *secrets.Keyring) (Config, err
 			return cfg, err
 		}
 		switch k {
+		case "fortigate.active":
+			_ = json.Unmarshal(v, &cfg.Active)
 		case "fortigate.enabled":
 			_ = json.Unmarshal(v, &cfg.Enabled)
 		case "fortigate.url":
@@ -93,8 +99,13 @@ func SealToken(keys *secrets.Keyring, token string) (string, error) {
 	return string(out), err
 }
 
-// Client builds a client from the saved settings.
+// Client builds a client from the saved settings. Every reader (schedule,
+// Read now, Test, Live and Import) gets its client here, so switching the
+// connection off stops them all.
 func (c Config) Client() (*Client, error) {
+	if !c.Active {
+		return nil, ErrSwitchedOff
+	}
 	if c.URL == "" || c.token == "" {
 		return nil, errors.New("enter the FortiGate address and an API token first")
 	}
