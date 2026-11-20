@@ -2,7 +2,9 @@
 
 What changed, day by day, on branch `lite`. Newest first. The specification is in [product/](product/overview.md); what is and isn't built is in [status.md](status.md).
 
-## 2026-11-20
+## 2026-11-20 · v0.4.0
+
+- The app version is 0.4.0 (side panel and API description).
 
 **Firewall Import** (was Review and import)
 - Renamed to **Import** at `/firewall/import`; the old address redirects.
