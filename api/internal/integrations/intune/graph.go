@@ -1,8 +1,10 @@
-// Package intune reads managed devices from Microsoft Intune through Microsoft
-// Graph, to name the person who uses each device. It only sends GET requests,
-// with the app's own token (client credentials): the Entra app registration
-// needs the DeviceManagementManagedDevices.Read.All application permission,
-// granted once by a tenant administrator.
+// Package intune reads managed devices from Microsoft Intune, and devices
+// joined to or registered in Microsoft Entra ID, through Microsoft Graph, to
+// name the person who uses each device. It only sends GET requests, with the
+// app's own token (client credentials): the Entra app registration needs the
+// DeviceManagementManagedDevices.Read.All application permission for Intune,
+// and Device.Read.All and User.Read.All for Entra ID, granted once by a tenant
+// administrator.
 package intune
 
 import (
@@ -92,14 +94,20 @@ func (c *Client) Devices(ctx context.Context) ([]Device, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []Device
-	next := devices
+	return pages[Device](ctx, c, tok, devices, "DeviceManagementManagedDevices.Read.All")
+}
+
+// pages reads a Graph list from its first address to its last page. perm is
+// the permission named when Graph refuses.
+func pages[T any](ctx context.Context, c *Client, tok, first, perm string) ([]T, error) {
+	var out []T
+	next := first
 	for page := 0; next != "" && page < maxPages; page++ {
 		var body struct {
-			Value []Device `json:"value"`
-			Next  string   `json:"@odata.nextLink"`
+			Value []T    `json:"value"`
+			Next  string `json:"@odata.nextLink"`
 		}
-		if err := c.get(ctx, tok, next, &body); err != nil {
+		if err := c.get(ctx, tok, next, perm, &body); err != nil {
 			return nil, err
 		}
 		out = append(out, body.Value...)
@@ -111,7 +119,7 @@ func (c *Client) Devices(ctx context.Context) ([]Device, error) {
 	return out, nil
 }
 
-func (c *Client) get(ctx context.Context, tok, address string, out any) error {
+func (c *Client) get(ctx context.Context, tok, address, perm string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return err
@@ -125,7 +133,7 @@ func (c *Client) get(ctx context.Context, tok, address string, out any) error {
 	defer res.Body.Close()
 	switch {
 	case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden:
-		return errors.New("microsoft Graph refused: give the app the DeviceManagementManagedDevices.Read.All application permission and grant admin consent")
+		return fmt.Errorf("microsoft Graph refused: give the app the %s application permission and grant admin consent", perm)
 	case res.StatusCode != http.StatusOK:
 		return fmt.Errorf("microsoft Graph answered %d", res.StatusCode)
 	}

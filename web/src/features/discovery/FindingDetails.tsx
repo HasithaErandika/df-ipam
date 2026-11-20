@@ -76,7 +76,7 @@ export function FindingDetails({ row, canEdit, onClose, onRegister, onApprove, o
           {!f.maker && !f.model && !f.kind && <p className="mt-2 text-[12.5px] text-ink-3">It hasn't said what it is. Phones, PCs and laptops rarely do unless they answer mDNS or UPnP; Apple devices and TVs, printers and routers usually do.</p>}
         </Section>
         {(hasManagement(r) || (!r.isGateway && r.source !== 'vpn' && r.mac && !r.isPrivateMac)) && (
-          <Section title="Windows and Intune">
+          <Section title="Windows, Intune and Entra ID">
             <ManagementSection r={r} />
           </Section>
         )}

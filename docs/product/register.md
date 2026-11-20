@@ -41,6 +41,8 @@ Monitored entries are checked every `server_check.interval_seconds` (default 1 h
 
 Known MAC addresses: name, owner, department, type, platform and status (`pending`, `approved`, `rejected`).
 
+Approving a device or registering an address from Discovery starts with what discovery found already filled in: the name, the user (Intune, then Entra ID, then VPN) as owner, the likely platform and type, and for a register entry a note with maker and model, serial, OS and domain. It is a starting point the person checks; nothing is saved until they do, and an approved device's own record replaces these guesses in the register form.
+
 - A MAC seen for the first time becomes **pending**; private MACs do so only on segments that watch them.
 - Approving can register the address it was seen on. Rejecting only marks it: DF-IPAM never blocks anything, but a rejected MAC raises a High alert whenever it is seen.
 - Devices import as CSV, text or Excel, and export as CSV, tab-separated text (.txt) or Excel. A text export imports back as is.

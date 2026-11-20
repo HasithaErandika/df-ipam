@@ -77,3 +77,12 @@ Off by default. "Test connection" and "Read now" work before the schedule is on.
 - A device that isn't in Intune, such as a personal phone or laptop, shows no user. It is still found by the scan and flagged as an unknown device. A network scan can't read who is signed in to a device that DF-IPAM doesn't manage.
 
 Off by default, read every 60 minutes when on (15 to 1440). "Read now" works before the schedule is on.
+
+### Microsoft Entra ID (read with Intune)
+
+Not every company device is enrolled in Intune. Each Intune read also lists Entra ID's devices (joined, hybrid joined or registered) with their **registered owner**, through the same Graph connection (GET only). The app needs two more Graph **application** permissions, `Device.Read.All` and `User.Read.All`, with admin consent. Without them Intune is still read and System > Microsoft Intune shows the Entra ID error on its own.
+
+- Entra ID keeps no MAC addresses, so a device matches only by computer name, compared the same way as Intune names. When Entra holds several copies of a name (a PC joined again), the one that signed in most recently counts. Disabled devices and devices with no owner are skipped.
+- Discovery shows the owner as the user when Intune has none (Intune, then Entra ID, then VPN), marked "(Entra ID)", with the Entra name, join type and last sign-in in the finding details. Search finds Entra owners, and the Device users report names the source.
+- PCs joined from the office domain (hybrid joined) often have no registered owner in Entra ID, so they give no user this way.
+- Evidence only, like Intune: it never sets an owner, and a device that leaves Entra ID loses these details on the next successful read.

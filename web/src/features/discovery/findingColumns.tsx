@@ -108,10 +108,13 @@ function DeviceCell({ r, onOpen }: { r: Finding; onOpen: (r: Finding) => void })
   )
 }
 
-/** Who uses the device: Intune's primary user, or the user signed in to the VPN session. */
+/** Who uses the device: Intune's primary user, Entra ID's registered owner, or the user signed in to the VPN session. */
 function UserLine({ r }: { r: Finding }) {
   if (r.intuneUser) {
     return <div className="truncate text-[12px] text-ink-2" title={`Intune primary user of ${r.intuneDevice || 'this device'}`}>User: <span className="text-ink">{r.intuneUserName || r.intuneUser}</span>{r.intuneUserName && <span className="text-ink-3"> · {r.intuneUser}</span>}</div>
+  }
+  if (r.entraUser) {
+    return <div className="truncate text-[12px] text-ink-2" title={`Entra ID owner of ${r.entraDevice || 'this device'}, matched by computer name`}>User: <span className="text-ink">{r.entraUserName || r.entraUser}</span>{r.entraUserName && <span className="text-ink-3"> · {r.entraUser}</span>} <span className="text-ink-3">(Entra ID)</span></div>
   }
   if (r.vpnUser) {
     return <div className="truncate text-[12px] text-ink-2" title="User the FortiGate signed in to this VPN session">User: <span className="text-ink">{r.vpnUser}</span> <span className="text-ink-3">({vpnLabel(r)}{r.vpnRemote ? ` from ${r.vpnRemote}` : ''})</span></div>

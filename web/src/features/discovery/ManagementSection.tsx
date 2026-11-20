@@ -1,14 +1,14 @@
 import { Details, StateBadge } from '../../components/ui'
 import { formatAgo, formatDateTime } from '../../lib/format'
 import type { Finding } from '../../lib/types'
-import { compliance, windowsName } from './windowsInfo'
+import { compliance, entraJoin, windowsName } from './windowsInfo'
 
 /** Whether the device has told us anything about Windows or is known to Intune. */
-export const hasManagement = (r: Finding) => Boolean(r.workgroup || r.windowsDomain || r.windowsFqdn || r.osVersion || r.intuneSeenAt)
+export const hasManagement = (r: Finding) => Boolean(r.workgroup || r.windowsDomain || r.windowsFqdn || r.osVersion || r.intuneSeenAt || r.entraSeenAt)
 
 const Sub = ({ children }: { children: string }) => <h4 className="mb-1 text-[12px] font-medium text-ink-2">{children}</h4>
 
-/** What Windows says about itself on the network, and Intune's record of the device. */
+/** What Windows says about itself on the network, and Intune's and Entra ID's records of the device. */
 export function ManagementSection({ r }: { r: Finding }) {
   const comply = r.intuneCompliance
   const windows = Boolean(r.workgroup || r.windowsDomain || r.windowsFqdn || r.osVersion)
@@ -40,6 +40,17 @@ export function ManagementSection({ r }: { r: Finding }) {
             ]} />
           : <p className="text-[12.5px] text-ink-3">Not in Intune, or Intune isn't connected. A company PC should be there; a personal or unknown device won't be.</p>}
       </div>
+      {r.entraSeenAt && (
+        <div>
+          <Sub>Microsoft Entra ID</Sub>
+          <Details items={[
+            ['Owner', <span key="o">{r.entraUserName ? `${r.entraUserName} · ` : ''}<span className="font-mono">{r.entraUser}</span></span>],
+            ['Entra name', r.entraDevice ? <span title="Matched to this device by computer name">{r.entraDevice}</span> : null],
+            ['Joined as', r.entraJoin ? entraJoin[r.entraJoin] ?? r.entraJoin : null],
+            ['Last Entra sign-in', r.entraLastSignIn ? <span title={formatDateTime(r.entraLastSignIn)}>{formatAgo(r.entraLastSignIn)}</span> : null],
+          ]} />
+        </div>
+      )}
     </div>
   )
 }

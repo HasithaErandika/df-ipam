@@ -41,7 +41,7 @@ type Values = z.infer<typeof schema>
 const fields = Object.keys(schema.shape) as (keyof Values)[]
 
 /** What to pre-fill when registering from something seen on the network. */
-export interface RegisterPrefill { segmentId?: string; ip?: string; mac?: string | null; name?: string | null; ipType?: string; platform?: string; platformGuess?: string | null }
+export interface RegisterPrefill { segmentId?: string; ip?: string; mac?: string | null; name?: string | null; ipType?: string; platform?: string; platformGuess?: string | null; owner?: string; notes?: string }
 
 const fillable = ['deviceId', 'ipType', 'assignedName', 'platform', 'owner', 'department'] as const
 
@@ -50,8 +50,8 @@ function initial(entry?: RegisterEntry, prefill?: RegisterPrefill): Values {
     segmentId: entry?.segmentId ?? prefill?.segmentId ?? '', ip: entry?.ip ?? prefill?.ip ?? '', status: entry?.status ?? 'assigned',
     ipType: entry?.ipType ?? prefill?.ipType ?? 'other', deviceId: entry?.deviceId ?? '', environmentId: entry?.environmentId ?? '', assignedName: entry?.assignedName ?? prefill?.name ?? '',
     platform: entry?.platform ?? prefill?.platform ?? '', services: entry?.services ?? [],
-    expectedMac: entry?.expectedMac ?? prefill?.mac ?? '', owner: entry?.owner ?? '', department: entry?.department ?? '',
-    monitor: entry?.monitor ?? false, critical: entry?.critical ?? false, checkPort: entry?.checkPort ? String(entry.checkPort) : '', notes: entry?.notes ?? '',
+    expectedMac: entry?.expectedMac ?? prefill?.mac ?? '', owner: entry?.owner ?? prefill?.owner ?? '', department: entry?.department ?? '',
+    monitor: entry?.monitor ?? false, critical: entry?.critical ?? false, checkPort: entry?.checkPort ? String(entry.checkPort) : '', notes: entry?.notes ?? prefill?.notes ?? '',
   }
 }
 
@@ -76,7 +76,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
   const device = useApprovedDevice(prefill?.mac, open && !entry)
   useEffect(() => {
     if (!open || entry || !device.data) return
-    const changes = fillFromDevice(device.data, form.getValues(), (f) => form.getFieldState(f).isDirty)
+    const changes = fillFromDevice(device.data, (f) => form.getFieldState(f).isDirty)
     for (const f of fillable) if (changes[f] !== undefined) setValue(f, changes[f]!)
   }, [open, entry, device.data, form, setValue])
 
@@ -158,6 +158,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
           </div>
         </FormSection>
         <FormSection title="Assignment">
+          {!entry && !device.data && prefill?.mac && <Notice>Filled in from what discovery found: name, type, platform, owner and notes. Check them before saving.</Notice>}
           {!entry && device.data && <Notice tone="ok">Filled in from the approved device {device.data.name || device.data.mac}: type, name, platform, owner and department. Check them before saving.</Notice>}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Assigned to" htmlFor="reg-name" error={errors.assignedName?.message} hint="A device or a description, such as “HR printer, 3rd floor”.">

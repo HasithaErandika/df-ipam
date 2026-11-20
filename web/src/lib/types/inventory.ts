@@ -186,6 +186,13 @@ export interface Finding {
   intuneCompliance: string
   intuneEncrypted: boolean | null
   intuneLastSync: string | null
+  /** From Microsoft Entra ID, matched by computer name: the device's registered owner, Entra name, join type ('AzureAd', 'ServerAd', 'Workplace') and last sign-in. */
+  entraUser: string
+  entraUserName: string
+  entraDevice: string
+  entraJoin: string
+  entraLastSignIn: string | null
+  entraSeenAt: string | null
   /** NetBIOS workgroup or Windows domain, and from the SMB handshake the DNS domain, full name and version ("10.0.22631"). */
   workgroup: string
   windowsDomain: string

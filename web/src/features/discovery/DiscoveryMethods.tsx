@@ -14,6 +14,7 @@ const methods: Method[] = [
   { name: 'MAC vendor', finds: 'The maker of the network card', traffic: 'None: looked up in a built-in copy of the IEEE register', who: 'Hosts with a real (not randomised) MAC', when: 'Every scan' },
   { name: 'Server check', finds: 'Up or Down', traffic: 'ICMP echo, then a TCP connect to the configured port (no data sent)', who: 'Register entries marked Monitor', when: 'Server check interval' },
   { name: 'FortiGate (optional)', finds: 'ARP table, DHCP leases with hostname and vendor class, VPN sessions with their user, VPN kind and origin', traffic: 'HTTPS GET to the firewall’s REST API with a read-only token', who: 'The firewall only', when: 'Its own interval, when switched on' },
+  { name: 'Microsoft Entra ID (with Intune)', finds: 'Registered owner of devices joined to or registered in Entra ID, matched by computer name', traffic: 'HTTPS GET to Microsoft Graph with the sign-in app’s own token. Nothing is sent to the devices', who: 'Microsoft Graph only', when: 'With each Intune read' },
   { name: 'Microsoft Intune (optional)', finds: 'Primary user, serial, maker and model, OS, compliance, disk encryption', traffic: 'HTTPS GET to Microsoft Graph with the sign-in app’s own token. Nothing is sent to the devices', who: 'Microsoft Graph only', when: 'Its own interval, when switched on' },
 ]
 

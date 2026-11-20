@@ -52,6 +52,14 @@ type findingDTO struct {
 	IntuneCompliance string     `db:"intune_compliance" json:"intuneCompliance"`
 	IntuneEncrypted  *bool      `db:"intune_encrypted" json:"intuneEncrypted"`
 	IntuneLastSync   *time.Time `db:"intune_last_sync" json:"intuneLastSync"`
+	// From Microsoft Entra ID, matched by computer name: the device's registered
+	// owner, its Entra name, join type and last sign-in.
+	EntraUser       string     `db:"entra_user" json:"entraUser"`
+	EntraUserName   string     `db:"entra_user_name" json:"entraUserName"`
+	EntraDevice     string     `db:"entra_device" json:"entraDevice"`
+	EntraJoin       string     `db:"entra_join" json:"entraJoin"`
+	EntraLastSignIn *time.Time `db:"entra_last_sign_in" json:"entraLastSignIn"`
+	EntraSeenAt     *time.Time `db:"entra_seen_at" json:"entraSeenAt"`
 	// What the device says on the network: its NetBIOS workgroup or domain, and
 	// from the Windows file-sharing handshake, its domain, full name and version.
 	Workgroup     string `db:"workgroup" json:"workgroup"`

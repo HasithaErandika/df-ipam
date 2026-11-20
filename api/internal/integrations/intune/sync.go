@@ -55,6 +55,11 @@ type Status struct {
 	Error   string     `json:"error"`
 	Devices int        `json:"devices"`
 	Matched int64      `json:"matched"`
+	// Entra ID is read after Intune, and fails on its own: a missing
+	// permission for one doesn't stop the other.
+	EntraError   string `json:"entraError"`
+	EntraDevices int    `json:"entraDevices"`
+	EntraMatched int64  `json:"entraMatched"`
 }
 
 // Syncer reads Intune on a schedule when it is enabled, and on request.
@@ -124,12 +129,13 @@ func (s *Syncer) Run(ctx context.Context) {
 			continue
 		}
 		if err := s.Sync(ctx); err != nil && ctx.Err() == nil {
-			slog.WarnContext(ctx, "intune read failed", "error", err)
+			slog.WarnContext(ctx, "intune or entra read failed", "error", err)
 		}
 	}
 }
 
-// Sync reads Intune once and records each device's user on its sightings.
+// Sync reads Intune and Entra ID once and records each device's user on its
+// sightings. Each source keeps its last good result when the other fails.
 func (s *Syncer) Sync(ctx context.Context) error {
 	now := time.Now()
 	s.mu.Lock()
@@ -140,14 +146,27 @@ func (s *Syncer) Sync(ctx context.Context) error {
 	if err == nil {
 		matched, err = save(ctx, s.conn, devs)
 	}
+	ents, entraErr := s.client.EntraDevices(ctx)
+	var entraMatched int64
+	if entraErr == nil {
+		entraMatched, entraErr = saveEntra(ctx, s.conn, ents)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.status.Running = false
 	if err != nil {
 		s.status.Error = err.Error()
-		return err
+	} else {
+		s.status.Error, s.status.Devices, s.status.Matched = "", len(devs), matched
 	}
-	done := time.Now()
-	s.status.Error, s.status.LastOK, s.status.Devices, s.status.Matched = "", &done, len(devs), matched
-	return nil
+	if entraErr != nil {
+		s.status.EntraError = entraErr.Error()
+	} else {
+		s.status.EntraError, s.status.EntraDevices, s.status.EntraMatched = "", len(ents), entraMatched
+	}
+	if err == nil && entraErr == nil {
+		done := time.Now()
+		s.status.LastOK = &done
+	}
+	return errors.Join(err, entraErr)
 }

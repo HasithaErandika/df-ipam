@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Button, Field, FormError, FormSection, Input, Modal, Select, Switch, useConfirm } from '../../components/ui'
+import { Button, Field, FormError, FormSection, Input, Modal, Notice, Select, Switch, useConfirm } from '../../components/ui'
 import { post } from '../../lib/api'
 import { deviceTypes, ipTypes, options } from '../../lib/labels'
 import { inventoryKeys, useInvalidate } from '../../lib/queries'
@@ -26,6 +26,8 @@ export interface DecisionTarget {
   platform?: string | null
   model?: string | null
   osHint?: string | null
+  /** The register type the evidence suggests, for registering its IP in the same step. */
+  ipType?: string
 }
 
 /**
@@ -50,8 +52,9 @@ export function ApproveDeviceModal({ target, onClose }: { target: DecisionTarget
     setOwner(target.owner ?? '')
     setDepartment(target.department ?? '')
     setDeviceType(target.deviceType && target.deviceType !== 'other' ? target.deviceType : 'pc')
-    setPlatform(knownPlatform(target.platform)) // a guess is offered below, never filled in
+    setPlatform(knownPlatform(target.platform))
     setRegisterIp(false)
+    setIpType(target.ipType ?? 'user_pc')
     setError(null)
   }, [target])
 
@@ -69,6 +72,7 @@ export function ApproveDeviceModal({ target, onClose }: { target: DecisionTarget
     <Modal open={target !== null} onClose={onClose} title="Approve device" subtitle={<span className="font-mono">{target?.mac}</span>}
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={approve.isPending} disabled={!name.trim()} onClick={() => approve.mutate()}>Approve</Button></>}>
       <div className="space-y-5">
+        <Notice>Filled in from what discovery found: name, type, platform and user. Check them before approving.</Notice>
         <FormSection title="Device">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name" htmlFor="dev-name" error={!name.trim() ? 'Give the device a name.' : undefined}><Input id="dev-name" value={name} maxLength={120} onChange={(e) => setName(e.target.value)} /></Field>

@@ -23,6 +23,9 @@ export function windowsName(version: string): string {
 /** The domain or workgroup a device names, preferring the DNS domain from Windows. */
 export const deviceDomain = (r: { windowsDomain: string; workgroup: string }) => r.windowsDomain || r.workgroup
 
+/** How a device is attached to Entra ID, in words. */
+export const entraJoin: Record<string, string> = { AzureAd: 'Entra joined', ServerAd: 'Hybrid joined (from the domain)', Workplace: 'Entra registered' }
+
 /** Intune's compliance states, in words. */
 export const compliance: Record<string, string> = {
   compliant: 'Compliant', noncompliant: 'Not compliant', inGracePeriod: 'In grace period', conflict: 'Conflicting policies',

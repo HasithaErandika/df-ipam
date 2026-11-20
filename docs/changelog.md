@@ -2,6 +2,12 @@
 
 What changed, day by day, on branch `lite`. Newest first. The specification is in [product/](product/overview.md); what is and isn't built is in [status.md](status.md).
 
+## 2026-11-20
+
+**Discovery**
+- **Users from Entra ID.** Each Intune read also lists Entra ID's devices with their registered owner, for company devices that aren't enrolled in Intune. They match by computer name (Entra keeps no MAC); a re-joined PC's most recently signed-in copy counts. Discovery shows the owner when Intune has no user (Intune, then Entra ID, then VPN), the finding details add a Microsoft Entra ID section, search finds the owner, and the Device users report names "Entra ID" as the source. System > Microsoft Intune shows Entra ID's device count, matches and error on their own, so a missing permission doesn't stop the Intune read. Needs the Graph application permissions `Device.Read.All` and `User.Read.All`. Migration 000022 adds the `entra_*` columns to `sightings`.
+- **Register and Approve start filled in from discovery.** From a Discovery row or its details, the register form now gets the user (Intune, then Entra ID, then VPN) as owner, the likely platform (filled in, not only offered), and a note with maker and model, serial, OS and domain; the approval gets the user as owner, the likely platform, a device type from the evidence (PC, laptop, phone, printer, camera, network device, server), and the register type for its IP. Both say the values came from discovery and should be checked. An approved device's own record still replaces these guesses in the register form, and anything the person typed stays.
+
 ## 2026-11-19
 
 **Reports, audit and import**

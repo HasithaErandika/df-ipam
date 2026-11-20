@@ -26,7 +26,8 @@ const findingColumns = `SELECT v.id::text AS id, host(v.ip) AS ip, v.mac::text A
 	COALESCE(` + known + `, false) AS known,
 	COALESCE(NULLIF(i.platform, ''), d.platform, '') AS platform,
 	v.intune_user, v.intune_user_name, v.intune_device, v.intune_seen_at, v.intune_serial, v.intune_maker, v.intune_model, v.intune_os,
-	v.intune_compliance, v.intune_encrypted, v.intune_last_sync, v.workgroup, v.windows_domain, v.windows_fqdn, v.os_version,
+	v.intune_compliance, v.intune_encrypted, v.intune_last_sync,
+	v.entra_user, v.entra_user_name, v.entra_device, v.entra_join, v.entra_last_sign_in, v.entra_seen_at, v.workgroup, v.windows_domain, v.windows_fqdn, v.os_version,
 	v.vpn_user, v.vpn_kind, v.vpn_tunnel, v.vpn_remote`
 
 // findingPage adds, to one page of rows that is already sorted and cut, the
@@ -110,6 +111,7 @@ func findingFilter(c *gin.Context) (db.Where, error) {
 			OR i.assigned_name ILIKE ? ESCAPE '\' OR d.name ILIKE ? ESCAPE '\' OR v.vendor ILIKE ? ESCAPE '\'
 			OR v.model ILIKE ? ESCAPE '\' OR v.maker ILIKE ? ESCAPE '\'
 			OR v.intune_user ILIKE ? ESCAPE '\' OR v.intune_user_name ILIKE ? ESCAPE '\' OR v.intune_serial ILIKE ? ESCAPE '\'
+			OR v.entra_user ILIKE ? ESCAPE '\' OR v.entra_user_name ILIKE ? ESCAPE '\'
 			OR v.workgroup ILIKE ? ESCAPE '\' OR v.windows_domain ILIKE ? ESCAPE '\' OR v.vpn_user ILIKE ? ESCAPE '\')`, db.Contains(q))
 	}
 	return w, v.Err()

@@ -37,15 +37,16 @@ interface Fillable { deviceId: string; ipType: string; assignedName: string; pla
 
 /**
  * What to change on a new register entry from the approved device: the link to
- * it, and every field the person has left as it started. Their own edits stay.
+ * it, and every field the person has left as it started, including what
+ * discovery filled in: what people recorded beats evidence. Their own edits stay.
  */
-export function fillFromDevice(d: Device, current: Fillable, edited: (field: keyof Fillable) => boolean): Partial<Fillable> {
+export function fillFromDevice(d: Device, edited: (field: keyof Fillable) => boolean): Partial<Fillable> {
   const out: Partial<Fillable> = { deviceId: d.id }
   const type = ipTypeFromDevice(d.deviceType)
   if (type && !edited('ipType')) out.ipType = type
   if (d.name && !edited('assignedName')) out.assignedName = d.name
-  if (d.platform && !edited('platform') && !current.platform) out.platform = d.platform
-  if (d.owner && !edited('owner') && !current.owner) out.owner = d.owner
-  if (d.department && !edited('department') && !current.department) out.department = d.department
+  if (d.platform && !edited('platform')) out.platform = d.platform
+  if (d.owner && !edited('owner')) out.owner = d.owner
+  if (d.department && !edited('department')) out.department = d.department
   return out
 }
