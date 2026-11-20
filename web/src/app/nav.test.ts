@@ -15,8 +15,8 @@ const roles: Record<string, string[]> = {
 
 const labels = (role: string) => navFor(roles[role]).flatMap((g) => g.items.map((i) => i.label))
 const network = ['Discovery', 'Servers', 'Devices', 'Alerts']
-const firewallAll = ['Live', 'Review and import']
-const firewallEdit = ['Live', 'Review and import']
+const firewallAll = ['Live', 'Import']
+const firewallEdit = ['Live', 'Import']
 const firewallView = ['Live']
 const links = ['Overview', 'All Network Links', 'Service Providers', 'Contract Renewals', 'Import / Export']
 const readLinks = ['Overview', 'All Network Links', 'Service Providers']

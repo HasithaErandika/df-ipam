@@ -42,7 +42,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
     group: 'Firewall',
     items: [
       { to: '/firewall/live', label: 'Live', icon: Activity, anyOf: ['inventory:view', 'links:view'], summary: 'What the FortiGate reports now: interfaces and traffic, VPN tunnels and users, SD-WAN health and load.' },
-      { to: '/firewall/review', label: 'Review and import', icon: Import, anyOf: ['inventory:edit', 'network:manage', 'links:create', 'links:edit'], summary: 'Fetch networks, devices, servers and links from the FortiGate, check them, and add what you confirm.' },
+      { to: '/firewall/import', label: 'Import', icon: Import, anyOf: ['inventory:edit', 'network:manage', 'links:create', 'links:edit'], summary: 'Bring networks, devices, servers and links from the FortiGate into DF-IPAM, after you check and confirm them.' },
     ],
   },
   {

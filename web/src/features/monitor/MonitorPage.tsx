@@ -41,11 +41,12 @@ export function MonitorPage() {
 
   const segs = m.segments.data ?? []
   const waiting = d ? d.totals.pendingDevices + d.totals.pendingRequests + d.totals.expiringReservations : 0
+  const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
   const problems = [
-    { n: urgent, text: `urgent alert${urgent === 1 ? '' : 's'}` },
-    { n: down, text: `server${down === 1 ? '' : 's'} down` },
-    { n: linesDown, text: `line${linesDown === 1 ? '' : 's'} down` },
-    { n: tunnelsDown, text: `tunnel${tunnelsDown === 1 ? '' : 's'} down` },
+    { n: urgent, text: plural(urgent, 'Urgent alert', 'Urgent alerts') },
+    { n: down, text: plural(down, 'Server down', 'Servers down') },
+    { n: linesDown, text: plural(linesDown, 'Line down', 'Lines down') },
+    { n: tunnelsDown, text: plural(tunnelsDown, 'Tunnel down', 'Tunnels down') },
   ]
   return (
     <div className="fixed inset-0 z-50 h-dvh overflow-hidden bg-bg max-xl:overflow-y-auto">

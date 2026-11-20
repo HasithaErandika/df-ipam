@@ -10,7 +10,7 @@ The API token's admin profile needs read access to: System (interfaces, DHCP ser
 | --- | --- | --- | --- |
 | Scheduled read | Address table (ARP), DHCP leases, VPN sessions | Every N minutes, when switched on in System > FortiGate | Yes, as Discovery evidence (sightings), which raises alerts and feeds reports |
 | Live | Interfaces and traffic, IPsec tunnels, VPN users, SD-WAN health, CPU, memory, sessions | Every 10 seconds while someone watches | No |
-| Review and import | WAN lines and tunnels, networks, devices, servers | When someone presses Fetch | Only what people confirm |
+| Import | WAN lines and tunnels, networks, devices, servers | When someone presses Fetch | Only what people confirm |
 
 Live doesn't replace the scheduled read: Discovery's alerts (unknown devices, conflicts, unregistered addresses) need evidence kept over time, and Live keeps nothing.
 
@@ -26,9 +26,9 @@ Live doesn't replace the scheduled read: Discovery's alerts (unknown devices, co
 
 People who may see network links also see which link each interface and tunnel belongs to, and a link's page shows a **Live from the firewall** card.
 
-## Review and import
+## Import
 
-`/firewall/review`: fetch, look, tick, confirm. Nothing is saved before the confirmation, which lists every change. One fetch serves the Networks, Devices and Servers tabs; Network links has its own.
+`/firewall/import` (the old `/firewall/review` address still opens it): fetch, look, tick, confirm. Nothing is saved before the confirmation, which lists every change. One **Fetch from firewall** reads everything the person may import. A tab per kind (Networks, Devices, Servers, Network links) shows how many items wait for a decision; each list opens on **To review** (new or different) with **All** a click away, has **Choose all**, and one save bar stays at the bottom while something is chosen. What was saved is listed until dismissed.
 
 | Tab | From the firewall | Becomes | Needs |
 | --- | --- | --- | --- |

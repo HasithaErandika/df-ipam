@@ -4,10 +4,30 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 ## 2026-11-20
 
+**Firewall Import** (was Review and import)
+- Renamed to **Import** at `/firewall/import`; the old address redirects.
+- One **Fetch from firewall** reads networks, devices, servers and network links together, from a start panel that explains the three steps.
+- Tabs show how many items wait for a decision. Each list opens on **To review**, hiding what is already up to date, registered or approved, with **All** beside it, and has **Choose all**.
+- One save bar, stuck to the bottom of the screen, shows how many are chosen, what is still missing, **Clear** and **Save N…**. The saved results can be dismissed.
+- The Devices list fits the page without scrolling sideways.
+
+**Review fixes**
+- **Audit log:** people without `links:commercial_view` no longer see Network Links' commercial fields, or contract and quotation file names, in the audit log or its export, and can't find them by searching.
+- **Register rules on the server:** registering by hand, approving a device with its address, and importing all refuse the network and broadcast addresses, DHCP pool addresses, the gateway (unless its type is Network) and held addresses. Imports say why each row was skipped. Approving a device no longer gets past a reservation.
+- **Reservations** can't cover the network or broadcast address, the gateway or the DHCP pool.
+- **Imports:** Critical with Monitor left blank turns monitoring on instead of rejecting the row.
+- **Departments** must come from the list, matched without case and stored in the list's spelling, including in imports.
+- **Sri Lanka time:** the database session uses Asia/Colombo, and date checks use Sri Lanka's calendar day. Reservation expiries end at midnight in Sri Lanka; migration 000026 moves existing ones from midnight UTC. Report and audit date ranges follow Sri Lankan days.
+- **Expiring holds** on the dashboard and monitor count only holds still to expire in the next 7 days, matching the Expiring tab; overdue ones are under Expired.
+- **Server checks:** an entry whose monitoring was turned off during a check stays Unknown.
+- **Sign-in:** when many sign-ins are in progress, only the oldest is dropped, not others at random.
+- **Approving a device:** leaving out owner or department keeps them; sending them blank clears them. The FortiGate device review no longer sends blank values.
+
 **Default departments**
 - New installs and existing databases start with IT, Finance, Marketing, Cyber Security, Management and HR (migration 000025). Added once, so a department someone deletes or renames does not come back.
 
 **Monitor view fits one screen**
+- The status in the top band is a single labelled strip: "Needs attention" followed by each problem with its count ("2 Servers down"), without the pulsing dot and loose pills. When nothing is wrong it reads "All systems normal".
 - The monitor shows only summary charts. It no longer fetches the alert list or the list of servers down, and the Needs attention, Servers down, Waiting for someone and Busiest networks panels are gone (their counts stay in the tiles and charts).
 - On a wide screen it fills exactly one screen and does not scroll. The page behind it is locked, so Chrome no longer scrolls past the monitor into empty space.
 
