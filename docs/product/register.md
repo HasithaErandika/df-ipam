@@ -4,6 +4,8 @@
 
 The register is the official list of addresses: IP (unique), segment, status, type, environment, assigned name or device, expected MAC, platform, services, owner, department, monitor, critical, check port and notes.
 
+The server refuses, however an entry is added (by hand, approving a device, or import): the segment's network and broadcast addresses, DHCP pool addresses (they change, so the device is approved instead), the gateway unless its type is Network, and addresses held by a reservation. The department must be one from the list in Network setup. In an import, Critical with Monitor left blank turns monitoring on.
+
 | Status | Meaning |
 | --- | --- |
 | Assigned | In use by what it names |
@@ -53,6 +55,6 @@ Approving a device or registering an address from Discovery starts with what dis
 
 **IP requests.** A Requester asks for an IP: segment, type, name, purpose, needed-by date and optionally a specific IP (at most 20 pending each). An approver approves with the suggested Available candidate or another IP, or rejects with a reason. Approval creates the register entry in the same transaction and notifies the requester. States: `pending`, `approved`, `rejected`, `cancelled`.
 
-**Reservations.** Hold an IP or a range of up to 256 addresses, with a reason, owner and optional expiry. The owner is reminded once in the 7 days before expiry. Nothing is released automatically: the owner or an Admin extends, converts part of it to an assignment, or releases it. A reservation overlapping a registered, recently seen or reserved address is refused.
+**Reservations.** Hold an IP or a range of up to 256 addresses, with a reason, owner and optional expiry. The owner is reminded once in the 7 days before expiry. Nothing is released automatically: the owner or an Admin extends, converts part of it to an assignment, or releases it. A reservation overlapping a registered, recently seen or reserved address, the network or broadcast address, the gateway or the DHCP pool is refused. An expiry date ends at midnight in Sri Lanka.
 
 Dates such as "needed by" and "expires" are checked against the person's own calendar day.

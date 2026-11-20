@@ -131,6 +131,10 @@ func (v *V) IntRange(field string, value *int, min, max int, label string) {
 	}
 }
 
+// sriLanka is Sri Lanka's time zone, which has no daylight saving. Dates are
+// checked against its calendar day, as people there see it.
+var sriLanka = time.FixedZone("Asia/Colombo", 5*3600+1800)
+
 // Date checks an optional YYYY-MM-DD date. future requires today or later.
 func (v *V) Date(field string, value *string, future bool, label string) {
 	*value = strings.TrimSpace(*value)
@@ -142,7 +146,8 @@ func (v *V) Date(field string, value *string, future bool, label string) {
 		v.Add(field, label+" must be a date.")
 		return
 	}
-	today := time.Now().UTC().Truncate(24 * time.Hour)
+	now := time.Now().In(sriLanka)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	if future && d.Before(today) {
 		v.Add(field, label+" can't be in the past.")
 	}

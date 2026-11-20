@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dfipam/api/internal/auth"
+	"dfipam/api/internal/modules/links"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 	"dfipam/api/internal/platform/tabular"
@@ -48,6 +49,9 @@ const entryFrom = ` FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_id`
 const entryColumns = `SELECT a.id, a.occurred_at, u.email AS actor_email, a.actor_type, a.action, a.object_type, a.object_id,
 	a.old_values, a.new_values, host(a.source_ip) AS source_ip, a.correlation_id`
 
+// seesMoney reports whether this person may see Network Links' commercial values.
+func seesMoney(c *gin.Context) bool { return auth.Current(c).Has(auth.LinksCommercialView) }
+
 func filter(c *gin.Context) (db.Where, error) {
 	var w db.Where
 	var v validate.V
@@ -71,8 +75,12 @@ func filter(c *gin.Context) (db.Where, error) {
 		v.Add("to", "The end date is before the start date.")
 	}
 	// Free text matches the record ID or anything in the values, such as an IP or MAC.
-	if q := strings.TrimSpace(c.Query("q")); q != "" {
+	// Without commercial access, a link's values aren't searched, so a search can't reveal them.
+	if q := strings.TrimSpace(c.Query("q")); q != "" && seesMoney(c) {
 		w.Add(`(a.object_id ILIKE ? ESCAPE '\' OR a.old_values::text ILIKE ? ESCAPE '\' OR a.new_values::text ILIKE ? ESCAPE '\')`, db.Contains(q))
+	} else if q != "" {
+		w.Add(`(a.object_id ILIKE ? ESCAPE '\' OR (a.object_type <> 'network_link'
+			AND (a.old_values::text ILIKE ? ESCAPE '\' OR a.new_values::text ILIKE ? ESCAPE '\')))`, db.Contains(q))
 	}
 	return w, v.Err()
 }
@@ -89,6 +97,12 @@ func (h *Handler) list(c *gin.Context) {
 	if err != nil {
 		httpx.Fail(c, err)
 		return
+	}
+	if !seesMoney(c) {
+		for i := range items {
+			items[i].OldValues = links.RedactAudit(items[i].ObjectType, items[i].OldValues)
+			items[i].NewValues = links.RedactAudit(items[i].ObjectType, items[i].NewValues)
+		}
 	}
 	httpx.List(c, items, page, total)
 }
@@ -117,11 +131,15 @@ func (h *Handler) export(c *gin.Context) {
 		return
 	}
 	defer rows.Close()
+	money := seesMoney(c)
 	for rows.Next() {
 		r := make([]string, 8)
 		if err := rows.Scan(&r[0], &r[1], &r[2], &r[3], &r[4], &r[5], &r[6], &r[7]); err != nil {
 			httpx.Fail(c, err)
 			return
+		}
+		if !money {
+			r[5], r[6] = string(links.RedactAudit(r[3], []byte(r[5]))), string(links.RedactAudit(r[3], []byte(r[6])))
 		}
 		_ = out.Write(r)
 	}

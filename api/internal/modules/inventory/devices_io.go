@@ -54,6 +54,11 @@ func (h *Handler) importDevices(c *gin.Context) {
 	if !ok {
 		return
 	}
+	depts, err := departmentsByName(c, h.conn)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
 	dry := isDryRun(c)
 	result := importResult{DryRun: dry, Issues: []rowIssue{}, Preview: []previewRow{}}
 	var batch [6][]string // mac, name, owner, department, type, platform
@@ -68,6 +73,11 @@ func (h *Handler) importDevices(c *gin.Context) {
 			result.Issues = append(result.Issues, rowIssue{i + 2, issueText(err)})
 			continue
 		}
+		var bad string
+		if in.Department, bad = importDepartment(in.Department, depts); bad != "" {
+			result.Issues = append(result.Issues, rowIssue{i + 2, bad})
+			continue
+		}
 		if seen[in.MAC] {
 			result.Issues = append(result.Issues, rowIssue{i + 2, "This MAC appears earlier in the file."})
 			continue
@@ -79,7 +89,7 @@ func (h *Handler) importDevices(c *gin.Context) {
 		}
 	}
 	uid := actor(c)
-	err := importTx(c, h.conn, dry, func(tx pgx.Tx) error {
+	err = importTx(c, h.conn, dry, func(tx pgx.Tx) error {
 		inserted, err := tx.Query(c, `INSERT INTO devices (mac, name, owner, department, device_type, platform, status, decided_by, decided_at)
 			SELECT m::macaddr, n, o, d, t, p, 'approved', $7::uuid, now() FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]) AS x(m, n, o, d, t, p)
 			ON CONFLICT (mac) DO NOTHING RETURNING id::text, mac::text`, batch[0], batch[1], batch[2], batch[3], batch[4], batch[5], uid)

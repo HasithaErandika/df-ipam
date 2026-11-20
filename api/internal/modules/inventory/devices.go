@@ -136,6 +136,9 @@ func (h *Handler) createDevice(c *gin.Context) {
 	}
 	var id string
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
+		if err := checkDepartment(c, tx, &in.Department); err != nil {
+			return err
+		}
 		if err := tx.QueryRow(c, `INSERT INTO devices (mac, name, owner, department, device_type, platform, status, notes, decided_by, decided_at)
 			VALUES ($1::macaddr, $2, $3, $4, $5, $8, 'approved', $6, $7::uuid, now()) RETURNING id::text`,
 			in.MAC, in.Name, in.Owner, in.Department, in.Type, in.Notes, actor(c), in.Platform).Scan(&id); err != nil {
@@ -167,6 +170,9 @@ func (h *Handler) updateDevice(c *gin.Context) {
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
 		old, err := lockOld(c, tx, "devices", id)
 		if err != nil {
+			return err
+		}
+		if err := checkDepartment(c, tx, &in.Department); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(c, `UPDATE devices SET name = $2, owner = $3, department = $4, device_type = $5, notes = $6, platform = $7 WHERE id = $1::uuid`,

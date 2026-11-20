@@ -74,7 +74,7 @@ A row whose **Link ID** exists, or whose provider and circuit ID match a live li
 
 ## History
 
-Every change is in the audit log in the same transaction: added, changed (each field before and after, related links and local subnets included), contract renewed, archived, restored, file attached and file removed, with who and when. The link's **Change history** shows them field by field to people with `audit:view`, leaving commercial fields out for those who may not see them.
+Every change is in the audit log in the same transaction: added, changed (each field before and after, related links and local subnets included), contract renewed, archived, restored, file attached and file removed, with who and when. The link's **Change history** shows them field by field to people with `audit:view`, leaving commercial fields out for those who may not see them. The general **Audit log** does the same: without `links:commercial_view`, a link's commercial fields and contract or quotation file names are removed from its records and exports, and its values aren't searched.
 
 ## Master data
 

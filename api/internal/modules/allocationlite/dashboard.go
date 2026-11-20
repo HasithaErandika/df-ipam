@@ -121,7 +121,7 @@ func (h *Handler) dashboard(c *gin.Context) {
 	}
 	if err := h.conn.QueryRow(c, `SELECT (SELECT count(*) FROM devices WHERE status = 'pending'),
 		(SELECT count(*) FROM ip_requests WHERE status = 'pending'),
-		(SELECT count(*) FROM reservations WHERE status = 'active' AND expires_at <= now() + interval '7 days'),
+		(SELECT count(*) FROM reservations WHERE status = 'active' AND expires_at > now() AND expires_at <= now() + interval '7 days'),
 		(SELECT count(*) FROM ip_addresses),
 		(SELECT count(*) FROM ip_addresses WHERE status = 'assigned'), (SELECT count(*) FROM ip_addresses WHERE status = 'reserved'),
 		(SELECT count(*) FROM ip_addresses WHERE status = 'blocked'),

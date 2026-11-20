@@ -109,6 +109,7 @@ const healthSQL = `WITH limits AS (
 	SELECT i.id, CASE WHEN c.result = 'up' THEN c.ms END AS ms, CASE WHEN c.result = 'up' THEN 0 ELSE i.server_check_failures + 1 END AS failures,
 		CASE WHEN c.result = 'up' THEN 'up' WHEN i.server_check_failures + 1 >= (SELECT n FROM limits) THEN 'down' ELSE i.health END AS health
 	FROM ip_addresses i JOIN checks c ON c.id = i.id
+	WHERE i.monitor -- turned off during the check: it stays Unknown
 )
 UPDATE ip_addresses i SET server_check_failures = next.failures, health = next.health, response_ms = next.ms,
 	health_changed_at = CASE WHEN i.health IS DISTINCT FROM next.health THEN now() ELSE i.health_changed_at END

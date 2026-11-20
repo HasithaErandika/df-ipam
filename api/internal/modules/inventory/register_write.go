@@ -3,6 +3,7 @@ package inventory
 import (
 	"net/http"
 
+	"dfipam/api/internal/ipam"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
@@ -26,6 +27,12 @@ func (h *Handler) createIP(c *gin.Context) {
 	var id string
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
 		if err := refuseReserved(c, tx, in.SegmentID, in.IP); err != nil {
+			return err
+		}
+		if err := ipam.CheckRegister(c, tx, in.SegmentID, in.IP, in.Type); err != nil {
+			return err
+		}
+		if err := checkDepartment(c, tx, &in.Department); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(c, `INSERT INTO ip_addresses (segment_id, ip, status, ip_type, environment_id, device_id, assigned_name,
@@ -65,6 +72,9 @@ func (h *Handler) updateIP(c *gin.Context) {
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
 		old, err := lockOld(c, tx, "ip_addresses", id)
 		if err != nil {
+			return err
+		}
+		if err := checkDepartment(c, tx, &in.Department); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(c, `UPDATE ip_addresses SET status = $2, ip_type = $3, environment_id = NULLIF($4, '')::uuid,

@@ -141,6 +141,13 @@ func (h *Handler) createReservation(c *gin.Context) {
 			in.StartIP, in.EndIP).Scan(&busy); err != nil {
 			return err
 		}
+		var issue *string
+		if err := tx.QueryRow(c, ipam.RangeIssueSQL, in.StartIP, in.EndIP, in.SegmentID).Scan(&issue); err != nil {
+			return err
+		}
+		if issue != nil {
+			return httpx.Validation("startIp", *issue)
+		}
 		if busy {
 			return httpx.NewError(http.StatusConflict, "RANGE_IN_USE", "The range includes an address that is registered, reserved, or seen in use recently (in the last 30 days outside the DHCP pool, or 24 hours inside it).")
 		}

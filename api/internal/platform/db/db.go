@@ -22,6 +22,9 @@ func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, errors.New("DATABASE_URL can't be read")
 	}
+	// Dates people pick are Sri Lankan calendar days: a date turned into a time
+	// (an expiry, a report's range) starts at midnight in Sri Lanka, not UTC.
+	cfg.ConnConfig.RuntimeParams["timezone"] = "Asia/Colombo"
 	cfg.MaxConns = 5
 	if n, err := strconv.Atoi(os.Getenv("DB_MAX_CONNS")); err == nil && n > 0 {
 		cfg.MaxConns = int32(n)

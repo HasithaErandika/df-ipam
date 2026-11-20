@@ -12,10 +12,17 @@ import (
 func (h *Handler) remember(a auth.LoginAttempt) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	oldest := ""
 	for k, v := range h.attempts {
-		if time.Since(v.Started) > attemptTTL || len(h.attempts) >= maxAttempts {
+		if time.Since(v.Started) > attemptTTL {
 			delete(h.attempts, k)
+		} else if oldest == "" || v.Started.Before(h.attempts[oldest].Started) {
+			oldest = k
 		}
+	}
+	// Still full of live attempts: make room by dropping only the oldest one.
+	if len(h.attempts) >= maxAttempts {
+		delete(h.attempts, oldest)
 	}
 	h.attempts[a.State] = a
 }

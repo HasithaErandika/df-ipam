@@ -44,4 +44,4 @@ Production, DR, UAT, Development, Test, and any others added here. Each has a co
 
 ## Departments
 
-A fixed list offered when approving devices and registering addresses. It starts with IT, Finance, Marketing, Cyber Security, Management and HR; Administrators add, rename and delete from there. A rename carries over to devices and register entries in the same audited change. A department in use can't be deleted.
+A fixed list offered when approving devices and registering addresses. It starts with IT, Finance, Marketing, Cyber Security, Management and HR; Administrators add, rename and delete from there. Devices and register entries, imports included, accept only a department from this list, in its spelling. A rename carries over to devices and register entries in the same audited change. A department in use can't be deleted.

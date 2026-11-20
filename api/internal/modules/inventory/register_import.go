@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"dfipam/api/internal/audit"
-	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
 	"github.com/gin-gonic/gin"
@@ -25,14 +24,14 @@ type importRow struct {
 // columns as the export, so an export can be edited and imported back. Each IP
 // goes to the segment whose network holds it; the segment column is ignored.
 // With ?as=server, a blank type means Server, and blank Monitor and Critical
-// take the environment's defaults. Rows with problems, IPs outside every segment,
-// IPs already registered and IPs held by a reservation are skipped and reported. One statement inserts the rest.
+// take the environment's defaults. Rows with problems, and addresses the register
+// refuses by hand too, are skipped and reported. One statement inserts the rest.
 func (h *Handler) importRegister(c *gin.Context) {
 	rows, ok := readTable(c, "ip")
 	if !ok {
 		return
 	}
-	envs, err := environmentsByName(c, h.conn)
+	lists, err := loadImportLists(c, h.conn)
 	if err != nil {
 		httpx.Fail(c, err)
 		return
@@ -42,7 +41,7 @@ func (h *Handler) importRegister(c *gin.Context) {
 	var valid []importRow
 	line := map[string]int{}
 	for i, row := range rows {
-		x, problem := parseImportRow(row, envs, asServer)
+		x, problem := parseImportRow(row, lists, asServer)
 		if problem == "" && line[x.in.IP] != 0 {
 			problem = "This IP appears earlier in the file."
 		}
@@ -58,7 +57,15 @@ func (h *Handler) importRegister(c *gin.Context) {
 		for _, x := range valid {
 			names[x.in.IP] = x.in.Name
 		}
-		ips, err := insertImported(c, tx, valid, asServer)
+		blocked, err := importBlocks(c, tx, valid)
+		if err != nil {
+			return err
+		}
+		for ip, why := range blocked {
+			result.Issues = append(result.Issues, rowIssue{line[ip], why})
+			delete(line, ip)
+		}
+		ips, err := insertImported(c, tx, withoutBlocked(valid, blocked), asServer)
 		for _, ip := range ips {
 			result.Preview = append(result.Preview, previewRow{Row: line[ip], Key: ip, Label: names[ip]})
 			delete(line, ip)
@@ -71,7 +78,7 @@ func (h *Handler) importRegister(c *gin.Context) {
 		return
 	}
 	for ip, n := range line {
-		result.Issues = append(result.Issues, rowIssue{n, ip + " is already registered, held by a reservation, or no segment contains it."})
+		result.Issues = append(result.Issues, rowIssue{n, ip + " was registered or reserved by someone else during the import."})
 	}
 	result.Skipped = len(rows) - result.Imported
 	slices.SortFunc(result.Issues, func(a, b rowIssue) int { return a.Row - b.Row })
@@ -82,25 +89,8 @@ func (h *Handler) importRegister(c *gin.Context) {
 	httpx.OK(c, http.StatusOK, result)
 }
 
-func environmentsByName(c *gin.Context, conn db.Conn) (map[string]string, error) {
-	rows, err := conn.Query(c, "SELECT lower(name), id::text FROM environments")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]string{}
-	for rows.Next() {
-		var name, id string
-		if err := rows.Scan(&name, &id); err != nil {
-			return nil, err
-		}
-		out[name] = id
-	}
-	return out, rows.Err()
-}
-
 // parseImportRow checks one row and returns it ready to insert, or why not.
-func parseImportRow(row map[string]string, envs map[string]string, asServer bool) (importRow, string) {
+func parseImportRow(row map[string]string, lists importLists, asServer bool) (importRow, string) {
 	x := importRow{in: ipInput{SegmentID: "00000000-0000-0000-0000-000000000000", IP: row["ip"], Status: row["status"], Type: strings.ToLower(row["iptype"]),
 		Name: row["assignedname"], MAC: row["expectedmac"], Owner: row["owner"], Department: row["department"], Notes: row["notes"],
 		Platform: strings.ToLower(strings.TrimSpace(row["platform"])), Services: splitList(row["services"])}}
@@ -108,11 +98,14 @@ func parseImportRow(row map[string]string, envs map[string]string, asServer bool
 		x.in.Type = "server"
 	}
 	if name := strings.ToLower(strings.TrimSpace(row["environment"])); name != "" {
-		if x.env = envs[name]; x.env == "" {
+		if x.env = lists.envs[name]; x.env == "" {
 			return x, "Unknown environment " + row["environment"] + ". Add it in Settings first."
 		}
 	}
 	var bad string
+	if x.in.Department, bad = importDepartment(x.in.Department, lists.depts); bad != "" {
+		return x, bad
+	}
 	x.monitor, bad = yesNo(row["monitor"], "monitor")
 	if bad == "" {
 		x.critical, bad = yesNo(row["critical"], "critical")
@@ -128,30 +121,17 @@ func parseImportRow(row map[string]string, envs map[string]string, asServer bool
 		}
 		x.in.Port = &port
 	}
-	// Defaults are applied in SQL; validate what the row says.
-	x.in.Monitor, x.in.Critical = x.monitor == "true", x.critical == "true" && x.monitor != "false"
+	// Critical needs monitoring, so Critical with Monitor left blank turns it on.
+	if x.critical == "true" && x.monitor == "" {
+		x.monitor = "true"
+	}
+	// Other defaults are applied in SQL; validate what the row says.
+	x.in.Monitor, x.in.Critical = x.monitor == "true", x.critical == "true"
 	if err := x.in.validate(true); err != nil {
 		return x, issueText(err)
 	}
 	x.services = strings.Join(x.in.Services, " ")
 	return x, ""
-}
-
-// yesNo reads a yes/no cell as "true", "false", or "" when blank.
-func yesNo(cell, field string) (string, string) {
-	switch strings.ToLower(strings.TrimSpace(cell)) {
-	case "":
-		return "", ""
-	case "true", "yes", "y", "1":
-		return "true", ""
-	case "false", "no", "n", "0":
-		return "false", ""
-	}
-	return "", "Write yes or no for " + field + "."
-}
-
-func splitList(cell string) []string {
-	return strings.FieldsFunc(strings.ToLower(cell), func(r rune) bool { return r == ' ' || r == ',' || r == ';' || r == '|' })
 }
 
 // insertImported inserts the valid rows in one statement, audits each, and
