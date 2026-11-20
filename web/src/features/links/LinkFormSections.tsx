@@ -1,7 +1,7 @@
 import { Field, Input, SearchSelect } from '../../components/ui'
 import type { LinkOptions, LinkProvider, LinkSettings } from '../../lib/types'
 import { criticalities, linkEnvironments, linkRoles, linkStatuses, mediums, routings } from './labels'
-import { HostField, PublicIpsField, WanIpField } from './AddressFields'
+import { HostField, PublicIpsField, SegmentsField, WanFields } from './AddressFields'
 import { BandwidthField, ChoiceField, FormBlock, type SectionProps, TextField } from './formParts'
 import { SiteField } from './SiteField'
 
@@ -45,12 +45,10 @@ export function TechnicalSection({ p, options }: { p: SectionProps; options?: Li
       <BandwidthField p={p} k="down" unit="downUnit" label="Download bandwidth" error="downMbps" />
       <BandwidthField p={p} k="up" unit="upUnit" label="Upload bandwidth" error="upMbps" />
       <ChoiceField p={p} k="medium" label="Connection medium" choices={mediums} emptyLabel="Not set" />
-      <WanIpField p={p} options={options} />
-      <Field label="WAN subnet" htmlFor="link-wanSegmentId" error={errors.wanSegmentId} hint="The segment the WAN IP is in. A single address can be a /32 segment.">
-        <SearchSelect id="link-wanSegmentId" value={f.wanSegmentId} onChange={(v) => set('wanSegmentId', v)} options={opts(options?.segments)} emptyLabel="Not in the register" />
-      </Field>
-      <PublicIpsField p={p} />
+      <WanFields p={p} options={options} />
       <HostField p={p} k="gatewayIp" label="Gateway IP" placeholder="122.255.4.225" />
+      <PublicIpsField p={p} />
+      <SegmentsField p={p} options={options} />
       <Field label="Connected device" htmlFor="link-deviceId" error={errors.deviceId} hint="An approved device, or type a name below.">
         <SearchSelect id="link-deviceId" value={f.deviceId} onChange={(v) => set('deviceId', v)} options={opts(options?.devices)} emptyLabel="Not in Devices" />
       </Field>

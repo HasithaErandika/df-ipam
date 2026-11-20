@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Field, Input } from '../../components/ui'
+import { Field, Input, MultiSearchSelect, SearchSelect } from '../../components/ui'
 import type { LinkOptions } from '../../lib/types'
 import { inNetwork, networkOf, splitAddress } from '../../lib/validation'
 import type { SectionProps } from './formParts'
@@ -9,32 +9,63 @@ export function segmentFor(segments: LinkOptions['segments'], ip: string, bits: 
   return bits == null ? segments.find((s) => inNetwork(ip, s.detail)) : segments.find((s) => s.detail === networkOf(ip, bits))
 }
 
+const opts = (list: LinkOptions['segments'] = []) => list.map((o) => ({ value: o.id, label: o.label, detail: o.detail }))
+
 /**
- * The WAN IP, typed as the site diagrams write it: "10.10.40.253 /24" or
- * "122.255.4.226 255.255.255.248". Leaving the field keeps the address and
- * picks the matching segment as the WAN subnet when none is chosen.
+ * The WAN subnet, then the WAN IP inside it. Choosing the subnet narrows the
+ * register addresses offered for the IP. The IP may be typed as the site
+ * diagrams write it ("10.10.40.253 /24", "122.255.4.226 255.255.255.248"):
+ * leaving the field keeps the address, and picks the matching segment when no
+ * subnet is chosen yet.
  */
-export function WanIpField({ p, options }: { p: SectionProps; options?: LinkOptions }) {
+export function WanFields({ p, options }: { p: SectionProps; options?: LinkOptions }) {
   const { f, set, errors } = p
   const [note, setNote] = useState('')
+  const segments = options?.segments ?? []
+  const chosen = segments.find((s) => s.id === f.wanSegmentId)
+  const ips = (options?.registerIps ?? []).filter((o) => !chosen || o.detail === chosen.id)
+  const outside = (ip: string) => (chosen && !inNetwork(ip, chosen.detail) ? `${ip} isn't in ${chosen.label} (${chosen.detail}). Check the address or the subnet.` : '')
   const tidy = () => {
     const a = splitAddress(f.wanIp)
     if (!a) { setNote(''); return }
     set('wanIp', a.ip)
-    const seg = segmentFor(options?.segments ?? [], a.ip, a.bits)
-    if (seg && !f.wanSegmentId) set('wanSegmentId', seg.id)
-    if (seg) setNote(`In ${seg.label} (${seg.detail}).`)
-    else if (a.bits != null) setNote(`${networkOf(a.ip, a.bits)} isn't a segment yet. Add it in Network setup > Segments (a /32 works for one address), then pick it as the WAN subnet.`)
-    else setNote('')
+    if (chosen) { setNote(outside(a.ip)); return }
+    const seg = segmentFor(segments, a.ip, a.bits)
+    if (seg) { set('wanSegmentId', seg.id); setNote(`WAN subnet set to ${seg.label} (${seg.detail}).`) }
+    else setNote(a.bits != null ? `${networkOf(a.ip, a.bits)} isn't a segment yet. Add it in Network setup > Segments (a /32 works for one address), then choose it as the WAN subnet.` : '')
+  }
+  const pick = (id: string) => {
+    set('wanSegmentId', id)
+    const seg = segments.find((s) => s.id === id)
+    const a = splitAddress(f.wanIp)
+    setNote(seg && a && !inNetwork(a.ip, seg.detail) ? `${a.ip} isn't in ${seg.label} (${seg.detail}). Check the address or the subnet.` : '')
   }
   return (
     <>
-      <Field label="WAN IP address" htmlFor="link-wanIp" error={errors.wanIp} hint={note || 'With its prefix or mask if you have it: 10.10.40.253 /24.'}>
-        <Input id="link-wanIp" className="font-mono" list="link-register-ips" placeholder="10.10.40.253 /24" value={f.wanIp}
+      <Field label="WAN subnet" htmlFor="link-wanSegmentId" error={errors.wanSegmentId} hint="Choose it first: the WAN IP is offered from it. A single address can be a /32 segment.">
+        <SearchSelect id="link-wanSegmentId" value={f.wanSegmentId} onChange={pick} options={opts(segments)} emptyLabel="Not in the register" />
+      </Field>
+      <Field label="WAN IP address" htmlFor="link-wanIp" error={errors.wanIp}
+        hint={note || (chosen ? `An address in ${chosen.detail}, from the register or typed.` : 'With its prefix or mask if you have it: 10.10.40.253 /24.')}>
+        <Input id="link-wanIp" className="font-mono" list="link-register-ips" placeholder={chosen ? chosen.detail.replace(/\/\d+$/, '') : '10.10.40.253 /24'} value={f.wanIp}
           onChange={(e) => set('wanIp', e.target.value)} onBlur={tidy} />
       </Field>
-      <datalist id="link-register-ips">{options?.registerIps.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</datalist>
+      <datalist id="link-register-ips">{ips.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</datalist>
     </>
+  )
+}
+
+/** Every segment the link serves, for any link type: the LANs behind it, a VPN's local subnets. */
+export function SegmentsField({ p, options }: { p: SectionProps; options?: LinkOptions }) {
+  const { f, set, errors } = p
+  const choices = opts(options?.segments).filter((o) => o.value !== f.wanSegmentId || f.localSegmentIds.includes(o.value))
+  return (
+    <div className="sm:col-span-2 lg:col-span-3">
+      <Field label="Segments" htmlFor="link-localSegmentIds" error={errors.localSegmentIds}
+        hint="Every segment this link serves or carries: the LANs behind it, a VPN's local subnets. Add as many as you need; the WAN subnet needn't be repeated.">
+        <MultiSearchSelect id="link-localSegmentIds" values={f.localSegmentIds} onChange={(v) => set('localSegmentIds', v)} options={choices} placeholder="Add a segment from the register…" />
+      </Field>
+    </div>
   )
 }
 

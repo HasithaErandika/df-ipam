@@ -43,7 +43,7 @@ func (h *Handler) template(c *gin.Context) {
 		{"Download Mbps, Upload Mbps", "Numbers in Mbps: 1 Gbps is 1000."},
 		{"Connection Medium", "fibre; wireless; copper; other"},
 		{"WAN IP, Gateway IP", "An IPv4 address, with its prefix or mask if you have it: 10.10.40.253 /24 or 122.255.4.226 255.255.255.248. The address is kept."},
-		{"WAN Subnet, Local Subnets", "A segment's network (192.168.10.0/24) or name. Several are separated by ;. An empty WAN Subnet uses the WAN IP's prefix when that network is a segment."},
+		{"WAN Subnet, Segments", "A segment's network (192.168.10.0/24) or name. Segments lists every segment the link serves, for any link type (a VPN's local subnets too), separated by ;. Older files' Local Subnets column is read the same way. An empty WAN Subnet uses the WAN IP's prefix when that network is a segment."},
 		{"Public IPs", "One IPv4 address or a network such as 203.0.113.0/29 or 122.255.4.224 255.255.255.248."},
 		{"Connected Device", "An approved device's name or MAC, or any text."},
 		{"Routing", "static; bgp; ospf; other"},

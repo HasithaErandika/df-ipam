@@ -30,7 +30,7 @@ func visibleColumns(money bool) []ioColumn {
 }
 
 // export downloads the links that match the list's filters: Excel with extra
-// sheets for VPN subnets and related links, or CSV / text with one sheet.
+// sheets for subnets (the link's segments and a VPN's remote subnets) and related links, or CSV / text with one sheet.
 func (h *Handler) export(c *gin.Context) {
 	format := c.DefaultQuery("format", "xlsx")
 	if _, ok := tabular.Formats[format]; !ok {
@@ -155,7 +155,7 @@ func workbook(cols []ioColumn, rows []*ioRow) ([]byte, error) {
 		}
 		main = append(main, line)
 		for _, s := range r.LocalSubnets {
-			subnets = append(subnets, []string{r.Code, "Local", s})
+			subnets = append(subnets, []string{r.Code, "Segment", s})
 		}
 		for _, s := range r.RemoteSubnets {
 			subnets = append(subnets, []string{r.Code, "Remote", s})
@@ -165,8 +165,8 @@ func workbook(cols []ioColumn, rows []*ioRow) ([]byte, error) {
 			related = append(related, []string{r.Code, code, kind})
 		}
 	}
-	if err := fillSheets(f, map[string][][]string{"Network links": main, "VPN subnets": subnets, "Related links": related},
-		[]string{"Network links", "VPN subnets", "Related links"}); err != nil {
+	if err := fillSheets(f, map[string][][]string{"Network links": main, "Subnets": subnets, "Related links": related},
+		[]string{"Network links", "Subnets", "Related links"}); err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer

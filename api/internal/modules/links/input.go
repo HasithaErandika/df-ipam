@@ -32,7 +32,7 @@ type linkInput struct {
 	support
 	Remarks         string          `json:"remarks"`
 	Relations       []relationInput `json:"relations"`
-	LocalSegmentIDs []string        `json:"localSegmentIds"`
+	LocalSegmentIDs []string        `json:"localSegmentIds"` // the link's segments, for any link type
 }
 
 var (
@@ -59,7 +59,6 @@ func (in *linkInput) validate(isVPN bool) error {
 		in.vpn.check(&v)
 	} else {
 		in.vpn = vpn{}
-		in.LocalSegmentIDs = nil
 	}
 	in.commercial.check(&v)
 	in.support.check(&v)
@@ -159,7 +158,7 @@ func (s *support) check(v *validate.V) {
 
 func (in *linkInput) checkRelations(v *validate.V) {
 	if len(in.Relations) > 20 || len(in.LocalSegmentIDs) > 100 {
-		v.Add("relations", "Too many related links or local subnets.")
+		v.Add("relations", "Too many related links or segments.")
 	}
 	seen := map[string]bool{}
 	for _, r := range in.Relations {
@@ -171,6 +170,6 @@ func (in *linkInput) checkRelations(v *validate.V) {
 		seen[r.RelatedID] = true
 	}
 	for _, id := range in.LocalSegmentIDs {
-		v.UUID("localSegmentIds", id, true, "listed subnets")
+		v.UUID("localSegmentIds", id, true, "listed segments")
 	}
 }

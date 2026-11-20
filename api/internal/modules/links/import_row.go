@@ -53,7 +53,11 @@ func (r *importRun) input(tx pgx.Tx, id string, cells map[string]string) (*linkI
 	}
 	r.x.issues = nil
 	for _, c := range ioColumns {
-		if v, ok := cells[strings.ToLower(c.Header)]; ok {
+		v, ok := cells[strings.ToLower(c.Header)]
+		if !ok && c.Header == "Segments" {
+			v, ok = cells["local subnets"] // the column's name in older files
+		}
+		if ok {
 			c.set(in, v, r.x)
 		}
 	}

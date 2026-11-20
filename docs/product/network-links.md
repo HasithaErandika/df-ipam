@@ -17,7 +17,7 @@ The **Network Links** menu section. Adding a link isn't a menu item: **Add netwo
 | Contract Renewals | `/network-links/renewals` | Contracts ending within 30, 60, 90 days, 6 months or a year, and those already ended on links still in use, with notice periods and officers | `links:commercial_view` |
 | Import / Export | `/network-links/import-export` | Export, the import template, and the import | `links:import_export` |
 
-The segment page lists the links on that subnet (its WAN subnet, a VPN's local subnet, or a WAN or gateway address inside it). A register entry's details list the links using that address (WAN IP, gateway, or inside the public range). Both show only to people with `links:view`.
+The segment page lists the links on that subnet (its WAN subnet, one of the link's segments, or a WAN or gateway address inside it). A register entry's details list the links using that address (WAN IP, gateway, or inside the public range). Both show only to people with `links:view`.
 
 ## A link
 
@@ -26,8 +26,8 @@ The **Link ID** (`DF-LNK-0001`) is given when the link is saved and never change
 | Section | Fields |
 | --- | --- |
 | Basic (required: name, type, source location, purpose, role, criticality, status) | Name, link type, service provider, circuit / service ID, source location (a listed site; people with `network:manage` add a new one from the field, such as "BCP - Nugegoda"), destination (a site or an external party), business purpose, environment (Production, DR, UAT, Other), link role (Primary, Secondary, Backup, Standalone), criticality (Critical, High, Medium, Low), responsible officer (an active user), status (Active, Inactive, Pending, Terminated) |
-| Technical | Download and upload bandwidth (Mbps or Gbps, stored in Mbps), connection medium (Fibre, Wireless, Copper, Other), WAN IP (picked from the register or typed), WAN subnet (a segment, which may be a `/32` for a single address), public IP or range (`203.0.113.0/29`), gateway IP, connected device (an approved device, or a name), interface or port, VLAN ID, VDOM / VRF, routing type (Static, BGP, OSPF, Other) |
-| VPN, shown only for VPN link types | Tunnel name, VPN type (IPsec, SSL, Other), local and remote peer (IPv4 or a host name), local subnets (segments), remote subnets, remote organisation, remote technical contact, last connectivity test, credential vault reference |
+| Technical | Download and upload bandwidth (Mbps or Gbps, stored in Mbps), connection medium (Fibre, Wireless, Copper, Other), WAN subnet (a segment, which may be a `/32` for a single address; chosen first), WAN IP (inside the WAN subnet: the register's addresses there are offered, or typed), segments (every segment the link serves, as many as needed, for any link type: the LANs behind it, a VPN's local subnets), public IP or range (`203.0.113.0/29`), gateway IP, connected device (an approved device, or a name), interface or port, VLAN ID, VDOM / VRF, routing type (Static, BGP, OSPF, Other) |
+| VPN, shown only for VPN link types | Tunnel name, VPN type (IPsec, SSL, Other), local and remote peer (IPv4 or a host name), remote subnets (the local subnets are the link's segments, on the Technical tab), remote organisation, remote technical contact, last connectivity test, credential vault reference |
 | Commercial | No separate recurring cost (for a VPN paid for through its internet line, so it isn't counted twice), monthly rental and currency (LKR, USD or another code), annual recurring cost (monthly × 12, worked out), one-time installation cost, billing account, contract and purchase order references, activation, contract start and expiry dates, renewal notice period, cost centre |
 | Support | Not entered on the link: the **service provider** gives the support, and the link's page shows the provider's hotline, support email, account manager and contacts. Support details a link already holds are kept and shown under "Recorded for this link" |
 | Related links | Each related link and how: its **secondary** or **backup**, or the **underlying** link a VPN runs over. More than one backup is allowed. A link can't relate to itself, and a pair is stored once: if B already lists A, A can't list B |
@@ -60,9 +60,9 @@ Every three hours DF-IPAM checks contract expiry dates against the reminder days
 
 ## Import and export
 
-**Export** gives the links matching the list's filters (or all links) as Excel, CSV or text. Excel adds a **VPN subnets** sheet (one row per local or remote subnet) and a **Related links** sheet.
+**Export** gives the links matching the list's filters (or all links) as Excel, CSV or text. Excel adds a **Subnets** sheet (one row per segment or remote subnet) and a **Related links** sheet.
 
-**Import** reads Excel or CSV, up to 2,000 rows and 5 MB, using the **template**'s headers. Its second sheet lists the accepted values. Link types may be given by name or key, providers by name, officers by email, subnets by network or name, devices by name or MAC, related links as `DF-LNK-0002:backup; DF-LNK-0003:underlying`.
+**Import** reads Excel or CSV, up to 2,000 rows and 5 MB, using the **template**'s headers. Its second sheet lists the accepted values. Link types may be given by name or key, providers by name, officers by email, subnets and segments by network or name (the **Segments** column; older files' **Local Subnets** is read the same way), devices by name or MAC, related links as `DF-LNK-0002:backup; DF-LNK-0003:underlying`.
 
 1. **Check the file.** A dry run does everything and keeps nothing, listing each row to add or update and each row skipped, with why.
 2. **Import.** Rows with problems are skipped; the rest go in, each audited.
@@ -75,7 +75,7 @@ A row whose **Link ID** exists, or whose provider and circuit ID match a live li
 
 ## History
 
-Every change is in the audit log in the same transaction: added, changed (each field before and after, related links and local subnets included), contract renewed, archived, restored, file attached and file removed, with who and when. The link's **Change history** shows them field by field to people with `audit:view`, leaving commercial fields out for those who may not see them. The general **Audit log** does the same: without `links:commercial_view`, a link's commercial fields and contract or quotation file names are removed from its records and exports, and its values aren't searched.
+Every change is in the audit log in the same transaction: added, changed (each field before and after, related links and segments included), contract renewed, archived, restored, file attached and file removed, with who and when. The link's **Change history** shows them field by field to people with `audit:view`, leaving commercial fields out for those who may not see them. The general **Audit log** does the same: without `links:commercial_view`, a link's commercial fields and contract or quotation file names are removed from its records and exports, and its values aren't searched.
 
 ## Master data
 

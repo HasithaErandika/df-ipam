@@ -112,7 +112,7 @@ function FormDialog({ title, detail, settings, onClose, onSaved }: { title: stri
           {(providers.isError || options.isError) && <ErrorState error={providers.error ?? options.error} />}
           {panel('basic', <BasicSection p={p} settings={settings} providers={providers.data ?? []} options={options.data} editing={Boolean(detail)} />)}
           {panel('technical', <TechnicalSection p={p} options={options.data} />)}
-          {vpn && panel('vpn', <VpnSection p={p} options={options.data} />)}
+          {vpn && panel('vpn', <VpnSection p={p} />)}
           {panel('related', <RelationsSection p={p} options={options.data} selfId={detail?.link.id} />)}
           {canManage && panel('commercial', <CommercialSection p={p} canManage={canManage} canView={canView} />)}
           {panel('notes', <div className="space-y-5">

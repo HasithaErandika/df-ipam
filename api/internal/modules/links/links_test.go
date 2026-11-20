@@ -49,14 +49,20 @@ func TestIPOrNetwork(t *testing.T) {
 	}
 }
 
+// VPN details go when the type isn't a VPN; the link's segments stay, since
+// any link can serve several segments.
 func TestVPNFieldsClearedForOtherTypes(t *testing.T) {
+	seg := "6f1c1b7e-0a7d-4c55-9a8e-2f4e7f6d3a10"
 	in := linkInput{Name: "ILL", SourceSite: "HO", Purpose: "Internet", Role: "primary", Criticality: "high", Status: "active",
-		vpn: vpn{RemotePeer: "1.2.3.4", RemoteSubnets: []string{"10.0.0.0/8"}}, LocalSegmentIDs: []string{"x"}}
+		vpn: vpn{RemotePeer: "1.2.3.4", RemoteSubnets: []string{"10.0.0.0/8"}}, LocalSegmentIDs: []string{seg}}
 	if err := in.validate(false); err != nil {
 		t.Fatal(err)
 	}
-	if in.RemotePeer != "" || len(in.RemoteSubnets) != 0 || in.LocalSegmentIDs != nil {
+	if in.RemotePeer != "" || len(in.RemoteSubnets) != 0 {
 		t.Fatalf("VPN details kept on a non-VPN link: %+v", in.vpn)
+	}
+	if len(in.LocalSegmentIDs) != 1 {
+		t.Fatalf("segments dropped: %v", in.LocalSegmentIDs)
 	}
 }
 

@@ -93,7 +93,7 @@ export const formLabels: Partial<Record<keyof LinkForm, string>> = {
   deviceId: 'Connected device', deviceText: 'Connected device (text)', interface: 'Interface / port', vlan: 'VLAN ID', vrf: 'VDOM / VRF',
   routing: 'Routing', vpnTunnel: 'VPN tunnel name', vpnType: 'VPN type', localPeer: 'Local peer', remotePeer: 'Remote peer',
   remoteSubnets: 'Remote subnets', remoteOrg: 'Remote organisation', remoteContact: 'Remote contact', lastTestDate: 'Last connectivity test',
-  vaultRef: 'Credential vault reference', localSegmentIds: 'Local subnets', noSeparateCost: 'No separate cost', billingAccount: 'Billing account',
+  vaultRef: 'Credential vault reference', localSegmentIds: 'Segments', noSeparateCost: 'No separate cost', billingAccount: 'Billing account',
   monthlyRental: 'Monthly rental', currency: 'Currency', installCost: 'Installation cost', contractRef: 'Contract reference', poRef: 'PO reference',
   activationDate: 'Activation date', contractStart: 'Contract start', contractEnd: 'Contract expiry', renewalNoticeDays: 'Renewal notice',
   costCentre: 'Cost centre', supportContact: 'Support contact', supportEmail: 'Support email', supportHotline: 'Hotline',

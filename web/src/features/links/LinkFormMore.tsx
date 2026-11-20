@@ -1,5 +1,5 @@
 import { Plus, X } from 'lucide-react'
-import { Button, Field, MultiSearchSelect, Notice, SearchSelect, Select, Switch } from '../../components/ui'
+import { Button, Field, Notice, SearchSelect, Select, Switch } from '../../components/ui'
 import type { LinkOptions } from '../../lib/types'
 import { formatMoney, relationKinds, vpnTypes } from './labels'
 import { AreaField, ChoiceField, FormBlock, type SectionProps, TextField } from './formParts'
@@ -7,21 +7,15 @@ import { AreaField, ChoiceField, FormBlock, type SectionProps, TextField } from 
 const opts = (list: { id: string; label: string; detail: string }[] = []) => list.map((o) => ({ value: o.id, label: o.label, detail: o.detail }))
 
 /** Section C, for VPN link types only. Secrets never go here. */
-export function VpnSection({ p, options }: { p: SectionProps; options?: LinkOptions }) {
-  const { f, set, errors } = p
+export function VpnSection({ p }: { p: SectionProps }) {
   return (
-    <FormBlock title="VPN information" hint="Never enter pre-shared keys or passwords. Say where they are kept in Credential vault reference.">
+    <FormBlock title="VPN information" hint="Never enter pre-shared keys or passwords. Say where they are kept in Credential vault reference. The tunnel's local subnets are the Segments on the Technical tab.">
       <TextField p={p} k="vpnTunnel" label="VPN tunnel name" />
       <ChoiceField p={p} k="vpnType" label="VPN type" choices={vpnTypes} emptyLabel="Not set" />
       <TextField p={p} k="lastTestDate" label="Last connectivity test" type="date" />
       <TextField p={p} k="localPeer" label="Local peer IP / FQDN" mono />
       <TextField p={p} k="remotePeer" label="Remote peer IP / FQDN" mono />
       <TextField p={p} k="vaultRef" label="Credential vault reference" placeholder="Where the key is kept, not the key" />
-      <div className="sm:col-span-2 lg:col-span-3">
-        <Field label="Local subnets" htmlFor="link-localSegmentIds" error={errors.localSegmentIds}>
-          <MultiSearchSelect id="link-localSegmentIds" values={f.localSegmentIds} onChange={(v) => set('localSegmentIds', v)} options={opts(options?.segments)} placeholder="Add a subnet from the register…" />
-        </Field>
-      </div>
       <AreaField p={p} k="remoteSubnets" label="Remote subnets" mono placeholder={'10.20.0.0/16\n172.16.5.0/24'}
         hint="One per line. The far side's networks: they may overlap other partners' and are never counted as your address space." />
       <TextField p={p} k="remoteOrg" label="Remote organisation" />
