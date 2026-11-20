@@ -1,5 +1,5 @@
 import {
-  ArrowLeftRight, Bell, BookCheck, Building2, Cable, CalendarClock, ClipboardList, FileBarChart, History, LayoutDashboard, List, MonitorSmartphone, Network,
+  Activity, ArrowLeftRight, Bell, Import, MonitorPlay, BookCheck, Building2, Cable, CalendarClock, ClipboardList, FileBarChart, History, LayoutDashboard, List, MonitorSmartphone, Network,
   PlusCircle, Radar, Server, SlidersHorizontal, UsersRound, type LucideIcon,
 } from 'lucide-react'
 
@@ -23,7 +23,10 @@ const view = ['inventory:view']
 export const nav: { group: string; items: NavItem[] }[] = [
   {
     group: 'Overview',
-    items: [{ to: '/', label: 'Dashboard', icon: LayoutDashboard, summary: 'Networks, alerts, devices and server health at a glance.' }],
+    items: [
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard, summary: 'Networks, alerts, devices and server health at a glance.' },
+      { to: '/monitor', label: 'Monitor', icon: MonitorPlay, hidden: true, summary: 'Everything that needs attention, for a screen on the wall.' },
+    ],
   },
   {
     group: 'Network',
@@ -33,6 +36,13 @@ export const nav: { group: string; items: NavItem[] }[] = [
       { to: '/devices', label: 'Devices', icon: MonitorSmartphone, anyOf: view, summary: 'Known MAC addresses, and new ones waiting for a decision.', badge: 'devices' },
       { to: '/alerts', label: 'Alerts', icon: Bell, anyOf: view, summary: 'Unknown devices, unregistered IPs, conflicts and servers down.', badge: 'alerts' },
       { to: '/segments', label: 'Segment', icon: Radar, anyOf: view, summary: 'Every registered and seen address in one segment.', hidden: true },
+    ],
+  },
+  {
+    group: 'Firewall',
+    items: [
+      { to: '/firewall/live', label: 'Live', icon: Activity, anyOf: ['inventory:view', 'links:view'], summary: 'What the FortiGate reports now: interfaces and traffic, VPN tunnels and users, SD-WAN health and load.' },
+      { to: '/firewall/review', label: 'Review and import', icon: Import, anyOf: ['inventory:edit', 'network:manage', 'links:create', 'links:edit'], summary: 'Fetch networks, devices, servers and links from the FortiGate, check them, and add what you confirm.' },
     ],
   },
   {

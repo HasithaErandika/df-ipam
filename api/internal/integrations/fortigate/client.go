@@ -41,11 +41,15 @@ func NewClient(base, token, vdom string, verifyTLS bool) (*Client, error) {
 
 // get fetches one monitor endpoint and decodes its "results".
 func (c *Client) get(ctx context.Context, path string, out any) error {
-	q := url.Values{}
+	address := c.base + path
 	if c.vdom != "" {
-		q.Set("vdom", c.vdom)
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		address += sep + url.Values{"vdom": {c.vdom}}.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path+"?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return err
 	}

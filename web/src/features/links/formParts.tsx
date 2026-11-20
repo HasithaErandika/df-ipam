@@ -6,15 +6,12 @@ export type SetField = <K extends keyof LinkForm>(key: K, value: LinkForm[K]) =>
 
 export interface SectionProps { f: LinkForm; set: SetField; errors: Record<string, string> }
 
-/** A titled group of fields in the link form. */
+/** A group of fields in one tab of the link form. The tab names it. */
 export function FormBlock({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-md border border-line bg-surface">
-      <header className="border-b border-line px-4 py-2.5">
-        <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
-        {hint && <p className="text-[12px] text-ink-3">{hint}</p>}
-      </header>
-      <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+    <section aria-label={title}>
+      {hint && <p className="mb-3 text-[12.5px] text-ink-3">{hint}</p>}
+      <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
     </section>
   )
 }

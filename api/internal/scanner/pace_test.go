@@ -27,7 +27,9 @@ func TestPaceSpacesProbesAndSlowsDownOnce(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if p.wait(ctx) && p.wait(ctx) {
-		t.Fatal("a cancelled scan must stop waiting")
+	for i := 0; i < 2; i++ { // again once the slot is used
+		if p.wait(ctx) {
+			t.Fatal("a cancelled scan must stop waiting")
+		}
 	}
 }

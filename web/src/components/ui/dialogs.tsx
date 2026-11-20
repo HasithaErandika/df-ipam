@@ -9,13 +9,14 @@ const sizes = { md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' }
 
 const backdrop = 'overlay fixed inset-0 grid place-items-center overflow-y-auto bg-[#0b1220]/35 p-4 backdrop-blur-[6px]'
 
-export function Modal({ open, onClose, title, subtitle, children, footer, size = 'md' }:
-  { open: boolean; onClose: () => void; title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode; size?: keyof typeof sizes }) {
+/** fixed keeps the dialog one size whatever it shows; only its content scrolls. */
+export function Modal({ open, onClose, title, subtitle, children, footer, size = 'md', fixed }:
+  { open: boolean; onClose: () => void; title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode; size?: keyof typeof sizes; fixed?: boolean }) {
   return (
     <Dialog.Root open={open} onOpenChange={(next) => !next && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className={cx(backdrop, 'z-40')}>
-          <Dialog.Content aria-describedby={undefined} className={cx('modal flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-lg border border-line-strong/70 bg-surface shadow-[0_24px_64px_-16px_rgba(11,18,32,.35)]', sizes[size])}>
+          <Dialog.Content aria-describedby={undefined} className={cx('modal flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-lg border border-line-strong/70 bg-surface shadow-[0_24px_64px_-16px_rgba(11,18,32,.35)]', sizes[size], fixed && 'h-[min(760px,calc(100vh-2rem))]')}>
             <header className="flex items-start justify-between gap-3 border-b border-line px-5 py-3.5">
               <div className="min-w-0">
                 <Dialog.Title className="truncate text-[15px] font-semibold text-ink">{title}</Dialog.Title>

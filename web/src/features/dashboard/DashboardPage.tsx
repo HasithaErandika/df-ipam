@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import { MonitorPlay } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { StackedBar } from '../../components/charts'
-import { Card, EmptyState, ErrorState, PageHeader, SkeletonRows, Stat } from '../../components/ui'
+import { Button, Card, EmptyState, ErrorState, PageHeader, SkeletonRows, Stat } from '../../components/ui'
 import { get } from '../../lib/api'
 import { formatCount } from '../../lib/format'
 import { useCan, useMe } from '../../lib/session'
@@ -9,6 +10,8 @@ import type { Dashboard } from '../../lib/types'
 import { ScanSummary } from '../discovery/ScanSummary'
 import { AlertsCard } from './AlertsCard'
 import { DhcpNetworkCard } from './DhcpNetworkCard'
+import { HealthBanner } from './HealthBanner'
+import { LinksCard } from './LinksCard'
 import { NetworksCard } from './NetworksCard'
 
 function greeting() {
@@ -23,7 +26,7 @@ export function DashboardPage() {
   const canAsk = useCan('ip:request')
   const canRequests = canApprove || canAsk
   const query = useQuery({ queryKey: ['/dashboard'], queryFn: () => get<Dashboard>('/dashboard'), refetchInterval: 60_000 })
-  const header = <PageHeader title="Dashboard" description={`${greeting()}. The network at a glance; every figure opens the list behind it.`} actions={<ScanSummary compact />} />
+  const header = <PageHeader title="Dashboard" description={`${greeting()}. The network at a glance; every figure opens the list behind it.`} actions={<><ScanSummary compact /><Button onClick={() => navigate('/monitor')}><MonitorPlay size={14} aria-hidden />Monitor view</Button></>} />
   if (query.isPending) return <>{header}<SkeletonRows rows={8} /></>
   if (query.isError) return <>{header}<Card><ErrorState error={query.error} onRetry={() => void query.refetch()} /></Card></>
   const d = query.data
@@ -36,6 +39,7 @@ export function DashboardPage() {
   return (
     <>
       {header}
+      <HealthBanner d={d} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Open alerts" value={formatCount(open)} tone={urgent ? 'danger' : open ? 'warn' : 'ok'} hint={urgent ? `${urgent} High or Critical` : open ? 'None urgent' : 'All clear'} onClick={() => navigate('/alerts')} />
         <Stat label="Online now" value={formatCount(t.online)} hint={`${formatCount(t.newLastHour)} new in the last hour`} onClick={() => navigate('/discovery')} />
@@ -58,7 +62,7 @@ export function DashboardPage() {
           : <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">{d.floors.map((f) => <DhcpNetworkCard key={f.id} network={f} />)}</div>}
       </Card>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2 xl:grid-cols-4 xl:[&>*:nth-child(3):last-child]:col-span-2">
         <Card title="Servers by environment" subtitle="Monitored entries and their latest check">
           {d.servers.length === 0 ? <EmptyState title="No monitored servers" body="Turn on Monitor for a server in the register to check it." /> : (
             <ul className="divide-y divide-line">
@@ -101,6 +105,7 @@ export function DashboardPage() {
             )}
           </div>
         </Card>
+        <LinksCard />
       </div>
       <p className="mt-4 text-center text-[11.5px] text-ink-3">Signed in as {me.email}{me.roleName ? ` · ${me.roleName}` : ''}. Figures refresh every minute.</p>
     </>

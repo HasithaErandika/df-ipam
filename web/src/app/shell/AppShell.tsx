@@ -39,7 +39,8 @@ function SessionGuard() {
   const { sessionTimeoutMinutes } = useMe()
   const queryClient = useQueryClient()
   const leave = async () => { await signOut(); queryClient.clear() }
-  const { secondsLeft, stay } = useIdleTimeout(sessionTimeoutMinutes || 30, () => void leave())
+  const onMonitor = useLocation().pathname === '/monitor'
+  const { secondsLeft, stay } = useIdleTimeout(sessionTimeoutMinutes || 30, () => void leave(), onMonitor)
   return (
     <Modal open={secondsLeft !== null} onClose={stay} title="Are you still there?"
       footer={<><Button variant="ghost" onClick={() => void leave()}>Sign out now</Button><Button variant="primary" onClick={stay}>Stay signed in</Button></>}>

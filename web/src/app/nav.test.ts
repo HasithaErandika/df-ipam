@@ -15,24 +15,27 @@ const roles: Record<string, string[]> = {
 
 const labels = (role: string) => navFor(roles[role]).flatMap((g) => g.items.map((i) => i.label))
 const network = ['Discovery', 'Servers', 'Devices', 'Alerts']
+const firewallAll = ['Live', 'Review and import']
+const firewallEdit = ['Live', 'Review and import']
+const firewallView = ['Live']
 const links = ['Overview', 'All Network Links', 'Service Providers', 'Contract Renewals', 'Import / Export']
 const readLinks = ['Overview', 'All Network Links', 'Service Providers']
 
 describe('the menu follows the role', () => {
   it('gives administrators every screen, with administration split in three', () => {
-    expect(labels('admin')).toEqual(['Dashboard', ...network, ...links, 'IP Requests', 'Reservations', 'Reports', 'Audit log', 'Network setup', 'Users and roles', 'System'])
+    expect(labels('admin')).toEqual(['Dashboard', ...network, ...firewallAll, ...links, 'IP Requests', 'Reservations', 'Reports', 'Audit log', 'Network setup', 'Users and roles', 'System'])
   })
 
   it('gives network engineers network setup, but not people or system settings', () => {
-    expect(labels('network_engineer')).toEqual(['Dashboard', ...network, ...links, 'IP Requests', 'Reservations', 'Reports', 'Network setup'])
+    expect(labels('network_engineer')).toEqual(['Dashboard', ...network, ...firewallEdit, ...links, 'IP Requests', 'Reservations', 'Reports', 'Network setup'])
   })
 
   it('gives auditors the audit log', () => {
-    expect(labels('security_auditor')).toEqual(['Dashboard', ...network, ...readLinks, 'Contract Renewals', 'Reservations', 'Reports', 'Audit log'])
+    expect(labels('security_auditor')).toEqual(['Dashboard', ...network, ...firewallView, ...readLinks, 'Contract Renewals', 'Reservations', 'Reports', 'Audit log'])
   })
 
   it('keeps viewers to reading', () => {
-    expect(labels('viewer')).toEqual(['Dashboard', ...network, ...readLinks, 'Reservations', 'Reports'])
+    expect(labels('viewer')).toEqual(['Dashboard', ...network, ...firewallView, ...readLinks, 'Reservations', 'Reports'])
   })
 
   it('never lists drill-down pages', () => {

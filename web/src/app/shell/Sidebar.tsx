@@ -1,27 +1,10 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Link, NavLink } from 'react-router'
+import { LogoMark } from '../../components/LogoMark'
 import { cx } from '../../components/ui/cx'
 import { useMe } from '../../lib/session'
 import { navFor } from '../nav'
 import { useNavBadges } from './navBadges'
-
-function LogoMark() {
-  return (
-    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden className="shrink-0">
-      <defs>
-        <linearGradient id="dfipam-logo" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#1f4fae" />
-          <stop offset="1" stopColor="#17305f" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#dfipam-logo)" />
-      <rect x="7" y="7" width="8" height="8" rx="1.5" fill="#8fb3f7" />
-      <rect x="17" y="17" width="8" height="8" rx="1.5" fill="#8fb3f7" />
-      <rect x="17" y="7" width="8" height="8" rx="1.5" fill="#fff" opacity=".6" />
-      <rect x="7" y="17" width="8" height="8" rx="1.5" fill="#fff" opacity=".6" />
-    </svg>
-  )
-}
 
 const badgeTone = { alerts: 'bg-danger text-white', devices: 'bg-warn text-white', requests: 'bg-accent text-white' }
 

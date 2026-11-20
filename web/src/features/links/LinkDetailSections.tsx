@@ -82,19 +82,29 @@ export function CommercialCard({ d }: { d: LinkDetail }) {
   )
 }
 
+/** Support comes from the service provider. Details an older link holds for itself are shown too. */
 export function SupportCard({ d, provider }: { d: LinkDetail; provider?: LinkProvider }) {
   const l = d.link
-  const fallback = (own: string, theirs: string | undefined) => own || (theirs ? <span>{theirs} <span className="text-ink-3">(provider's)</span></span> : null)
+  const own = [l.supportContact, l.supportEmail, l.supportHotline, l.accountManager].some(Boolean) || l.slaPct != null || l.resolutionHours != null
   return (
-    <Block title="Support information">
-      <Details items={[
-        ['Support contact', or(l.supportContact)],
-        ['Support email', fallback(l.supportEmail, provider?.supportEmail)],
-        ['Hotline', fallback(l.supportHotline, provider?.supportHotline || provider?.contactNumber)],
-        ['Account manager', fallback(l.accountManager, provider?.accountManager)],
-        ['Agreed SLA availability', l.slaPct != null ? `${l.slaPct}%` : null],
-        ['Agreed resolution time', l.resolutionHours != null ? `${l.resolutionHours} hours` : null],
-      ]} />
+    <Block title="Support">
+      {!provider ? <p className="text-[13px] text-ink-3">No service provider. Choose one when editing to show who supports this link.</p> : (
+        <Details items={[
+          ['Provider', <Link key="p" className="text-accent hover:underline" to={`/network-links/providers?provider=${provider.id}`}>{provider.name}</Link>],
+          ['Support hotline', or(provider.supportHotline)], ['Support email', or(provider.supportEmail)],
+          ['Account manager', or(provider.accountManager)], ['Contact number', or(provider.contactNumber)], ['Email', or(provider.email)],
+        ]} />
+      )}
+      {own && (
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="mb-2 text-[12px] text-ink-3">Recorded for this link</p>
+          <Details items={[
+            ['Support contact', or(l.supportContact)], ['Support email', or(l.supportEmail)], ['Hotline', or(l.supportHotline)],
+            ['Account manager', or(l.accountManager)], ['Agreed SLA availability', l.slaPct != null ? `${l.slaPct}%` : null],
+            ['Agreed resolution time', l.resolutionHours != null ? `${l.resolutionHours} hours` : null],
+          ]} />
+        </div>
+      )}
     </Block>
   )
 }

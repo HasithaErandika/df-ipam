@@ -45,6 +45,16 @@ func NewSyncer(conn db.Conn, keys *secrets.Keyring) *Syncer {
 
 func (s *Syncer) Keys() *secrets.Keyring { return s.keys }
 
+// Connect builds a client from the saved connection, for readers other than
+// the scheduled sync (Network Links). It works while the schedule is off.
+func (s *Syncer) Connect(ctx context.Context) (*Client, error) {
+	cfg, err := Load(ctx, s.conn, s.keys)
+	if err != nil {
+		return nil, err
+	}
+	return cfg.Client()
+}
+
 func (s *Syncer) Snapshot() Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()

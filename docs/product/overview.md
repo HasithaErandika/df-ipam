@@ -10,6 +10,7 @@ The product documents in this folder are the specification: what is described he
 | [discovery.md](discovery.md) | What the scanner asks, how it identifies devices, how it keeps the network steady, FortiGate |
 | [register.md](register.md) | The IP register, servers and their checks, devices, requests and reservations |
 | [alerts.md](alerts.md) | Alert rules and notifications |
+| [firewall.md](firewall.md) | The connected FortiGate: live state, VPN users, and networks, devices, servers and links imported after review |
 | [network-links.md](network-links.md) | Network Links: internet lines, VPN tunnels and leased lines, providers, contracts, attachments |
 | [screens.md](screens.md) | Screens, reports, settings and roles |
 

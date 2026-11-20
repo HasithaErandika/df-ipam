@@ -47,7 +47,7 @@ export function FortiGateTab() {
       <Card title="FortiGate connection" subtitle="Optional and read-only. Uses the FortiOS REST API with a token from a read-only admin profile.">
         <div className="space-y-4 p-4">
           {!encryptionReady && <Notice tone="warn">SECRET_ENCRYPTION_KEY is not set in api/.env, so an API token can't be stored. Set it and restart the backend.</Notice>}
-          <Switch id="fg-on" checked={form.enabled} onChange={(v) => set('enabled', v)} label="Read the FortiGate on a schedule" hint="Off by default. “Read now” works while it is off, so you can try it first." />
+          <Switch id="fg-on" checked={form.enabled} onChange={(v) => set('enabled', v)} label="Read the FortiGate on a schedule" hint="Records its address table, DHCP leases and VPN sessions as Discovery evidence, which raises alerts and feeds reports. Firewall > Live and Review read it when you look, and don't need this. Off by default; “Read now” works while it is off." />
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Address" htmlFor="fg-url" error={urlIssue} hint="Management address, with the port if not 443."><Input id="fg-url" className="font-mono" placeholder="https://10.0.0.1" value={form.url} onChange={(e) => set('url', e.target.value)} /></Field>
             <Field label="VDOM (optional)" htmlFor="fg-vdom"><Input id="fg-vdom" placeholder="root" value={form.vdom} onChange={(e) => set('vdom', e.target.value)} /></Field>

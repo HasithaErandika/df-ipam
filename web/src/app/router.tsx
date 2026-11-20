@@ -24,6 +24,8 @@ const LinksList = page(() => import('../features/links/LinksListPage'), 'LinksLi
 const LinkDetail = page(() => import('../features/links/LinkDetailPage'), 'LinkDetailPage')
 const LinkProviders = page(() => import('../features/links/ProvidersPage'), 'ProvidersPage')
 const LinkRenewals = page(() => import('../features/links/RenewalsPage'), 'RenewalsPage')
+const Firewall = page(() => import('../features/firewall/FirewallPage'), 'FirewallPage')
+const Monitor = page(() => import('../features/monitor/MonitorPage'), 'MonitorPage')
 const LinkTransfer = page(() => import('../features/links/ImportExportPage'), 'ImportExportPage')
 
 // Settings was split into separate pages; old links land on the right one.
@@ -55,6 +57,7 @@ export const router = createBrowserRouter([
       { path: 'access/:tab?', element: <Access /> },
       { path: 'audit', element: <Audit /> },
       { path: 'system/:tab?', element: <System /> },
+      { path: 'monitor', element: <Monitor /> },
       { path: 'network-links', element: <LinksOverview /> },
       { path: 'network-links/all', element: <LinksList /> },
       // Add and Edit open as dialogs over the list and the link's page.
@@ -62,6 +65,8 @@ export const router = createBrowserRouter([
       { path: 'network-links/providers', element: <LinkProviders /> },
       { path: 'network-links/renewals', element: <LinkRenewals /> },
       { path: 'network-links/import-export', element: <LinkTransfer /> },
+      { path: 'firewall/:tab?', element: <Firewall /> },
+      { path: 'network-links/firewall/*', element: <Navigate to="/firewall/live" replace /> },
       { path: 'network-links/:id', element: <LinkDetail /> },
       { path: 'network-links/:id/edit', element: <LinkDetail /> },
       { path: 'settings/:tab?', element: <OldSettings /> },

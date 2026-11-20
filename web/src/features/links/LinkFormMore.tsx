@@ -1,6 +1,6 @@
 import { Plus, X } from 'lucide-react'
 import { Button, Field, MultiSearchSelect, Notice, SearchSelect, Select, Switch } from '../../components/ui'
-import type { LinkOptions, LinkProvider } from '../../lib/types'
+import type { LinkOptions } from '../../lib/types'
 import { formatMoney, relationKinds, vpnTypes } from './labels'
 import { AreaField, ChoiceField, FormBlock, type SectionProps, TextField } from './formParts'
 
@@ -68,38 +68,6 @@ export function CommercialSection({ p, canManage, canView }: { p: SectionProps; 
   )
 }
 
-/**
- * Section E. Pick a service provider to copy its contacts in; every field
- * stays editable for link-specific details.
- */
-export function SupportSection({ p, providers, provider }: { p: SectionProps; providers: LinkProvider[]; provider?: LinkProvider }) {
-  const { set } = p
-  const take = (id: string) => {
-    const x = providers.find((v) => v.id === id)
-    if (!x) return
-    set('supportContact', x.name)
-    set('supportEmail', x.supportEmail || x.email)
-    set('supportHotline', x.supportHotline || x.contactNumber)
-    set('accountManager', x.accountManager)
-  }
-  const choices = providers.filter((x) => x.active).map((x) => ({ value: x.id, label: x.name, detail: [x.supportHotline, x.supportEmail].filter(Boolean).join(' · ') || undefined }))
-  return (
-    <FormBlock title="Support information" hint={provider ? `Empty fields use ${provider.name}'s details.` : undefined}>
-      <div className="sm:col-span-2 lg:col-span-3">
-        <Field label="Fill in from a service provider" htmlFor="link-support-from" hint="Copies the provider's support contacts below. Change any of them for this link.">
-          <SearchSelect id="link-support-from" value="" allowEmpty={false} placeholder={provider ? `Choose a provider, such as ${provider.name}…` : 'Choose a provider…'} options={choices} onChange={take} />
-        </Field>
-      </div>
-      <TextField p={p} k="supportContact" label="Provider support contact" />
-      <TextField p={p} k="supportEmail" label="Provider support email" type="email" placeholder={provider?.supportEmail || undefined} />
-      <TextField p={p} k="supportHotline" label="Provider hotline" type="tel" placeholder={provider?.supportHotline || undefined} />
-      <TextField p={p} k="accountManager" label="Account manager" placeholder={provider?.accountManager || undefined} />
-      <TextField p={p} k="slaPct" label="Agreed SLA availability (%)" placeholder="99.5" />
-      <TextField p={p} k="resolutionHours" label="Agreed resolution time (hours)" />
-    </FormBlock>
-  )
-}
-
 /** Primary, secondary, backup and underlying links. */
 export function RelationsSection({ p, options, selfId }: { p: SectionProps; options?: LinkOptions; selfId?: string }) {
   const { f, set, errors } = p
@@ -107,16 +75,13 @@ export function RelationsSection({ p, options, selfId }: { p: SectionProps; opti
   const choices = opts(options?.links).filter((o) => o.value !== selfId)
   const change = (i: number, patch: Partial<{ relatedId: string; kind: string }>) => set('relations', f.relations.map((r, j) => (i === j ? { ...r, ...patch } : r)))
   return (
-    <section className="rounded-md border border-line bg-surface">
-      <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-        <div>
-          <h2 className="text-[13px] font-semibold text-ink">Related links</h2>
-          <p className="text-[12px] text-ink-3">This link's secondary and backup links, and for a VPN the internet line it runs over.</p>
-        </div>
-        <Button onClick={() => set('relations', [...f.relations, { relatedId: '', kind: 'backup' }])}><Plus size={14} aria-hidden />Add</Button>
-      </header>
-      <div className="space-y-2 p-4">
-        {f.relations.length === 0 && <p className="text-[13px] text-ink-3">None.</p>}
+    <section aria-label="Related links" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[12.5px] text-ink-3">This link's secondary and backup links, and for a VPN the internet line it runs over.</p>
+        <Button onClick={() => set('relations', [...f.relations, { relatedId: '', kind: 'backup' }])}><Plus size={14} aria-hidden />Add related link</Button>
+      </div>
+      <div className="space-y-2">
+        {f.relations.length === 0 && <p className="rounded-md border border-dashed border-line px-3 py-6 text-center text-[13px] text-ink-3">No related links.</p>}
         {f.relations.map((r, i) => (
           <div key={i} className="grid gap-2 sm:grid-cols-[1fr_180px_auto]">
             <SearchSelect id={`link-rel-${i}`} value={r.relatedId} allowEmpty={false} placeholder="Choose a link…"

@@ -571,3 +571,23 @@ paths:
       summary: "Change the link types, sites, reminder days and exchange rate"
       description: "Permission: network:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /firewall/live:
+    get:
+      summary: "Live view of the connected FortiGate: interfaces with traffic rates, IPsec tunnels, SD-WAN health, CPU, memory and sessions, each matched to its link for people who see links. Read every 10 seconds at most; nothing is stored"
+      description: "Permission: links:view or inventory:view."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /firewall/links/review:
+    get:
+      summary: "Proposed links from the FortiGate's WAN interfaces and IPsec tunnels, each new or matched to a recorded link with its differences. Nothing is saved"
+      description: "Permission: links:create or links:edit."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /firewall/links/apply:
+    post:
+      summary: "Add or update the confirmed proposals. The firewall is read again first; each item is saved on its own and audited"
+      description: "Permission: links:create (to add) or links:edit (to update)."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /firewall/inventory:
+    get:
+      summary: "What the FortiGate knows, matched to DF-IPAM: interface networks as segments, devices (ARP, DHCP leases, device identification) with their decision, and named hosts (address objects, virtual IPs, DHCP reservations) as register entries. Read only; people save what they confirm through the normal routes"
+      description: "Permission: inventory:edit or network:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }

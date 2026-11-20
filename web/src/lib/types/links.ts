@@ -68,3 +68,56 @@ export interface LinkImportResult {
   issues: { row: number; issue: string }[]
   preview: { row: number; key: string; label: string; action: 'add' | 'update' }[]
 }
+
+/** A recorded link a firewall interface or tunnel belongs to. */
+export interface FirewallLinkRef { id: string; code: string; name: string; downMbps: number | null; upMbps: number | null }
+
+export interface FirewallLive {
+  firewall: string; at: string
+  interfaces: { name: string; alias: string; ip: string; role: string; up: boolean; speedMbps: number; rxBps: number | null; txBps: number | null; rxBytes: number; txBytes: number; errors: number; link: FirewallLinkRef | null }[]
+  tunnels: { name: string; gateway: string; phaseUp: number; phases: number; rxBps: number | null; txBps: number | null; comments: string; link: FirewallLinkRef | null }[]
+  health: { check: string; member: string; status: string; latencyMs: number; jitterMs: number; lossPct: number }[]
+  vpnUsers: FirewallVPNUser[]
+  cpu: number | null; memory: number | null; sessions: number | null
+  problems: string[]
+}
+
+export interface FirewallSuggestion {
+  name: string; linkType: string; interface: string; wanIp: string; gatewayIp: string; vlan: number | null; downMbps: number | null; upMbps: number | null
+  deviceText: string; vrf: string; routing: string; vpnTunnel: string; vpnType: string; localPeer: string; remotePeer: string
+  remoteSubnets: string[]; localSegments: { id: string; name: string; network: string }[]; underlying: string
+}
+
+export interface FirewallProposal {
+  key: string; kind: 'interface' | 'ipsec' | 'dialup'; title: string
+  facts: { label: string; value: string }[]; notes: string[]
+  suggestion: FirewallSuggestion
+  existing: FirewallLinkRef | null
+  changes: { field: string; old: unknown; new: unknown }[]
+}
+
+export interface FirewallReview { firewall: string; at: string; proposals: FirewallProposal[] }
+
+export interface FirewallApplyResult { key: string; action: 'add' | 'update'; ok: boolean; linkId?: string; code?: string; error?: string }
+
+/** What the firewall knows, matched to DF-IPAM (GET /firewall/inventory). */
+export interface FirewallInventory {
+  firewall: string; at: string; problems: string[]
+  networks: {
+    key: string; interface: string; alias: string; role: string; name: string; kind: 'dhcp' | 'server' | 'vpn'; network: string; gateway: string
+    vlan: number | null; dhcpStart: string; dhcpEnd: string; canAdd: boolean; notes: string[]
+    existing: { id: string; name: string; kind: string; network: string } | null
+    changes: { field: string; old: unknown; new: unknown }[]
+  }[]
+  devices: {
+    mac: string; ip: string; hostname: string; os: string; vendor: string; kind: string; interface: string; online: boolean; sources: string[]
+    privateMac: boolean; deviceType: string; platform: string; deviceId: string | null; deviceStatus: 'none' | 'pending' | 'approved' | 'rejected'; deviceName: string
+  }[]
+  servers: {
+    ip: string; name: string; mac: string; sources: { kind: 'address' | 'vip' | 'reserved'; name: string; comment: string }[]
+    segmentId: string; segmentName: string; segmentKind: string; ipType: string; notes: string[]
+    registered: { id: string; ip: string; name: string } | null
+  }[]
+}
+
+export interface FirewallVPNUser { user: string; kind: 'ssl' | 'ipsec'; tunnel: string; from: string; tunnelIp: string; since: string }

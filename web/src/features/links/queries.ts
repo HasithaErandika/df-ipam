@@ -5,7 +5,7 @@ import type { LinkOptions, LinkProvider, LinkSettings } from '../../lib/types'
 /** Every query the links screens refresh after a change. */
 export const linkKeys = ['/network-links', '/link-providers', '/link-settings']
 
-export const useLinkSettings = () => useQuery({ queryKey: ['/link-settings'], queryFn: () => get<LinkSettings>('/link-settings'), staleTime: 60_000 })
+export const useLinkSettings = (enabled = true) => useQuery({ queryKey: ['/link-settings'], queryFn: () => get<LinkSettings>('/link-settings'), staleTime: 60_000, enabled })
 
 export const useProviders = () => useQuery({ queryKey: ['/link-providers'], queryFn: () => get<LinkProvider[]>('/link-providers'), staleTime: 30_000 })
 

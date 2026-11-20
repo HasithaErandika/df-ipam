@@ -16,12 +16,17 @@ import (
 )
 
 type Handler struct {
-	conn  db.Conn
-	files *Store
+	conn     db.Conn
+	files    *Store
+	firewall Firewall
+	sample   *sampler
 }
 
-// New takes the attachment store; nil answers attachment routes with 503.
-func New(conn db.Conn, files *Store) *Handler { return &Handler{conn: conn, files: files} }
+// New takes the attachment store and the FortiGate connection; nil for either
+// answers its routes with an error saying what to set up.
+func New(conn db.Conn, files *Store, firewall Firewall) *Handler {
+	return &Handler{conn: conn, files: files, firewall: firewall, sample: &sampler{}}
+}
 
 func (h *Handler) Register(g *auth.Guard) {
 	view := auth.LinksView
@@ -33,6 +38,11 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodGet, "/network-links/export", h.export, auth.LinksImportExport)
 	g.Handle(http.MethodGet, "/network-links/template", h.template, auth.LinksImportExport)
 	g.Handle(http.MethodPost, "/network-links/import", h.importLinks, auth.LinksImportExport)
+	// The Firewall section: live state for anyone who sees the network or links,
+	// and WAN lines and tunnels reviewed into Network Links.
+	g.Handle(http.MethodGet, "/firewall/live", h.live, view, auth.InventoryView)
+	g.Handle(http.MethodGet, "/firewall/links/review", h.firewallReview, auth.LinksCreate, auth.LinksEdit)
+	g.Handle(http.MethodPost, "/firewall/links/apply", h.firewallApply, auth.LinksCreate, auth.LinksEdit)
 	g.Handle(http.MethodGet, "/network-links/:id", h.detail, view)
 	g.Handle(http.MethodPut, "/network-links/:id", h.update, auth.LinksEdit)
 	g.Handle(http.MethodPost, "/network-links/:id/archive", h.archive, auth.LinksArchive)

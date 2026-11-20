@@ -15,6 +15,7 @@ import (
 	"dfipam/api/internal/modules/allocationlite"
 	"dfipam/api/internal/modules/auditlog"
 	"dfipam/api/internal/modules/discovery"
+	firewallmod "dfipam/api/internal/modules/firewall"
 	"dfipam/api/internal/modules/integrations"
 	"dfipam/api/internal/modules/inventory"
 	"dfipam/api/internal/modules/links"
@@ -55,6 +56,8 @@ type Deps struct {
 	FortiGate *fortigate.Syncer
 	// Intune names each device's user when an Admin switches it on. Nil in tests.
 	Intune *intune.Syncer
+	// LinkFirewall replaces FortiGate for Network Links, in tests.
+	LinkFirewall links.Firewall
 	// LinkFiles keeps network link attachments. Nil answers their routes with 503.
 	LinkFiles *links.Store
 	// SMTPConfigured says whether api/.env has a mail server, shown in Settings.
@@ -110,6 +113,18 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	reports.New(d.Conn).Register(guard)
 	integrations.New(d.Conn, d.FortiGate).Register(guard)
 	integrations.NewIntune(d.Conn, d.Intune).Register(guard)
-	links.New(d.Conn, d.LinkFiles).Register(guard)
+	var firewall links.Firewall
+	if d.FortiGate != nil { // a nil *Syncer must not become a non-nil interface
+		firewall = d.FortiGate
+	}
+	if d.LinkFirewall != nil {
+		firewall = d.LinkFirewall
+	}
+	links.New(d.Conn, d.LinkFiles, firewall).Register(guard)
+	var fw firewallmod.Connector
+	if firewall != nil {
+		fw = firewall
+	}
+	firewallmod.New(d.Conn, fw).Register(guard)
 	return r, guard
 }

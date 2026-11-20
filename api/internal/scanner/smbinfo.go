@@ -22,8 +22,6 @@ type windowsInfo struct {
 	fqdn, dnsDomain, domain, build string
 }
 
-func (w windowsInfo) found() bool { return w.build != "" || w.fqdn != "" || w.dnsDomain != "" }
-
 const smbTimeout = 2 * time.Second
 
 // smbInfo asks one host. A host without SMB, or that refuses, gives nothing.

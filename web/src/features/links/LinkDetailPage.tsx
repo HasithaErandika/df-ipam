@@ -8,6 +8,7 @@ import type { LinkDetail } from '../../lib/types'
 import { AttachmentsCard } from './AttachmentsCard'
 import { HistoryCard } from './HistoryCard'
 import { LinkFormModal } from './LinkFormModal'
+import { LiveLinkCard } from '../firewall/LiveLinkCard'
 import { isVpnType, linkStatuses, linkStatusTone, typeName } from './labels'
 import { AddressesCard, CommercialCard, GeneralCard, RelatedCard, SupportCard, TechnicalCard, VpnCard } from './LinkDetailSections'
 import { useLinkSettings, useProviders } from './queries'
@@ -45,6 +46,7 @@ export function LinkDetailPage() {
         </>} />
       {l.archivedAt && <div className="mb-4"><Notice tone="warn">Archived. It is left out of lists, totals and contract reminders, and can't be edited until it is restored.</Notice></div>}
       <div className="grid gap-4 xl:grid-cols-2">
+        <div className="xl:col-span-2 empty:hidden"><LiveLinkCard link={l} /></div>
         <GeneralCard d={d} settings={settings.data} />
         <TechnicalCard d={d} />
         {vpn && <VpnCard d={d} />}

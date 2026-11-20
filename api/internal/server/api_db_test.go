@@ -37,7 +37,7 @@ func (a adminSessions) Resolve(context.Context, string) (*auth.Principal, error)
 	return auth.NewPrincipal(a.id, "admin@example.com", "admin", nil, true), nil
 }
 
-func newAPI(t *testing.T) *apiEnv {
+func newAPI(t *testing.T, extra ...func(*Deps)) *apiEnv {
 	url := os.Getenv("TEST_APP_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_APP_DATABASE_URL is not set")
@@ -58,7 +58,11 @@ func newAPI(t *testing.T) *apiEnv {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
-	r, _ := New(Deps{Conn: tx, Sessions: adminSessions{uid}})
+	deps := Deps{Conn: tx, Sessions: adminSessions{uid}}
+	for _, f := range extra {
+		f(&deps)
+	}
+	r, _ := New(deps)
 	return &apiEnv{t: t, ctx: ctx, tx: tx, router: r}
 }
 

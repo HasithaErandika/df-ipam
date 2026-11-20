@@ -90,6 +90,7 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On ano
 | 000013 | Sessions for Microsoft Entra ID sign-in |
 | 000014 | `sightings.identified_at`; the `seen_window()` function; server checks every 5 minutes instead of once a day |
 | 000022 | `sightings.entra_*`: a device's registered owner, name, join type and last sign-in from Microsoft Entra ID |
+| 000024 | Index on open alerts by MAC, for the Devices list |
 | 000023 | Network Links: the five `network_link*` tables, the `links.*` settings (types, sites, reminder days, USD rate), and the `links:*` permissions for the starting roles |
 
 The seed (`make seed`, safe to repeat) loads the five environments and default settings.

@@ -1,10 +1,10 @@
 # Network Links
 
-**Network Links** is the record of the company's connectivity: internet leased lines, broadband, site-to-site and remote access VPNs, MPLS, leased lines, 4G/5G, AWS Direct Connect, Azure ExpressRoute and third-party connections. People keep it by hand. It is administrative: **nothing is polled, monitored or configured.** A link's status says whether it is in service, not whether it is up right now. Monitoring and service management tools do that.
+**Network Links** is the record of the company's connectivity: internet leased lines, broadband, site-to-site and remote access VPNs, MPLS, leased lines, 4G/5G, AWS Direct Connect, Azure ExpressRoute and third-party connections. People keep it, and can bring links in from the FortiGate after reviewing them. A link's status says whether it is in service; whether it is up right now comes from the firewall's live view, never stored. **Nothing is configured:** the firewall is only read.
 
 ## Screens
 
-The **Network Links** menu section. Adding a link isn't a menu item: **Add network link** on the Overview and the list opens the form in a dialog.
+The **Network Links** menu section. Adding a link isn't a menu item: **Add network link** on the Overview and the list opens the form in a dialog. The dialog has numbered tabs (Basic, Technical, VPN for VPN types, Related links, Commercial for people who manage costs, Notes and files) with Back and Next; a tab with a problem is marked red, and saving opens the first one.
 
 | Screen | Address | Holds | Needs |
 | --- | --- | --- | --- |
@@ -29,9 +29,9 @@ The **Link ID** (`DF-LNK-0001`) is given when the link is saved and never change
 | Technical | Download and upload bandwidth (Mbps or Gbps, stored in Mbps), connection medium (Fibre, Wireless, Copper, Other), WAN IP (picked from the register or typed), WAN subnet (a segment), public IP or range (`203.0.113.0/29`), gateway IP, connected device (an approved device, or a name), interface or port, VLAN ID, VDOM / VRF, routing type (Static, BGP, OSPF, Other) |
 | VPN, shown only for VPN link types | Tunnel name, VPN type (IPsec, SSL, Other), local and remote peer (IPv4 or a host name), local subnets (segments), remote subnets, remote organisation, remote technical contact, last connectivity test, credential vault reference |
 | Commercial | No separate recurring cost (for a VPN paid for through its internet line, so it isn't counted twice), monthly rental and currency (LKR, USD or another code), annual recurring cost (monthly × 12, worked out), one-time installation cost, billing account, contract and purchase order references, activation, contract start and expiry dates, renewal notice period, cost centre |
-| Support | Support contact, email and hotline, account manager, agreed SLA availability (%) and resolution time (hours). **Fill in from a service provider** copies a provider's name, support email, hotline and account manager into the fields, which stay editable. Empty fields show the link's provider's own details |
+| Support | Not entered on the link: the **service provider** gives the support, and the link's page shows the provider's hotline, support email, account manager and contacts. Support details a link already holds are kept and shown under "Recorded for this link" |
 | Related links | Each related link and how: its **secondary** or **backup**, or the **underlying** link a VPN runs over. More than one backup is allowed. A link can't relate to itself, and a pair is stored once: if B already lists A, A can't list B |
-| Remarks | Free text |
+| Remarks | Free text (the Notes and files tab) |
 | Attachments | Files chosen in the dialog, each with its kind, uploaded to the link when it is saved. A file that fails is named, and can be added again from the link's page |
 
 - **Addresses are IPv4.** Remote subnets are the far side's networks: they may overlap other links' remote subnets and are never counted as local address space.
@@ -95,6 +95,10 @@ Every change is in the audit log in the same transaction: added, changed (each f
 
 Change history uses the existing `audit:view`. Starting roles: Network engineer gets all eight; Security auditor gets `links:view` and `links:commercial_view`; IT officer, Requester and Viewer get `links:view`. Administrators have everything.
 
+## The firewall
+
+WAN lines and IPsec tunnels can be brought in from the FortiGate after review, and matching links show live state. See [firewall.md](firewall.md).
+
 ## Out of scope
 
-Live monitoring, SNMP polling, VPN configuration, bandwidth use, discovery of links, failover, approval workflows, SLA calculations and incident tickets. Other tools do these.
+SNMP polling, any change to the firewall, failover, approval workflows, SLA calculations and incident tickets. Live firewall data is shown, not kept as history.

@@ -156,6 +156,10 @@ func (r *importRun) count(tx pgx.Tx, line int, id, name, action string) {
 
 // describe turns a save failure into one line for the import report.
 func describe(err error) string {
+	var re rowError
+	if errors.As(err, &re) {
+		return string(re)
+	}
 	var he *httpx.Error
 	if !errors.As(db.Friendly(err), &he) {
 		return "This row couldn't be saved."

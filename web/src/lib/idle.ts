@@ -43,11 +43,15 @@ function setReason(minutes: number) {
 /**
  * Signs the person out after a period without activity. Activity in any tab counts,
  * so working in one tab doesn't sign out another. A warning shows for the last
- * minute; secondsLeft is null until then.
+ * minute; secondsLeft is null until then. While paused (the wall-screen monitor,
+ * which nobody touches) the person counts as active; the server's 10-hour
+ * session limit still ends the session.
  */
-export function useIdleTimeout(minutes: number, onTimeout: () => void) {
+export function useIdleTimeout(minutes: number, onTimeout: () => void, paused = false) {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
   const last = useRef(Date.now())
+  const hold = useRef(paused)
+  hold.current = paused
   const limit = minutes * 60_000
 
   useEffect(() => {
@@ -63,6 +67,11 @@ export function useIdleTimeout(minutes: number, onTimeout: () => void) {
     }
     for (const e of events) window.addEventListener(e, touch, { passive: true })
     const timer = window.setInterval(() => {
+      if (hold.current) {
+        last.current = Date.now()
+        setSecondsLeft(null)
+        return
+      }
       const idle = Date.now() - Math.max(last.current, read())
       if (idle >= limit) {
         setReason(minutes)

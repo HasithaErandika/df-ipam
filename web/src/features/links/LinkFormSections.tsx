@@ -18,7 +18,7 @@ export function BasicSection({ p, settings, providers, options, editing }: {
     <FormBlock title="Basic information" hint={editing ? undefined : 'The Link ID (DF-LNK-0001) is given when the link is saved.'}>
       <TextField p={p} k="name" label="Link name" required placeholder="Head Office Primary ILL – Dialog" />
       <ChoiceField p={p} k="linkType" label="Link type" required choices={types} emptyLabel="Choose…" />
-      <Field label="Service provider" htmlFor="link-providerId" error={errors.providerId} hint="Needed for leased lines and internet links. Add providers in Service Providers.">
+      <Field label="Service provider" htmlFor="link-providerId" error={errors.providerId} hint="The provider gives the support: its contacts show on the link. Add providers in Service Providers.">
         <SearchSelect id="link-providerId" value={f.providerId} onChange={(v) => set('providerId', v)} options={providerOpts} emptyLabel="No provider" />
       </Field>
       <TextField p={p} k="circuitId" label="Circuit / service ID" mono />
