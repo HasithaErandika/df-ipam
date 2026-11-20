@@ -40,7 +40,18 @@ export interface LinkDetail {
   registerEntries: { id: string; ip: string; name: string; segmentId: string; segmentName: string; use: string }[]
   attachments: LinkAttachment[]
   seenDevices: SeenDevice[]
+  wanAddresses: LinkWanAddress[]
+  devices: LinkDevice[]
 }
+
+/** A WAN address with the subnet it is in. ip is null when only the WAN subnet is recorded. */
+export interface LinkWanAddress {
+  ip: string | null; main: boolean; network: string | null; segmentId: string | null; segmentName: string | null
+  registerId: string | null; registerName: string | null
+}
+
+/** A connected device with where the scan last saw it. */
+export interface LinkDevice { id: string; name: string; mac: string; deviceType: string; status: string; lastIp: string | null; lastSeen: string | null }
 
 /** A device the scan saw on one of a link's addresses in the last 30 days. Evidence, not inventory. */
 export interface SeenDevice { id: string; name: string; mac: string; status: 'pending' | 'approved' | 'rejected'; ip: string; lastSeen: string }

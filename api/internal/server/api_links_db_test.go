@@ -152,6 +152,10 @@ func TestLinkWithTwoWANAddresses(t *testing.T) {
 	if l["wanIp"] != "122.255.36.14" || fmt.Sprint(l["extraWanIps"]) != "[122.255.35.1/32]" {
 		t.Fatalf("stored: %v %v", l["wanIp"], l["extraWanIps"])
 	}
+	wan := e.call("GET", "/network-links/"+dap, nil, 200)["data"].(map[string]any)["wanAddresses"].([]any)
+	if len(wan) != 2 || wan[0].(map[string]any)["main"] != true || wan[1].(map[string]any)["network"] != "122.255.35.1/32" {
+		t.Fatalf("WAN addresses by subnet: %v", wan)
+	}
 	if got := e.call("GET", "/network-links?ip=122.255.35.1", nil, 200); total(got) != 1 {
 		t.Fatalf("the second address finds its link: %v", got)
 	}
@@ -186,6 +190,9 @@ func TestLinkDevicesFromTheScan(t *testing.T) {
 	d := e.call("GET", "/network-links/"+vpn, nil, 200)["data"].(map[string]any)
 	if l := d["link"].(map[string]any); len(l["deviceIds"].([]any)) != 2 || len(l["deviceNames"].([]any)) != 2 {
 		t.Fatalf("devices: %v %v", l["deviceIds"], l["deviceNames"])
+	}
+	if devs := d["devices"].([]any); len(devs) != 2 || devs[0].(map[string]any)["lastIp"] == nil {
+		t.Fatalf("connected devices with where they were seen: %v", devs)
 	}
 	if s := d["seenDevices"].([]any); len(s) != 2 {
 		t.Fatalf("the link page shows what the scan saw: %v", s)

@@ -37,17 +37,7 @@ export function TechnicalCard({ d }: { d: LinkDetail }) {
     <Block title="Technical configuration">
       <Details items={[
         ['Bandwidth', or(bandwidthLine(l.downMbps, l.upMbps))], ['Connection medium', l.medium ? mediums[l.medium] : null],
-        ['WAN subnet', l.wanSegmentId ? <Link className="text-accent hover:underline" to={`/segments/${l.wanSegmentId}`}>{l.wanSegment}</Link> : null],
-        ['WAN IP', mono(l.wanIp)],
-        ['More WAN addresses', l.extraWanIps?.length ? <span className="flex flex-col font-mono">{l.extraWanIps.map((x) => <span key={x}>{x}</span>)}</span> : null],
-        ['Segments', d.localSegments.length ? <span className="flex flex-col">{d.localSegments.map((s) => <Link key={s.id} className="text-accent hover:underline" to={`/segments/${s.id}`}>{s.name} <span className="font-mono text-ink-3">{s.network}</span></Link>)}</span> : null],
         ['Public IP / range', mono(l.publicIps?.replace(/\/32$/, ''))], ['Gateway IP', mono(l.gatewayIp)],
-        ['Connected devices', l.deviceIds.length || l.deviceText ? <span className="flex flex-col">
-          {l.deviceIds.map((id, i) => <Link key={id} className="text-accent hover:underline" to={`/devices/all?q=${encodeURIComponent(l.deviceNames[i] ?? '')}&device=${id}`}>{l.deviceNames[i] ?? 'Device'}</Link>)}
-          {l.deviceText && <span>{l.deviceText}</span>}</span> : null],
-        ['Seen by the scan (30 days)', d.seenDevices?.length ? <span className="flex flex-col">{d.seenDevices.map((x) => (
-          <span key={x.id}>{x.name} <span className="font-mono text-ink-3">{x.ip}</span>{x.status !== 'approved' && <span className="text-ink-3"> · {x.status}</span>}
-            {!l.deviceIds.includes(x.id) && <span className="text-ink-3"> · not listed on this link</span>}</span>))}</span> : null],
         ['Interface / port', mono(l.interface)], ['VLAN ID', l.vlan ? String(l.vlan) : null], ['VDOM / VRF', or(l.vrf)],
         ['Routing', l.routing ? routings[l.routing] : null],
       ]} />
@@ -119,11 +109,10 @@ export function AddressesCard({ d }: { d: LinkDetail }) {
   const uses: Record<string, string> = { wan: 'WAN IP', gateway: 'Gateway', public: 'Public range' }
   return (
     <Block title="Associated IP addresses and subnets">
-      {d.registerEntries.length === 0 && !d.link.wanSegmentId && d.localSegments.length === 0
+      {d.registerEntries.length === 0 && d.localSegments.length === 0
         ? <p className="text-[13px] text-ink-3">None of this link's addresses are in the IP register.</p>
         : (
           <ul className="space-y-1.5 text-[13px]">
-            {d.link.wanSegmentId && <li>WAN subnet: <Link className="text-accent hover:underline" to={`/segments/${d.link.wanSegmentId}`}>{d.link.wanSegment}</Link></li>}
             {d.localSegments.map((s) => <li key={s.id}>Segment: <Link className="text-accent hover:underline" to={`/segments/${s.id}`}>{s.name}</Link> <span className="font-mono text-ink-3">{s.network}</span></li>)}
             {d.registerEntries.map((r) => (
               <li key={r.id}>{uses[r.use]}: <Link className="font-mono text-accent hover:underline" to={`/servers/register?q=${encodeURIComponent(r.ip)}&entry=${r.id}`}>{r.ip}</Link>

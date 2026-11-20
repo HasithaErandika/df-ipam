@@ -13,6 +13,7 @@ import { isVpnType, linkStatuses, linkStatusTone, typeName } from './labels'
 import { AddressesCard, CommercialCard, GeneralCard, RelatedCard, SupportCard, TechnicalCard, VpnCard } from './LinkDetailSections'
 import { useLinkSettings, useProviders } from './queries'
 import { useArchive } from './useArchive'
+import { DevicesCard, WanAddressesCard } from './WanDevicesCards'
 
 /** Everything about one link, with clickable references to the register. */
 export function LinkDetailPage() {
@@ -49,6 +50,8 @@ export function LinkDetailPage() {
         <div className="xl:col-span-2 empty:hidden"><LiveLinkCard link={l} /></div>
         <GeneralCard d={d} settings={settings.data} />
         <TechnicalCard d={d} />
+        <WanAddressesCard d={d} />
+        <div className="xl:col-span-2"><DevicesCard d={d} /></div>
         {vpn && <VpnCard d={d} />}
         <CommercialCard d={d} />
         <SupportCard d={d} provider={providers.data?.find((p) => p.id === l.providerId)} />

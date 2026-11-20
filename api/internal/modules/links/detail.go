@@ -77,6 +77,10 @@ func (h *Handler) detail(c *gin.Context) {
 		return
 	}
 	out := gin.H{"link": link, "seenDevices": seen}
+	if err := h.attachWAN(c, id, out); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
 	if err := h.attachRefs(c, id, money, out); err != nil {
 		httpx.Fail(c, err)
 		return

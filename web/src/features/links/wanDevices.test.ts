@@ -19,3 +19,15 @@ describe('more WAN addresses', () => {
     expect(linkIps(f)).toEqual(['122.255.35.1', '122.255.36.13', '122.255.36.14'])
   })
 })
+
+describe('the link page', () => {
+  it('groups WAN addresses under their subnet, main first', async () => {
+    const { wanGroups } = await import('./WanDevicesCards')
+    const a = (ip: string | null, network: string | null, segmentId: string | null, main = false) =>
+      ({ ip, main, network, segmentId, segmentName: segmentId ? 'Seg' : null, registerId: null, registerName: null })
+    const g = wanGroups([a('10.10.40.253', '10.10.40.0/24', 's1', true), a('122.255.35.1', '122.255.35.1/32', null), a('10.10.40.9', '10.10.40.0/24', 's1')])
+    expect(g.map((x) => [x.network, x.addresses.map((y) => y.ip)])).toEqual([
+      ['10.10.40.0/24', ['10.10.40.253', '10.10.40.9']], ['122.255.35.1/32', ['122.255.35.1']],
+    ])
+  })
+})
