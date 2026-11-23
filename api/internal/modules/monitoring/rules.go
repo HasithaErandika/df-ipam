@@ -99,8 +99,10 @@ const upsertSQL = `INSERT INTO alerts (alert_type, severity, segment_id, ip_addr
 		AND a.status = 'closed' AND a.closed_at > now() - interval '1 hour')`
 
 // closeSQL closes alerts whose cause is gone, except on a segment whose last scan
-// failed or whose kind isn't scanned automatically: nobody looked, so the cause
-// may still be there. It tells those who handle alerts when a
+// failed or whose automatic scan is switched off: nobody looked, so the cause may
+// still be there. Cloud and VPN segments are never swept, but the FortiGate's ARP
+// table and VPN sessions still report on them, so their alerts close like any
+// other when the evidence goes. It tells those who handle alerts when a
 // server is back: only when it is still monitored and answering, not when it was
 // released or its monitoring turned off.
 const closeSQL = `WITH closed AS (

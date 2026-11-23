@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/modules/links"
 	"dfipam/api/internal/platform/db"
@@ -149,6 +150,10 @@ func (h *Handler) export(c *gin.Context) {
 	}
 	data, err := out.Bytes()
 	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if err := audit.Export(c, h.conn, auth.Current(c).UserID, "audit_log", format, c.Request.URL.Query()); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

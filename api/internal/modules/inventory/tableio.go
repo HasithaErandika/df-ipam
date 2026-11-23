@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"dfipam/api/internal/audit"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 	"dfipam/api/internal/platform/tabular"
@@ -22,28 +23,9 @@ const (
 // readTable reads an uploaded CSV or Excel file whose header row names the
 // columns. Each row comes back as a map from lower-case header to trimmed value.
 func readTable(c *gin.Context, required ...string) ([]map[string]string, bool) {
-	file, err := c.FormFile("file")
-	if err != nil {
-		httpx.Fail(c, httpx.Validation("file", "Choose a CSV or Excel file to upload."))
-		return nil, false
-	}
-	f, err := file.Open()
+	records, err := readRecords(c)
 	if err != nil {
 		httpx.Fail(c, err)
-		return nil, false
-	}
-	defer f.Close()
-	records, err := tabular.Read(file.Filename, f, maxImportBytes)
-	if err != nil {
-		httpx.Fail(c, httpx.Validation("file", "This file can't be read: "+err.Error()+"."))
-		return nil, false
-	}
-	if len(records) < 2 {
-		httpx.Fail(c, httpx.Validation("file", "The file needs a header row and at least one data row."))
-		return nil, false
-	}
-	if len(records) > maxImportRows+1 {
-		httpx.Fail(c, httpx.Validation("file", fmt.Sprintf("Import up to %d rows at a time.", maxImportRows)))
 		return nil, false
 	}
 	header := make([]string, len(records[0]))
@@ -56,8 +38,39 @@ func readTable(c *gin.Context, required ...string) ([]map[string]string, bool) {
 			return nil, false
 		}
 	}
-	rows := make([]map[string]string, 0, len(records)-1)
-	for _, rec := range records[1:] {
+	return tableRows(header, records[1:]), true
+}
+
+// readRecords reads the uploaded file and checks it has a header and a
+// reasonable number of rows.
+func readRecords(c *gin.Context) ([][]string, error) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		return nil, httpx.Validation("file", "Choose a CSV or Excel file to upload.")
+	}
+	f, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	records, err := tabular.Read(file.Filename, f, maxImportBytes)
+	if err != nil {
+		return nil, httpx.Validation("file", "This file can't be read: "+err.Error()+".")
+	}
+	if len(records) < 2 {
+		return nil, httpx.Validation("file", "The file needs a header row and at least one data row.")
+	}
+	if len(records) > maxImportRows+1 {
+		return nil, httpx.Validation("file", fmt.Sprintf("Import up to %d rows at a time.", maxImportRows))
+	}
+	return records, nil
+}
+
+// tableRows maps each record by header, dropping blank rows: spreadsheets
+// often end with empty rows.
+func tableRows(header []string, records [][]string) []map[string]string {
+	rows := make([]map[string]string, 0, len(records))
+	for _, rec := range records {
 		row := map[string]string{}
 		blank := true
 		for i, v := range rec {
@@ -66,11 +79,11 @@ func readTable(c *gin.Context, required ...string) ([]map[string]string, bool) {
 				blank = blank && row[header[i]] == ""
 			}
 		}
-		if !blank { // spreadsheets often end with empty rows
+		if !blank {
 			rows = append(rows, row)
 		}
 	}
-	return rows, true
+	return rows
 }
 
 func contains(list []string, v string) bool {
@@ -141,9 +154,13 @@ func exportFormat(c *gin.Context) (string, bool) {
 }
 
 // sendTable finishes an export as a download.
-func sendTable(c *gin.Context, w tabular.Writer, format, name string) {
+func (h *Handler) sendTable(c *gin.Context, w tabular.Writer, format, name string) {
 	data, err := w.Bytes()
 	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if err := audit.Export(c, h.conn, actor(c), name, format, c.Request.URL.Query()); err != nil {
 		httpx.Fail(c, err)
 		return
 	}

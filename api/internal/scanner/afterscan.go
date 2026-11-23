@@ -24,10 +24,13 @@ func (s *Scanner) afterScan(ctx context.Context) []error {
 	return scanErrors
 }
 
-// markScanned records whether a segment's scan failed, writing only when that
-// changes. The alert rules keep a failed segment's alerts open.
+// markScanned records whether a segment's scan failed, and when a sweep last
+// finished. The alert rules keep a failed segment's alerts open; the schedule
+// counts the next sweep from last_swept_at. A failed sweep isn't counted, so it
+// is tried again at the next check.
 func (s *Scanner) markScanned(ctx context.Context, segmentID string, failed bool) error {
-	_, err := s.conn.Exec(ctx, `UPDATE segments SET scan_failed_at = CASE WHEN $2 THEN now() END
-		WHERE id = $1::uuid AND (scan_failed_at IS NULL) = $2`, segmentID, failed)
+	_, err := s.conn.Exec(ctx, `UPDATE segments SET scan_failed_at = CASE WHEN $2 THEN COALESCE(scan_failed_at, now()) END,
+		last_swept_at = CASE WHEN $2 THEN last_swept_at ELSE now() END
+		WHERE id = $1::uuid`, segmentID, failed)
 	return err
 }

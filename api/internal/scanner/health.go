@@ -26,18 +26,40 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 	if err != nil || len(targets) == 0 {
 		return err
 	}
-	icmp, err := newPinger()
-	if err != nil {
-		// Without ping, a server with no check port can't be checked at all.
-		// Skip it rather than count a failure, or every one of them goes Down.
-		slog.ErrorContext(ctx, "server checks can't ping; checking only servers with a check port", "error", err)
-		icmp, targets = nil, withPort(targets)
-		if len(targets) == 0 {
-			return nil
-		}
-	} else {
+	icmp, targets := checkPinger(ctx, targets)
+	if len(targets) == 0 {
+		return nil
+	}
+	if icmp != nil {
 		defer icmp.Close()
 	}
+	ids, results, times := s.runChecks(ctx, icmp, targets)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// A failed check only counts towards Down; the server is Down once it has
+	// failed the configured number of checks in a row.
+	if _, err := s.conn.Exec(ctx, healthSQL, ids, results, times); err != nil {
+		return err
+	}
+	return monitoring.New(s.conn).Evaluate(ctx)
+}
+
+// checkPinger opens the ping socket. Without ping, a server with no check
+// port can't be checked at all, so it is skipped rather than counted as a
+// failure, or every one of them goes Down.
+func checkPinger(ctx context.Context, targets []monitoredIP) (*pinger, []monitoredIP) {
+	icmp, err := newPinger()
+	if err == nil {
+		return icmp, targets
+	}
+	slog.ErrorContext(ctx, "server checks can't ping; checking only servers with a check port", "error", err)
+	return nil, withPort(targets)
+}
+
+// runChecks checks the targets with up to 32 workers. Each check waits its
+// turn on the scan's pace, so checks and sweeps never add up to a burst.
+func (s *Scanner) runChecks(ctx context.Context, icmp *pinger, targets []monitoredIP) ([]string, []string, []int32) {
 	ids, results, times := make([]string, len(targets)), make([]string, len(targets)), make([]int32, len(targets))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -54,22 +76,14 @@ func (s *Scanner) checkAll(ctx context.Context) error {
 		}()
 	}
 	for i := range targets {
-		if !s.pace.wait(ctx) { // shares the scan's rate, so checks and sweeps never add up to a burst
+		if !s.pace.wait(ctx) {
 			break
 		}
 		jobs <- i
 	}
 	close(jobs)
 	wg.Wait()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	// A failed check only counts towards Down; the server is Down once it has
-	// failed the configured number of checks in a row.
-	if _, err := s.conn.Exec(ctx, healthSQL, ids, results, times); err != nil {
-		return err
-	}
-	return monitoring.New(s.conn).Evaluate(ctx)
+	return ids, results, times
 }
 
 func withPort(targets []monitoredIP) []monitoredIP {

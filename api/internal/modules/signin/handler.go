@@ -25,7 +25,11 @@ import (
 const (
 	attemptCookie = "dfipam_login"
 	attemptTTL    = 10 * time.Minute
-	maxAttempts   = 1000
+	// maxAttempts bounds memory (about 2 MB). perClient stops one address from
+	// filling it: a client over its share loses its own oldest attempt, never
+	// someone else's.
+	maxAttempts = 10000
+	perClient   = 5
 )
 
 // Microsoft is the part of auth.Entra this module uses.
@@ -42,12 +46,17 @@ type Handler struct {
 	secure   bool   // served over HTTPS, so cookies are Secure and __Host-
 
 	mu       sync.Mutex
-	attempts map[string]auth.LoginAttempt
+	attempts map[string]heldAttempt
+}
+
+type heldAttempt struct {
+	auth.LoginAttempt
+	client string
 }
 
 func New(conn db.Conn, ms Microsoft, sessions *auth.Sessions, baseURL string) *Handler {
 	return &Handler{conn: conn, ms: ms, sessions: sessions, base: strings.TrimRight(baseURL, "/"),
-		secure: strings.HasPrefix(baseURL, "https://"), attempts: map[string]auth.LoginAttempt{}}
+		secure: strings.HasPrefix(baseURL, "https://"), attempts: map[string]heldAttempt{}}
 }
 
 // Paths are the public routes, for the route guard test.
@@ -78,7 +87,7 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 	a := auth.NewAttempt(safeReturn(c.Query("returnTo")))
-	h.remember(a)
+	h.remember(a, c.ClientIP())
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(attemptCookie, a.State, int(attemptTTL.Seconds()), "/api/v1/auth/microsoft", "", h.secure, true)
 	c.Redirect(http.StatusFound, h.ms.AuthCodeURL(a))

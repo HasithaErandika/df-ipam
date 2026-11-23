@@ -93,24 +93,33 @@ func (s *Syncer) Run(ctx context.Context) {
 		case <-s.trigger:
 			manual = true
 		}
-		cfg, err := Load(ctx, s.conn, s.keys)
-		wait = time.Minute
-		if err == nil && cfg.IntervalMinutes > 0 {
-			wait = time.Duration(cfg.IntervalMinutes) * time.Minute
-		}
-		// A scheduled read needs the schedule on; "Read now" works while it is
-		// off, so an Admin can try it before enabling the schedule. Neither runs
-		// while the connection is off (Client refuses, and says so).
-		if err != nil || (!manual && (!cfg.Enabled || !cfg.Active)) {
-			if manual && err != nil {
-				s.fail(err)
-			}
+		cfg, ok := s.due(ctx, manual, &wait)
+		if !ok {
 			continue
 		}
 		if err := s.Sync(ctx, cfg); err != nil && ctx.Err() == nil {
 			slog.WarnContext(ctx, "fortigate read failed", "error", err)
 		}
 	}
+}
+
+// due loads the settings, sets the next wait from them and says whether to
+// read now. A scheduled read needs the schedule on; "Read now" works while it
+// is off, so an Admin can try it before enabling the schedule. Neither runs
+// while the connection is off (Client refuses, and says so).
+func (s *Syncer) due(ctx context.Context, manual bool, wait *time.Duration) (Config, bool) {
+	cfg, err := Load(ctx, s.conn, s.keys)
+	*wait = time.Minute
+	if err == nil && cfg.IntervalMinutes > 0 {
+		*wait = time.Duration(cfg.IntervalMinutes) * time.Minute
+	}
+	if err != nil || (!manual && (!cfg.Enabled || !cfg.Active)) {
+		if manual && err != nil {
+			s.fail(err)
+		}
+		return cfg, false
+	}
+	return cfg, true
 }
 
 // Sync reads the firewall once and records what it knows as sightings.

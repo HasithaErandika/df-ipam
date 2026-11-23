@@ -73,42 +73,7 @@ func (h *Handler) decideDevice(c *gin.Context) {
 		return
 	}
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		old, err := lockOld(c, tx, "devices", id)
-		if err != nil {
-			return err
-		}
-		if in.Department != nil {
-			if err := checkDepartment(c, tx, in.Department); err != nil {
-				return err
-			}
-		}
-		var mac, owner, department string
-		if err := tx.QueryRow(c, `UPDATE devices SET status = $2, decided_by = $3::uuid, decided_at = now(),
-			name = COALESCE(NULLIF($4, ''), name), owner = COALESCE($5, owner),
-			department = COALESCE($6, department), device_type = COALESCE(NULLIF($7, ''), device_type),
-			platform = COALESCE(NULLIF($8, ''), platform)
-			WHERE id = $1::uuid RETURNING mac::text, owner, department`, id, in.Status, actor(c), in.Name, in.Owner, in.Department, in.Type, in.Platform).Scan(&mac, &owner, &department); err != nil {
-			return err
-		}
-		if err := record(c, tx, in.Status, "device", id, old, in); err != nil {
-			return err
-		}
-		if in.Register == nil {
-			return nil
-		}
-		if err := refuseReserved(c, tx, in.Register.SegmentID, in.Register.IP); err != nil {
-			return err
-		}
-		if err := ipam.CheckRegister(c, tx, in.Register.SegmentID, in.Register.IP, in.Register.IPType); err != nil {
-			return err
-		}
-		var ipID string
-		if err := tx.QueryRow(c, `INSERT INTO ip_addresses (segment_id, ip, status, ip_type, device_id, assigned_name, expected_mac, owner, department, platform, created_by, updated_by)
-			VALUES ($1::uuid, $2::inet, 'assigned', $3, $4::uuid, $5, $6::macaddr, $7, $8, $10, $9::uuid, $9::uuid) RETURNING id::text`,
-			in.Register.SegmentID, in.Register.IP, in.Register.IPType, id, in.Name, mac, owner, department, actor(c), in.Platform).Scan(&ipID); err != nil {
-			return err
-		}
-		return record(c, tx, "create", "ip_address", ipID, nil, in.Register)
+		return applyDecision(c, tx, id, in)
 	})
 	if err != nil {
 		httpx.Fail(c, db.Friendly(err, "That IP is already in the register."))
@@ -116,4 +81,51 @@ func (h *Handler) decideDevice(c *gin.Context) {
 	}
 	h.recheck(c)
 	c.Status(http.StatusNoContent)
+}
+
+// applyDecision records the decision and, when asked, registers the address
+// the device was seen on, all in the caller's transaction.
+func applyDecision(c *gin.Context, tx pgx.Tx, id string, in decisionInput) error {
+	old, err := lockOld(c, tx, "devices", id)
+	if err != nil {
+		return err
+	}
+	if in.Department != nil {
+		if err := checkDepartment(c, tx, in.Department); err != nil {
+			return err
+		}
+	}
+	var mac, owner, department string
+	if err := tx.QueryRow(c, `UPDATE devices SET status = $2, decided_by = $3::uuid, decided_at = now(),
+		name = COALESCE(NULLIF($4, ''), name), owner = COALESCE($5, owner),
+		department = COALESCE($6, department), device_type = COALESCE(NULLIF($7, ''), device_type),
+		platform = COALESCE(NULLIF($8, ''), platform)
+		WHERE id = $1::uuid RETURNING mac::text, owner, department`, id, in.Status, actor(c), in.Name, in.Owner, in.Department, in.Type, in.Platform).Scan(&mac, &owner, &department); err != nil {
+		return err
+	}
+	if err := record(c, tx, in.Status, "device", id, old, in); err != nil {
+		return err
+	}
+	if in.Register == nil {
+		return nil
+	}
+	return registerDecided(c, tx, id, in, mac, owner, department)
+}
+
+// registerDecided adds the approved device's address to the register, checked
+// like a hand-made entry.
+func registerDecided(c *gin.Context, tx pgx.Tx, id string, in decisionInput, mac, owner, department string) error {
+	if err := refuseReserved(c, tx, in.Register.SegmentID, in.Register.IP); err != nil {
+		return err
+	}
+	if err := ipam.CheckRegister(c, tx, in.Register.SegmentID, in.Register.IP, in.Register.IPType); err != nil {
+		return err
+	}
+	var ipID string
+	if err := tx.QueryRow(c, `INSERT INTO ip_addresses (segment_id, ip, status, ip_type, device_id, assigned_name, expected_mac, owner, department, platform, created_by, updated_by)
+		VALUES ($1::uuid, $2::inet, 'assigned', $3, $4::uuid, $5, $6::macaddr, $7, $8, $10, $9::uuid, $9::uuid) RETURNING id::text`,
+		in.Register.SegmentID, in.Register.IP, in.Register.IPType, id, in.Name, mac, owner, department, actor(c), in.Platform).Scan(&ipID); err != nil {
+		return err
+	}
+	return record(c, tx, "create", "ip_address", ipID, nil, in.Register)
 }

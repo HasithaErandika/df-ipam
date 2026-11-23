@@ -68,41 +68,53 @@ func deliverBatch(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL
 		maxPerHour); err != nil {
 		return err
 	}
+	items, err := pendingEmails(ctx, conn)
+	if err != nil {
+		return err
+	}
+	for _, n := range items {
+		if err := sendEmail(ctx, conn, mailer, baseURL, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func pendingEmails(ctx context.Context, conn db.Conn) ([]outboxItem, error) {
 	rows, err := conn.Query(ctx, `SELECT n.id::text, u.email, n.kind, n.message, n.link, n.email_attempts FROM notifications n
 		JOIN users u ON u.id = n.user_id WHERE n.email_status = 'pending' ORDER BY n.created_at LIMIT $1`, batchSize)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var items []outboxItem
 	for rows.Next() {
 		var n outboxItem
 		if err := rows.Scan(&n.ID, &n.Email, &n.Kind, &n.Message, &n.Link, &n.Attempts); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
 		items = append(items, n)
 	}
 	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, n := range items {
-		body := n.Message + "\n\nOpen DF-IPAM: " + baseURL + n.Link + "\n\nYou can turn these emails off under Alerts > Email notifications."
-		sendErr := mailer.Send(ctx, n.Email, "DF-IPAM: "+subjects[n.Kind], body)
-		status := "sent"
-		if sendErr != nil {
-			status = "pending"
-			if n.Attempts+1 >= maxAttempts {
-				status = "failed"
-			}
-			slog.WarnContext(ctx, "notification email failed", "notificationId", n.ID, "attempt", n.Attempts+1)
+	return items, rows.Err()
+}
+
+// sendEmail sends one notice and records the try. A failure stays pending for
+// another try until it reaches maxAttempts.
+func sendEmail(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL string, n outboxItem) error {
+	body := n.Message + "\n\nOpen DF-IPAM: " + baseURL + n.Link + "\n\nYou can turn these emails off under Alerts > Email notifications."
+	sendErr := mailer.Send(ctx, n.Email, "DF-IPAM: "+subjects[n.Kind], body)
+	status := "sent"
+	if sendErr != nil {
+		status = "pending"
+		if n.Attempts+1 >= maxAttempts {
+			status = "failed"
 		}
-		if _, err := conn.Exec(ctx, `UPDATE notifications SET email_status = $2, email_attempts = email_attempts + 1 WHERE id = $1::uuid AND email_status = 'pending'`,
-			n.ID, status); err != nil {
-			return err
-		}
+		slog.WarnContext(ctx, "notification email failed", "notificationId", n.ID, "attempt", n.Attempts+1)
 	}
-	return nil
+	_, err := conn.Exec(ctx, `UPDATE notifications SET email_status = $2, email_attempts = email_attempts + 1 WHERE id = $1::uuid AND email_status = 'pending'`,
+		n.ID, status)
+	return err
 }
 
 var subjects = map[string]string{

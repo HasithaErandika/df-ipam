@@ -72,18 +72,34 @@ func (c *Client) ReadAll(ctx context.Context) ([]Entry, Counts, error) {
 	_ = c.get(ctx, "/api/v2/monitor/vpn/ipsec", &ipsec)
 
 	var out []Entry
+	out = appendARP(out, arp, &counts)
+	out = appendLeases(out, leases, &counts)
+	out = appendSSL(out, ssl, &counts)
+	out = appendIPsec(out, ipsec, &counts)
+	return out, counts, nil
+}
+
+func appendARP(out []Entry, arp []arpEntry, counts *Counts) []Entry {
 	for _, a := range arp {
 		if ok4(a.IP) {
 			out = append(out, Entry{IP: a.IP, MAC: a.MAC, Source: "arp"})
 			counts.ARP++
 		}
 	}
+	return out
+}
+
+func appendLeases(out []Entry, leases []lease, counts *Counts) []Entry {
 	for _, l := range leases {
 		if ok4(l.IP) && (l.Status == "" || l.Status == "leased") {
 			out = append(out, Entry{IP: l.IP, MAC: l.MAC, Hostname: l.Hostname, Vendor: l.VCI, Source: "dhcp"})
 			counts.DHCP++
 		}
 	}
+	return out
+}
+
+func appendSSL(out []Entry, ssl []sslSession, counts *Counts) []Entry {
 	for _, s := range ssl {
 		for _, sub := range s.Subsessions {
 			if ok4(sub.AIP) {
@@ -92,6 +108,11 @@ func (c *Client) ReadAll(ctx context.Context) ([]Entry, Counts, error) {
 			}
 		}
 	}
+	return out
+}
+
+// appendIPsec takes each tunnel's single-host destinations while the proxy is up.
+func appendIPsec(out []Entry, ipsec []ipsecTunnel, counts *Counts) []Entry {
 	for _, t := range ipsec {
 		for _, p := range t.ProxyIDs {
 			for _, d := range p.Dst {
@@ -102,7 +123,7 @@ func (c *Client) ReadAll(ctx context.Context) ([]Entry, Counts, error) {
 			}
 		}
 	}
-	return out, counts, nil
+	return out
 }
 
 func ok4(s string) bool {

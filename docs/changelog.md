@@ -2,6 +2,49 @@
 
 What changed, day by day, on branch `lite`. Newest first. The specification is in [product/](product/overview.md); what is and isn't built is in [status.md](status.md).
 
+## 2026-11-23
+
+Fixes from a full review of the code (tech lead, security and dependency reviews), and the BCP site's links.
+
+**Access**
+- **Nobody hands out more than they hold.** Someone who manages users but isn't an Administrator can't add a permission they lack to any role, change their own role's permissions, give a role that holds more than theirs, or change a person who holds more. Refused with `403 BEYOND_OWN_ACCESS` or `409 SELF_CHANGE`. Changes to who can manage users are serialised, so two at once can't leave nobody able to.
+- **Managing link costs brings seeing them.** A role saved with `links:commercial_manage` also gets `links:commercial_view` (migration 000028 adds it to existing roles). Without view, the link form was sent the costs blank and saving wiped them. The API now writes commercial fields only for people with both, and the form shows the Commercial tab only to them.
+- **Sign-in** reads the person's sign-in name (UPN) before the email claim, which people can edit, and refuses Entra guest accounts. Each address can hold at most 5 sign-ins in progress, so one client can't push out everyone else's.
+- **Exports and report downloads are audited** (action `export`, with the format and filters).
+
+**Data rules**
+- **Segment edits follow the register's rules:** a DHCP pool can't be moved over register entries, nor the gateway onto an entry that isn't network equipment. A segment a network link uses can't be deleted, and the message says so.
+- **Converting a reservation** checks the address against the register's rules, audits the holds left either side, and keeps a reminder already sent.
+- A save pointing at something that no longer exists answers `422`, not `409`.
+- Devices can't be deleted by the app (they never were), so the ids in a link's connected devices stay valid.
+- The **FortiGate token is removed when the address changes** without a new token, so it is never sent to a different host.
+
+**Reliability**
+- **Requests have a 55-second limit**, and cancelled or timed-out requests roll back. A slow import can no longer commit after the person was told it failed.
+- **Excel uploads are capped** at 64 MB unpacked and 20,000 rows, so a small file can't fill memory. The backend's `/tmp` is 128 MB and its memory 1 GB (`BACKEND_MEM_LIMIT`).
+- **Discovery sweeps only private networks** (10.x, 172.16–31.x, 192.168.x, 100.64–127.x). A floor or server segment with a public range says "Public range: not swept".
+- **The scan schedule counts from the last finished sweep** (`segments.last_swept_at`, migration 000028), not from the newest ARP sighting, which the FortiGate reader writes too.
+- The scanner and the FortiGate reader update sightings in the same order, so they can't deadlock.
+- A change in the register waits at most 3 seconds for an alert evaluation already running, instead of holding the request until it ends.
+
+**Network links**
+- **Create the WAN subnet's segment from the link form.** When the WAN IP's network isn't a segment, people with `network:manage` get **Create segment 10.10.40.0/24**: a small dialog with the network filled in and the type set to **Cloud** (never swept). The new segment becomes the link's WAN subnet.
+- The import says when a device or other name belongs to more than one record, instead of picking one, and a row can relate to a link added earlier in the same file.
+- An export matching more than 20,000 links is refused with a message, not cut short.
+- The overview's approximate rupee total names the currencies it leaves out.
+- **Seeded:** the Head Office and BCP - Nugegoda links from the two site diagrams (14 links, 13 segments), through the import with audit records.
+
+**Web**
+- Several requests failing at once on an ended session give one message and one sign-out; the idle timer signs out once.
+- Downloads start reliably before their file address is released.
+- Marking a notification read says so. Unused `patch` helpers are removed.
+
+**Engineering**
+- **CI runs the database tests** in a new `API (database)` job with PostgreSQL, and fails if any skip.
+- `make lint` checks the 200-line file and complexity-15 function rules (`make lint-size`), and so does CI.
+- Base images are pinned by digest and watched by Dependabot. nginx 1.30, Alpine 3.24, `golang.org/x/crypto` 0.59.0.
+- On the host network, the API no longer trusts `127.0.0.1` for the client address.
+
 ## 2026-11-20 · v0.4.0
 
 - The app version is 0.4.0 (side panel and API description).

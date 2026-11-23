@@ -61,6 +61,11 @@ func (in *roleInput) validate() error {
 			clean = append(clean, p)
 		}
 	}
+	// Managing link costs means seeing them: a role with manage but not view
+	// would be sent the costs blank and could wipe them on save.
+	if slices.Contains(clean, auth.LinksCommercialManage) && !slices.Contains(clean, auth.LinksCommercialView) {
+		clean = append(clean, auth.LinksCommercialView)
+	}
 	in.Permissions = clean
 	return v.Err()
 }
@@ -86,6 +91,10 @@ func (h *Handler) createRole(c *gin.Context) {
 		return
 	}
 	if err := in.validate(); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	if err := checkRoleGrant(c, "", nil, in.Permissions); err != nil {
 		httpx.Fail(c, err)
 		return
 	}
@@ -117,38 +126,13 @@ func (h *Handler) updateRole(c *gin.Context) {
 		return
 	}
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var old []byte
-		var system bool
-		if err := tx.QueryRow(c, "SELECT to_jsonb(r), r.is_system FROM roles r WHERE r.key = $1 FOR UPDATE", key).Scan(&old, &system); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(c, `UPDATE roles SET name = $2, description = $3,
-			permissions = CASE WHEN is_system THEN permissions ELSE $4 END WHERE key = $1`, key, in.Name, in.Description, in.Permissions); err != nil {
-			return err
-		}
-		if err := h.keepUserManager(c, tx); err != nil {
-			return err
-		}
-		return record(c, tx, "update", "role", key, json.RawMessage(old), in)
+		return h.applyRoleUpdate(c, tx, key, in)
 	})
 	if err != nil {
 		httpx.Fail(c, db.Friendly(err, "A role with this name already exists."))
 		return
 	}
 	httpx.OK(c, http.StatusOK, gin.H{"key": key})
-}
-
-// keepUserManager refuses a change that would leave nobody active who can
-// manage users, so the system can't lock everyone out.
-func (h *Handler) keepUserManager(c *gin.Context, tx pgx.Tx) error {
-	var n int
-	if err := tx.QueryRow(c, "SELECT count(*) FROM users u WHERE u.is_active AND "+auth.HolderSQL("$1"), auth.UsersManage).Scan(&n); err != nil {
-		return err
-	}
-	if n == 0 {
-		return httpx.NewError(http.StatusConflict, "LAST_ADMIN", "Nobody active could manage users after this change. Keep that permission on someone's role.")
-	}
-	return nil
 }
 
 // deleteRole removes a role nobody holds. System roles stay.

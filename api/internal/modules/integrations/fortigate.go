@@ -62,15 +62,7 @@ type saveInput struct {
 	ClearToken      bool   `json:"clearToken"` // removes the stored one
 }
 
-func (h *Handler) save(c *gin.Context) {
-	if h.sync == nil {
-		httpx.Fail(c, errOff)
-		return
-	}
-	var in saveInput
-	if !httpx.Bind(c, &in) {
-		return
-	}
+func (in *saveInput) validate() (int, error) {
 	var v validate.V
 	v.Text("url", &in.URL, 200, in.Enabled, "Address")
 	if in.URL != "" && !strings.HasPrefix(in.URL, "https://") {
@@ -83,10 +75,37 @@ func (h *Handler) save(c *gin.Context) {
 	if len(in.Token) > 200 {
 		v.Add("token", "The token is too long.")
 	}
-	if err := v.Err(); err != nil {
+	return interval, v.Err()
+}
+
+func (h *Handler) save(c *gin.Context) {
+	if h.sync == nil {
+		httpx.Fail(c, errOff)
+		return
+	}
+	var in saveInput
+	if !httpx.Bind(c, &in) {
+		return
+	}
+	interval, err := in.validate()
+	if err != nil {
 		httpx.Fail(c, err)
 		return
 	}
+	values, err := h.settingValues(in, interval)
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	err = db.InTx(c, h.conn, func(tx pgx.Tx) error { return saveSettings(c, tx, in, values) })
+	if err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	h.get(c)
+}
+
+func (h *Handler) settingValues(in saveInput, interval int) (map[string]string, error) {
 	values := map[string]string{
 		"fortigate.enabled": strconv.FormatBool(in.Enabled), "fortigate.url": quote(in.URL), "fortigate.vdom": quote(in.VDOM),
 		"fortigate.verify_tls": strconv.FormatBool(in.VerifyTLS), "fortigate.interval_minutes": strconv.Itoa(interval),
@@ -97,33 +116,38 @@ func (h *Handler) save(c *gin.Context) {
 	if in.Token != "" {
 		sealed, err := fortigate.SealToken(h.sync.Keys(), in.Token)
 		if err != nil {
-			httpx.Fail(c, httpx.Validation("token", err.Error()+"."))
-			return
+			return nil, httpx.Validation("token", err.Error()+".")
 		}
 		values["fortigate.token"] = sealed
 	}
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		for k, val := range values {
-			if _, err := tx.Exec(c, `INSERT INTO settings (key, value, updated_by) VALUES ($1, $2::jsonb, $3::uuid)
-				ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by`,
-				k, val, auth.Current(c).UserID); err != nil {
-				return err
-			}
+	return values, nil
+}
+
+// saveSettings stores the connection. A token belongs to the firewall it was
+// made on: when the address changes without a new token, the old one is
+// removed, so it is never sent to a different host.
+func saveSettings(c *gin.Context, tx pgx.Tx, in saveInput, values map[string]string) error {
+	var oldURL string
+	_ = tx.QueryRow(c, `SELECT value #>> '{}' FROM settings WHERE key = 'fortigate.url'`).Scan(&oldURL)
+	movedHost := oldURL != "" && !strings.EqualFold(strings.TrimRight(oldURL, "/"), strings.TrimRight(in.URL, "/"))
+	for k, val := range values {
+		if _, err := tx.Exec(c, `INSERT INTO settings (key, value, updated_by) VALUES ($1, $2::jsonb, $3::uuid)
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by`,
+			k, val, auth.Current(c).UserID); err != nil {
+			return err
 		}
-		if in.ClearToken && in.Token == "" {
-			if _, err := tx.Exec(c, `DELETE FROM settings WHERE key = 'fortigate.token'`); err != nil {
-				return err
-			}
-		}
-		logged := in
-		logged.Token = map[bool]string{true: "(changed)", false: ""}[in.Token != ""]
-		return audit.Write(c, tx, audit.Entry{ActorID: auth.Current(c).UserID, Action: "update", ObjectType: "integration", ObjectID: "fortigate", New: logged})
-	})
-	if err != nil {
-		httpx.Fail(c, err)
-		return
 	}
-	h.get(c)
+	if (in.ClearToken || movedHost) && in.Token == "" {
+		if _, err := tx.Exec(c, `DELETE FROM settings WHERE key = 'fortigate.token'`); err != nil {
+			return err
+		}
+	}
+	logged := in
+	logged.Token = map[bool]string{true: "(changed)", false: ""}[in.Token != ""]
+	if movedHost && in.Token == "" {
+		logged.ClearToken = true
+	}
+	return audit.Write(c, tx, audit.Entry{ActorID: auth.Current(c).UserID, Action: "update", ObjectType: "integration", ObjectID: "fortigate", New: logged})
 }
 
 func quote(s string) string { return strconv.Quote(s) }

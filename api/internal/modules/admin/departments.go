@@ -67,31 +67,42 @@ func (h *Handler) saveDepartment(c *gin.Context, id string) {
 	}
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
 		if id == "" {
-			if err := tx.QueryRow(c, `INSERT INTO departments (name, description) VALUES ($1, $2) RETURNING id::text`, in.Name, in.Description).Scan(&id); err != nil {
-				return err
-			}
-			return record(c, tx, "create", "department", id, nil, in)
-		}
-		var old []byte
-		var oldName string
-		if err := tx.QueryRow(c, "SELECT to_jsonb(dp), dp.name FROM departments dp WHERE id = $1::uuid FOR UPDATE", id).Scan(&old, &oldName); err != nil {
+			var err error
+			id, err = insertDepartment(c, tx, in)
 			return err
 		}
-		if _, err := tx.Exec(c, "UPDATE departments SET name = $1, description = $2 WHERE id = $3::uuid", in.Name, in.Description, id); err != nil {
-			return err
-		}
-		if oldName != in.Name {
-			if err := renameDepartment(c, tx, oldName, in.Name); err != nil {
-				return err
-			}
-		}
-		return record(c, tx, "update", "department", id, json.RawMessage(old), in)
+		return editDepartment(c, tx, id, in)
 	})
 	if err != nil {
 		httpx.Fail(c, db.Friendly(err, "A department with this name already exists."))
 		return
 	}
 	httpx.OK(c, http.StatusOK, gin.H{"id": id})
+}
+
+func insertDepartment(c *gin.Context, tx pgx.Tx, in departmentInput) (string, error) {
+	var id string
+	if err := tx.QueryRow(c, `INSERT INTO departments (name, description) VALUES ($1, $2) RETURNING id::text`, in.Name, in.Description).Scan(&id); err != nil {
+		return id, err
+	}
+	return id, record(c, tx, "create", "department", id, nil, in)
+}
+
+func editDepartment(c *gin.Context, tx pgx.Tx, id string, in departmentInput) error {
+	var old []byte
+	var oldName string
+	if err := tx.QueryRow(c, "SELECT to_jsonb(dp), dp.name FROM departments dp WHERE id = $1::uuid FOR UPDATE", id).Scan(&old, &oldName); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(c, "UPDATE departments SET name = $1, description = $2 WHERE id = $3::uuid", in.Name, in.Description, id); err != nil {
+		return err
+	}
+	if oldName != in.Name {
+		if err := renameDepartment(c, tx, oldName, in.Name); err != nil {
+			return err
+		}
+	}
+	return record(c, tx, "update", "department", id, json.RawMessage(old), in)
 }
 
 func renameDepartment(c *gin.Context, tx pgx.Tx, from, to string) error {

@@ -7,7 +7,7 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 | Area | Status |
 | --- | --- |
 | Foundation | 21 tables with RLS, policies and grants (16 core, 5 for Network Links); roles and permissions; route guard; audit in the same transaction; Docker (`db`, `migrate`, `backend`, `web`, and the link attachment volume) |
-| Segments | Floor, server and cloud segments; DHCP pools; gateways (set or detected); host-address and pool checks; warnings for segments too large to scan or without a pool; private-MAC alerts and port checks per segment |
+| Segments | Floor, server and cloud segments; DHCP pools; gateways (set or detected); host-address and pool checks, also on edit against the register; only private ranges swept; warnings for segments too large to scan, public or without a pool; private-MAC alerts and port checks per segment |
 | IP register | Create, edit, release; Available candidate; range reservations; CSV, text and Excel import and export, including servers |
 | Devices | Pending, approve, reject; register on approval; departments; import and export |
 | Discovery | Ping, NetBIOS, TCP presence check for hosts that block ping, ARP table (ARP-only hosts too), DNS, mDNS, SSDP/UPnP, optional port checks; ARP MAC preferred over NetBIOS; NetBIOS computer name by name type, and the workgroup or domain; Windows version, full name and domain from the SMB handshake; device details apart from the network card; device icons from the evidence in order of reliability; red and orange for what needs attention; registered-elsewhere detection; findings with counts, shareable details and filters; segment pages with an address map; devices pending as soon as their segment is scanned; static addresses in use for 30 days after last seen; a failed segment scan keeps its alerts open |
@@ -30,7 +30,12 @@ What is built, what isn't, and what waits on others. Update this when a feature 
 
 ## Known code debt
 
-Functions over the complexity limit of 15, all from before Network Links: `fortigate.ReadAll`, `admin.updateUser`, `inventory.importDevices`, `integrations.save` (FortiGate), `allocationlite.convertReservation` and `decideRequest`, `inventory.addressMap`, `scanner.checkAll`, `pinger.read` and `sweep`, `reports.download`, `admin.updateSettings`, `inventory.readTable`, and a few more at 16–17. Files over 200 lines: `inventory/segments_import.go` and `register_import.go`. They work and are tested; split them when next changed.
+None against the house rules: every production file is under 200 lines and every function at complexity 15 or less, checked by `make lint-size` locally and in CI (tests are left out). Known gaps from the November 2026 review, not yet done:
+
+- The Network Links import still runs a few queries per row inside one transaction (the register import is batched). The 55-second request limit now rolls a slow import back instead of letting it commit late.
+- The Content-Security-Policy allows inline styles: the dialogs' scroll lock injects a `<style>` element. Removing it needs a nonce per page.
+- Sign-in attempts are kept in the API's memory, which suits one API instance (as deployed). More instances would need them in the database.
+- Self-approval of IP requests and a cap on sessions per person are policy decisions, not yet made.
 
 ## Not built
 

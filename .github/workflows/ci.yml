@@ -44,12 +44,61 @@ jobs:
           git diff --exit-code go.mod go.sum
       - name: Vet
         run: go vet ./...
+      - name: Size and complexity rules
+        working-directory: .
+        run: make lint-size
       - name: Test
         run: go test -race -count=1 -coverprofile=coverage.out ./...
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
       - name: Build
         run: go build -o bin/ ./cmd/...
+
+  # The schema rules, RLS, every API route, imports and sign-in run against a real
+  # database. They skip without one, so a skip here fails the job.
+  api-db:
+    name: API (database)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: dfipam_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dfipam_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      MIGRATION_DATABASE_URL: postgres://postgres:ci-only@localhost:5432/dfipam_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://postgres:ci-only@localhost:5432/dfipam_test?sslmode=disable
+      TEST_APP_DATABASE_URL: postgres://dfipam_app:ci-app-only@localhost:5432/dfipam_test?sslmode=disable
+      TEST_DB_MAX_CONNS: '10'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Create the app role
+        run: psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE dfipam_app LOGIN PASSWORD 'ci-app-only'"
+      - name: Migrate and seed
+        run: go run ./cmd/migrate up && go run ./cmd/seed
+      - name: Test
+        run: |
+          go test -p 1 -count=1 -v ./internal/dbrules ./internal/server ./internal/scanner | tee test.log
+          status=${PIPESTATUS[0]}
+          if grep -q -- '--- SKIP' test.log; then
+            grep -- '--- SKIP' test.log
+            echo "::error::Database tests were skipped"
+            exit 1
+          fi
+          exit "$status"
 
   web:
     name: Web
@@ -107,7 +156,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [api, web, security]
+    needs: [api, api-db, web, security]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to pass

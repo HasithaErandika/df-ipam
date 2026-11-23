@@ -10,6 +10,7 @@ import (
 	"dfipam/api/internal/platform/httpx"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Where builds a parameterised WHERE clause. Conditions are constants from the
@@ -95,6 +96,9 @@ func Friendly(err error, conflict ...string) error {
 		}
 		return httpx.NewError(http.StatusConflict, "CONFLICT", msg)
 	case CodeForeignKey:
+		if missingReference(err) {
+			return httpx.NewError(http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Something chosen here no longer exists. Reload and choose again.")
+		}
 		return httpx.NewError(http.StatusConflict, "IN_USE", "This record is still referenced by other records.")
 	case CodeCheck, CodeBadValue:
 		return httpx.NewError(http.StatusUnprocessableEntity, "VALIDATION_FAILED", "The values do not fit the selected segment or allowed format.")
@@ -107,4 +111,13 @@ func Friendly(err error, conflict ...string) error {
 func Contains(q string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return "%" + r.Replace(strings.TrimSpace(q)) + "%"
+}
+
+// missingReference tells a save that points at a row that doesn't exist (a 422:
+// the request is wrong) from a delete of a row others still point at (a 409).
+// PostgreSQL words them "insert or update on table …" and "update or delete on
+// table …".
+func missingReference(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && strings.HasPrefix(pg.Message, "insert or update on table")
 }

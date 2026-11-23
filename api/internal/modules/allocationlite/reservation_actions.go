@@ -2,7 +2,6 @@ package allocationlite
 
 import (
 	"net/http"
-	"net/netip"
 
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
@@ -100,72 +99,4 @@ func (h *Handler) releaseReservation(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-}
-
-// convertReservation turns one held address into a register entry. The rest of
-// the range stays held, split around the converted address.
-func (h *Handler) convertReservation(c *gin.Context) {
-	id, ok := httpx.PathID(c)
-	if !ok {
-		return
-	}
-	var in struct {
-		IP    string `json:"ip"`
-		Type  string `json:"ipType"`
-		Name  string `json:"name"`
-		Owner string `json:"owner"`
-	}
-	if !httpx.Bind(c, &in) {
-		return
-	}
-	var v validate.V
-	addr := v.IPv4("ip", &in.IP, true)
-	if in.Type == "" {
-		in.Type = "other"
-	}
-	v.OneOf("ipType", in.Type, ipTypes, "type")
-	v.Text("name", &in.Name, 120, true, "Assigned to")
-	v.Text("owner", &in.Owner, 120, false, "Owner")
-	if err := v.Err(); err != nil {
-		httpx.Fail(c, err)
-		return
-	}
-	var ipID string
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		r, err := lockHold(c, tx, id)
-		if err != nil {
-			return err
-		}
-		first, last := netip.MustParseAddr(r.start), netip.MustParseAddr(r.end)
-		if addr.Less(first) || last.Less(addr) {
-			return httpx.Validation("ip", "Choose an address inside "+r.start+" – "+r.end+".")
-		}
-		if in.Owner == "" {
-			in.Owner = r.ownerName
-		}
-		if err := tx.QueryRow(c, `INSERT INTO ip_addresses (segment_id, ip, status, ip_type, environment_id, assigned_name, owner, reservation_id, created_by, updated_by)
-			SELECT s.id, $2::inet, 'assigned', $3, s.default_environment_id, $4, $5, $6::uuid, $7::uuid, $7::uuid FROM segments s WHERE s.id = $1::uuid
-			RETURNING id::text`, r.segmentID, in.IP, in.Type, in.Name, in.Owner, id, actor(c)).Scan(&ipID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(c, "UPDATE reservations SET status = 'converted', updated_by = $2::uuid WHERE id = $1::uuid", id, actor(c)); err != nil {
-			return err
-		}
-		// Keep the addresses either side held, as new reservations with the same terms.
-		if _, err := tx.Exec(c, `INSERT INTO reservations (segment_id, start_ip, end_ip, reason, owner_id, owner_name, expires_at, created_by, updated_by)
-			SELECT segment_id, a, b, reason, owner_id, owner_name, expires_at, $3::uuid, $3::uuid FROM reservations CROSS JOIN LATERAL
-			(VALUES (start_ip, $2::inet - 1), ($2::inet + 1, end_ip)) AS parts(a, b)
-			WHERE id = $1::uuid AND a <= b`, id, in.IP, actor(c)); err != nil {
-			return err
-		}
-		if err := auditChange(c, tx, "convert", "reservation", id, rawJSON(r.old), map[string]string{"ip": in.IP, "ipAddressId": ipID}); err != nil {
-			return err
-		}
-		return auditChange(c, tx, "create", "ip_address", ipID, nil, in)
-	})
-	if err != nil {
-		httpx.Fail(c, friendly(err))
-		return
-	}
-	httpx.OK(c, http.StatusOK, gin.H{"ipAddressId": ipID})
 }

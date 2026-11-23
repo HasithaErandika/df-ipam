@@ -43,32 +43,62 @@ func (c candidate) key() string {
 
 func (c candidate) notifies() bool { return c.severity == "high" || c.severity == "critical" }
 
-func (e *Engine) Evaluate(ctx context.Context) error {
+// Evaluate opens, refreshes and closes alerts. One evaluation runs at a time.
+func (e *Engine) Evaluate(ctx context.Context) error { return e.evaluate(ctx, "") }
+
+// Recheck is Evaluate for a request that just changed something: it waits at
+// most a few seconds for an evaluation already running (after a scan, say)
+// instead of holding the request and a pooled connection until it ends. That
+// evaluation, or the next one, then picks up the change.
+func (e *Engine) Recheck(ctx context.Context) error { return e.evaluate(ctx, "3s") }
+
+func (e *Engine) evaluate(ctx context.Context, wait string) error {
 	return db.InTx(ctx, e.conn, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+		if err := lockEvaluation(ctx, tx, wait); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, pendingDevicesSQL); err != nil {
-			return err
-		}
-		found, err := candidates(ctx, tx)
-		if err != nil {
-			return err
-		}
-		fresh, err := upsert(ctx, tx, found)
-		if err != nil {
-			return err
-		}
-		if err := announce(ctx, tx, fresh); err != nil {
-			return err
-		}
-		keys := make([]string, len(found))
-		for i, x := range found {
-			keys[i] = x.key()
-		}
-		_, err = tx.Exec(ctx, closeSQL, keys)
-		return err
+		return run(ctx, tx)
 	})
+}
+
+// lockEvaluation takes the evaluation lock, waiting at most wait ("" waits for
+// as long as it takes). The time limit covers only the lock, not the work.
+func lockEvaluation(ctx context.Context, tx pgx.Tx, wait string) error {
+	limit := wait
+	if limit == "" {
+		limit = "0"
+	}
+	if _, err := tx.Exec(ctx, "SELECT set_config('lock_timeout', $1, true)", limit); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", lockKey); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, "SELECT set_config('lock_timeout', '0', true)")
+	return err
+}
+
+func run(ctx context.Context, tx pgx.Tx) error {
+	if _, err := tx.Exec(ctx, pendingDevicesSQL); err != nil {
+		return err
+	}
+	found, err := candidates(ctx, tx)
+	if err != nil {
+		return err
+	}
+	fresh, err := upsert(ctx, tx, found)
+	if err != nil {
+		return err
+	}
+	if err := announce(ctx, tx, fresh); err != nil {
+		return err
+	}
+	keys := make([]string, len(found))
+	for i, x := range found {
+		keys[i] = x.key()
+	}
+	_, err = tx.Exec(ctx, closeSQL, keys)
+	return err
 }
 
 // upsert opens or refreshes every alert in one statement and returns the new

@@ -52,6 +52,9 @@ func (s *Scanner) saveSightings(ctx context.Context, segmentID string, values []
 		FROM unnest($2::text[],$3::text[],$4::text[],$5::text[],$6::boolean[],$7::boolean[],$8::boolean[],$9::text[],
 			$10::text[],$11::text[],$12::text[],$13::text[],$14::text[],$15::text[],$16::boolean[],$17::text[],$18::text[],$19::text[],$20::text[])
 			AS v(ip,mac,name,source,static,private,gw,vendor,nic,maker,model,kind,os,ports,identified,grp,wdomain,fqdn,build)
+		-- Rows are locked in (ip, mac) order, the same order as the FortiGate
+		-- reader, so the two can't deadlock on the same sightings.
+		ORDER BY ip::inet, mac
 		ON CONFLICT (ip,mac) DO UPDATE SET segment_id=EXCLUDED.segment_id,
 			hostname=COALESCE(NULLIF(EXCLUDED.hostname,''),sightings.hostname),
 			vendor=COALESCE(NULLIF(EXCLUDED.vendor,''),sightings.vendor),

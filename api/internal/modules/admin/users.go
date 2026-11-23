@@ -98,19 +98,22 @@ func (h *Handler) userOptions(c *gin.Context) {
 	httpx.OK(c, http.StatusOK, out)
 }
 
+type userChange struct {
+	Role        string `json:"role"`
+	IsActive    bool   `json:"isActive"`
+	DisplayName string `json:"displayName"`
+}
+
 // updateUser sets a person's role, name and whether they may sign in. Nobody can
-// change their own role or access, and the last active person who can manage
-// users can't lose that, so nobody is ever locked out.
+// change their own role or access, nobody can give or take away more than they
+// hold, and the last active person who can manage users can't lose that, so
+// nobody is ever locked out.
 func (h *Handler) updateUser(c *gin.Context) {
 	id, ok := httpx.PathID(c)
 	if !ok {
 		return
 	}
-	var in struct {
-		Role        string `json:"role"`
-		IsActive    bool   `json:"isActive"`
-		DisplayName string `json:"displayName"`
-	}
+	var in userChange
 	if !httpx.Bind(c, &in) {
 		return
 	}
@@ -120,44 +123,63 @@ func (h *Handler) updateUser(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	self := auth.Current(c).UserID == id
-	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var oldRole *string
-		var oldActive, couldManage, canManage bool
-		if err := tx.QueryRow(c, "SELECT u.role, u.is_active, u.is_active AND "+auth.HolderSQL("$2")+" FROM users u WHERE u.id = $1::uuid FOR UPDATE",
-			id, auth.UsersManage).Scan(&oldRole, &oldActive, &couldManage); err != nil {
-			return err
-		}
-		if in.Role != "" {
-			if err := tx.QueryRow(c, "SELECT $3 AND (r.full_access OR $2 = ANY(r.permissions)) FROM roles r WHERE r.key = $1",
-				in.Role, auth.UsersManage, in.IsActive).Scan(&canManage); err != nil {
-				return httpx.Validation("role", "Choose a role from the list.")
-			}
-		}
-		if self && (in.Role != deref(oldRole) || in.IsActive != oldActive) {
-			return httpx.NewError(http.StatusConflict, "SELF_CHANGE", "You can't change your own role or access. Ask another administrator.")
-		}
-		if couldManage && !canManage {
-			var others int
-			if err := tx.QueryRow(c, "SELECT count(*) FROM users u WHERE u.is_active AND u.id <> $1::uuid AND "+auth.HolderSQL("$2"),
-				id, auth.UsersManage).Scan(&others); err != nil {
-				return err
-			}
-			if others == 0 {
-				return httpx.NewError(http.StatusConflict, "LAST_ADMIN", "This is the last active person who can manage users. Give someone else that first.")
-			}
-		}
-		if _, err := tx.Exec(c, `UPDATE users SET role = NULLIF($2, ''), is_active = $3, display_name = $4 WHERE id = $1::uuid`,
-			id, in.Role, in.IsActive, in.DisplayName); err != nil {
-			return err
-		}
-		return record(c, tx, "update", "user", id, map[string]any{"role": oldRole, "isActive": oldActive}, in)
-	})
+	err := db.InTx(c, h.conn, func(tx pgx.Tx) error { return applyUserChange(c, tx, id, in) })
 	if err != nil {
 		httpx.Fail(c, db.Friendly(err))
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func applyUserChange(c *gin.Context, tx pgx.Tx, id string, in userChange) error {
+	if err := lockUserManagers(c, tx); err != nil {
+		return err
+	}
+	var oldRole *string
+	var oldActive, couldManage bool
+	if err := tx.QueryRow(c, "SELECT u.role, u.is_active, u.is_active AND "+auth.HolderSQL("$2")+" FROM users u WHERE u.id = $1::uuid FOR UPDATE",
+		id, auth.UsersManage).Scan(&oldRole, &oldActive, &couldManage); err != nil {
+		return err
+	}
+	if changed := in.Role != deref(oldRole) || in.IsActive != oldActive; changed {
+		if err := checkAccessChange(c, tx, id, deref(oldRole), in, couldManage); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(c, `UPDATE users SET role = NULLIF($2, ''), is_active = $3, display_name = $4 WHERE id = $1::uuid`,
+		id, in.Role, in.IsActive, in.DisplayName); err != nil {
+		return err
+	}
+	return record(c, tx, "update", "user", id, map[string]any{"role": oldRole, "isActive": oldActive}, in)
+}
+
+// checkAccessChange runs the rules for a change of role or access.
+func checkAccessChange(c *gin.Context, tx pgx.Tx, id, oldRole string, in userChange, couldManage bool) error {
+	if auth.Current(c).UserID == id {
+		return httpx.NewError(http.StatusConflict, "SELF_CHANGE", "You can't change your own role or access. Ask another administrator.")
+	}
+	canManage := false
+	if in.Role != "" {
+		if err := tx.QueryRow(c, "SELECT $3 AND (r.full_access OR $2 = ANY(r.permissions)) FROM roles r WHERE r.key = $1",
+			in.Role, auth.UsersManage, in.IsActive).Scan(&canManage); err != nil {
+			return httpx.Validation("role", "Choose a role from the list.")
+		}
+	}
+	if err := checkUserGrant(c, tx, oldRole, in.Role); err != nil {
+		return err
+	}
+	if !couldManage || canManage {
+		return nil
+	}
+	var others int
+	if err := tx.QueryRow(c, "SELECT count(*) FROM users u WHERE u.is_active AND u.id <> $1::uuid AND "+auth.HolderSQL("$2"),
+		id, auth.UsersManage).Scan(&others); err != nil {
+		return err
+	}
+	if others == 0 {
+		return httpx.NewError(http.StatusConflict, "LAST_ADMIN", "This is the last active person who can manage users. Give someone else that first.")
+	}
+	return nil
 }
 
 func actorID(c *gin.Context) string { return auth.Current(c).UserID }

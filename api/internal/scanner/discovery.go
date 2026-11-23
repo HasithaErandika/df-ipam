@@ -35,9 +35,14 @@ type sighting struct {
 	ports                             []int
 }
 
+// sweepable limits sweeps to private address space (RFC 1918, and RFC 6598
+// carrier-grade NAT). A floor or server segment typed with a public range is
+// never swept, so the scanner can't be pointed at someone else's network.
+const sweepable = `(network <<= '10.0.0.0/8' OR network <<= '172.16.0.0/12' OR network <<= '192.168.0.0/16' OR network <<= '100.64.0.0/10')`
+
 func (s *Scanner) loadSegments(ctx context.Context, only string) ([]segment, error) {
 	rows, err := s.conn.Query(ctx, `SELECT id::text, name, network::text, kind, COALESCE(host(dhcp_start), ''), COALESCE(host(dhcp_end), ''), COALESCE(host(gateway), ''), check_ports
-		FROM segments WHERE kind NOT IN ('cloud', 'vpn') AND ($1 = '' OR id::text = $1) ORDER BY kind, floor NULLS LAST, name`, only)
+		FROM segments WHERE kind NOT IN ('cloud', 'vpn') AND `+sweepable+` AND ($1 = '' OR id::text = $1) ORDER BY kind, floor NULLS LAST, name`, only)
 	if err != nil {
 		return nil, err
 	}

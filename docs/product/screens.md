@@ -62,4 +62,4 @@ A role is a job and the permissions it grants; each person holds one. People who
 | Requester | See the network, request and reserve, export reports, see network links |
 | Viewer | See the network, export reports, see network links |
 
-People sign in with their **Microsoft** `@dialogfinance.lk` account (Entra ID). A signed-in person with no role sees nothing. Nobody changes their own role or access, and no change may leave nobody active who can manage users. The code checks permissions, never role names. See [authentication.md](../engineering/authentication.md).
+People sign in with their **Microsoft** `@dialogfinance.lk` account (Entra ID). A signed-in person with no role sees nothing. Nobody changes their own role or access, and no change may leave nobody active who can manage users. Nobody hands out more than they hold: someone who manages users but isn't an Administrator can't add a permission they lack to a role, change their own role's permissions, give a role holding more than theirs, or change a person who holds more. The code checks permissions, never role names. See [authentication.md](../engineering/authentication.md).

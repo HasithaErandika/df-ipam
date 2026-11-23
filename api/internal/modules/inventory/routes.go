@@ -48,9 +48,10 @@ func (h *Handler) Register(g *auth.Guard) {
 
 // recheck re-evaluates alerts after a committed change, before the reply, so an
 // approved or registered device stops warning at once instead of after the next
-// scan. The change already stands, so a failure here is only logged.
+// scan. It waits only briefly for an evaluation already running. The change
+// already stands, so a failure here is only logged.
 func (h *Handler) recheck(c *gin.Context) {
-	if err := monitoring.New(h.conn).Evaluate(c); err != nil {
+	if err := monitoring.New(h.conn).Recheck(c); err != nil {
 		slog.ErrorContext(c, "alert re-check after a change failed", "error", err)
 	}
 }

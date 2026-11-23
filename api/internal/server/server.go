@@ -30,6 +30,11 @@ import (
 
 const defaultMaxInFlight = 200
 
+// requestDeadline is under the server's 60 s write timeout and the proxy's 60 s
+// read timeout, so a request that runs too long is rolled back, not committed
+// after the person has already seen an error.
+const requestDeadline = 55 * time.Second
+
 // importPaths take files of up to 5 MB; every other route takes 1 MB. Room is
 // left for the multipart framing around the file.
 var importPaths = map[string]int64{
@@ -71,6 +76,8 @@ type Deps struct {
 // New returns the router and the guard holding every protected route.
 func New(d Deps) (*gin.Engine, *auth.Guard) {
 	r := gin.New()
+	// c.Done() and c.Err() follow the request, so work stops when it is cancelled.
+	r.ContextWithFallback = true
 	proxies := d.TrustedProxies
 	if len(proxies) == 0 {
 		proxies = []string{"127.0.0.1", "::1"}
@@ -80,7 +87,7 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	if inFlight <= 0 {
 		inFlight = defaultMaxInFlight
 	}
-	r.Use(httpx.Correlation(), httpx.Logger(), httpx.Recovery(), httpx.CORS(d.Origins), httpx.SecurityHeaders(),
+	r.Use(httpx.Correlation(), httpx.Logger(), httpx.Recovery(), httpx.Deadline(requestDeadline), httpx.CORS(d.Origins), httpx.SecurityHeaders(),
 		httpx.BodyLimit(1<<20, importPaths), httpx.RateLimit(50, 100), httpx.MaxInFlight(inFlight))
 	r.NoRoute(func(c *gin.Context) { httpx.Fail(c, httpx.ErrNotFound) })
 

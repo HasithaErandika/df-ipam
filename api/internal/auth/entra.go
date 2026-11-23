@@ -151,12 +151,17 @@ func (e *Entra) verify(ctx context.Context, idToken, nonce string) (EntraUser, e
 	if !strings.EqualFold(claim("tid"), e.cfg.TenantID) {
 		return EntraUser{}, ErrEntraTenant
 	}
-	u := EntraUser{ObjectID: claim("oid"), Name: claim("name"), Email: strings.ToLower(claim("email"))}
+	// The sign-in name (UPN) comes first: only a tenant administrator sets it,
+	// while the email claim can be edited and isn't verified by Entra.
+	u := EntraUser{ObjectID: claim("oid"), Name: claim("name"), Email: strings.ToLower(claim("preferred_username"))}
 	if u.Email == "" {
-		u.Email = strings.ToLower(claim("preferred_username"))
+		u.Email = strings.ToLower(claim("email"))
 	}
 	if u.ObjectID == "" {
 		return EntraUser{}, ErrEntraFailed
+	}
+	if guestAccount(t) {
+		return u, ErrEntraDomain
 	}
 	if !AllowedDomain(u.Email, e.cfg.Domains) {
 		return u, ErrEntraDomain
@@ -172,4 +177,12 @@ func AllowedDomain(email string, domains []string) bool {
 		return false
 	}
 	return slices.Contains(domains, strings.ToLower(email[at+1:]))
+}
+
+// guestAccount is true when the token says the person is a guest in the tenant
+// (the optional acct claim is 1). Guests' sign-in names (x_gmail.com#EXT#@…)
+// fail the domain check too; this also covers a guest with a company address.
+func guestAccount(t jwt.Token) bool {
+	var acct float64
+	return t.Get("acct", &acct) == nil && acct != 0
 }

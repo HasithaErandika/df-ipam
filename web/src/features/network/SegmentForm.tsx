@@ -12,7 +12,7 @@ import { listChanges } from '../../lib/changes'
 import type { Segment } from '../../lib/types'
 import { AddressLayout, type NetworkInfo } from '../discovery/SegmentFacts'
 import { cidrIssue, inNetwork, ipToInt, ipv4NetworkInfo, isHostAddress, isIPv4, maxScannable, optionalInt, optionalIPv4, requiredText, text, toInt } from '../../lib/validation'
-import { notSwept } from './segmentList'
+import { isPrivateNetwork, notSwept } from './segmentList'
 
 const schema = z.object({
   name: requiredText('Name', 80),
@@ -136,6 +136,11 @@ export function SegmentForm({ open, segment, onClose }: { open: boolean; segment
                 <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">Potential available</div><div className="text-[13px] font-semibold text-ok">{formatCount(estimatedAvailable)}</div></div>
                 <div className="rounded-md bg-surface-2 px-2.5 py-2"><div className="text-[11px] text-ink-3">DHCP pool</div><div className="text-[13px] font-semibold text-ink">{validPool ? formatCount(ipToInt(poolEnd) - ipToInt(poolStart) + 1) : kind === 'dhcp' ? 'Not set' : 'None'}</div></div>
               </div>
+              {!notSwept(kind) && subnet && !isPrivateNetwork(subnet.network) && (
+                <p role="alert" className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
+                  A public range: discovery only sweeps private networks (10.x, 172.16–31.x, 192.168.x, 100.64–127.x), so this segment is never swept. Use the Cloud type for WAN and provider addresses.
+                </p>
+              )}
               {!notSwept(kind) && subnet && subnet.usableAddresses > maxScannable && (
                 <p role="alert" className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-[12.5px] text-warn">
                   Too large to scan: {formatCount(subnet.usableAddresses)} usable addresses, and discovery sweeps at most {formatCount(maxScannable)} (a /20). Split it into smaller segments, or it is never scanned.

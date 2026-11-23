@@ -104,9 +104,22 @@ func run() error {
 
 	// API_LISTEN_ADDR may list several addresses, for host networking: loopback
 	// for local tools, and the Docker gateway for the web container.
-	var servers []*http.Server
 	errs := make(chan error, 4)
-	for _, addr := range strings.Split(cfg.ListenAddr, ",") {
+	servers := listen(cfg.ListenAddr, router, errs)
+	select {
+	case err := <-errs:
+		stop()
+		return err
+	case <-ctx.Done():
+	}
+	return shutdownAll(servers)
+}
+
+// listen starts one server for each address in the comma-separated list. A
+// server that stops sends its error to errs.
+func listen(list string, router http.Handler, errs chan<- error) []*http.Server {
+	var servers []*http.Server
+	for _, addr := range strings.Split(list, ",") {
 		addr = strings.TrimSpace(addr)
 		if addr == "" {
 			continue
@@ -119,12 +132,12 @@ func run() error {
 			errs <- srv.ListenAndServe()
 		}()
 	}
-	select {
-	case err := <-errs:
-		stop()
-		return err
-	case <-ctx.Done():
-	}
+	return servers
+}
+
+// shutdownAll lets in-flight requests finish, within shutdownWait, and
+// returns the last error any server gave.
+func shutdownAll(servers []*http.Server) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), shutdownWait)
 	defer cancel()
 	var failed error

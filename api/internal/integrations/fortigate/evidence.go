@@ -34,13 +34,7 @@ func normalMAC(mac string) string {
 // splitEvidence merges entries per IP and MAC, preferring a lease's details, and
 // sets aside leases the ARP table doesn't confirm.
 func splitEvidence(entries []Entry) (present, enrich []Entry) {
-	inARP := map[string]bool{}
-	for i := range entries {
-		entries[i].MAC = normalMAC(entries[i].MAC)
-		if entries[i].Source == "arp" {
-			inARP[entries[i].IP+"|"+entries[i].MAC] = true
-		}
-	}
+	inARP := markARP(entries)
 	merged := map[string]Entry{}
 	var order []string
 	for _, e := range entries {
@@ -64,6 +58,19 @@ func splitEvidence(entries []Entry) (present, enrich []Entry) {
 		present = append(present, merged[k])
 	}
 	return present, enrich
+}
+
+// markARP normalises every MAC in place and returns the IP|MAC pairs the ARP
+// table holds.
+func markARP(entries []Entry) map[string]bool {
+	inARP := map[string]bool{}
+	for i := range entries {
+		entries[i].MAC = normalMAC(entries[i].MAC)
+		if entries[i].Source == "arp" {
+			inARP[entries[i].IP+"|"+entries[i].MAC] = true
+		}
+	}
+	return inARP
 }
 
 func savePresent(ctx context.Context, conn db.Conn, entries []Entry) error {
@@ -94,6 +101,8 @@ func savePresent(ctx context.Context, conn db.Conn, entries []Entry) error {
 			AS x(ip, mac, name, vendor, source, private, usr, kind, tunnel, remote)
 		LEFT JOIN segments s ON x.ip::inet << s.network
 		WHERE s.id IS NOT NULL OR x.source = 'vpn'
+		-- Locked in (ip, mac) order, as the scanner does, so the two can't deadlock.
+		ORDER BY x.ip::inet, x.mac
 		ON CONFLICT (ip, mac) DO UPDATE SET segment_id = EXCLUDED.segment_id,
 			hostname = COALESCE(NULLIF(EXCLUDED.hostname, ''), sightings.hostname),
 			vendor = COALESCE(NULLIF(EXCLUDED.vendor, ''), sightings.vendor),

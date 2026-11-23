@@ -10,7 +10,7 @@ A segment is one network: name, type, floor, VLAN, CIDR, gateway and description
 | --- | --- | --- |
 | `dhcp` (a floor or Wi-Fi) | A DHCP pool, and optionally a floor number. An address outside the pool is static | Swept |
 | `server` | A default environment for new entries | Swept |
-| `cloud` | A default environment | Never swept |
+| `cloud` | A default environment | Never swept. The FortiGate's ARP table still reports on it, so WAN hand-offs and provider subnets show what the firewall sees. The type for WAN, provider and VPN tunnel addresses |
 | `vpn` (a VPN client pool) | Nothing more: the addresses the FortiGate gives SSL and IPsec VPN users | Never swept. The FortiGate's VPN sessions show who is connected; addresses are never registered, as they change each session |
 
 Per segment, off by default:
@@ -23,6 +23,8 @@ Per segment, off by default:
 - Networks are IPv4, `/16` to `/32`, written as their network address, and never overlap. A `/31` or `/32` is a point-to-point hand-off or a single address (such as a WAN IP): every address in it is usable, and a `/32` has no gateway or DHCP pool. Text import keeps `/31` and `/32` lines too.
 - The gateway and the DHCP pool use host addresses: never the network or broadcast address. The gateway may sit inside the pool, where the DHCP server leases the whole range and excludes its own address.
 - A segment can't be moved away from the register entries and reservations inside it, and only an empty segment can be deleted.
+- **Only private networks are swept:** 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and 100.64.0.0/10. A floor or server segment with a public range is never swept, and says "Public range: not swept"; use the Cloud type for public addresses.
+- **A segment's DHCP pool and gateway follow the register:** an edit can't move the pool over register entries, nor the gateway onto an entry that isn't network equipment. A segment that network links use can't be deleted until they're changed.
 - **A swept segment with more than 4,096 usable addresses (larger than a /20) is never scanned.** The form warns, and the segment card says "Too large to scan". Split it.
 - **A DHCP network without a pool** can't tell static from DHCP addresses, so nothing on it counts as static and it raises no unregistered-static alerts. Its card says "No DHCP pool set".
 

@@ -34,6 +34,7 @@ The **Link ID** (`DF-LNK-0001`) is given when the link is saved and never change
 | Remarks | Free text (the Notes and files tab) |
 | Attachments | Files chosen in the dialog, each with its kind, uploaded to the link when it is saved. A file that fails is named, and can be added again from the link's page |
 
+- **The WAN subnet can be added from the form.** When the WAN IP's network isn't a segment yet, people with `network:manage` get **Create segment** with that network: a small dialog (name, type, description) that defaults to the **Cloud** type, which is never swept. The new segment is audited like any other and becomes the link's WAN subnet. Others are told to ask; the address is kept on the link meanwhile.
 - **Addresses are typed as the site diagrams write them.** The WAN IP and gateway take an address with its prefix or mask (`10.10.40.253 /24`, `122.255.4.226 255.255.255.248`) and keep the address; the form then picks the segment with that network as the WAN subnet, or says it isn't a segment yet. The public range takes a dotted mask too (`122.255.4.224 255.255.255.248` is `122.255.4.224/29`). Imports accept the same forms.
 - **Connected devices from the scan.** The dialog asks which devices the scan saw in the last 30 days on the link's WAN addresses and gateway. On a new link, the approved ones are added to Connected devices until the person changes the list; on an edit they are offered with **+**. Devices not approved yet are named, to be approved in Devices first. Saving is the decision: the scan never links a device by itself. The link's page shows the connected devices and, separately, what the scan saw on its addresses.
 - **Addresses are IPv4.** Remote subnets are the far side's networks: they may overlap other links' remote subnets and are never counted as local address space.
@@ -61,9 +62,9 @@ Every three hours DF-IPAM checks contract expiry dates against the reminder days
 
 ## Import and export
 
-**Export** gives the links matching the list's filters (or all links) as Excel, CSV or text. Excel adds a **Subnets** sheet (one row per segment or remote subnet) and a **Related links** sheet.
+**Export** gives the links matching the list's filters (or all links) as Excel, CSV or text, up to 20,000 links (more is refused: narrow the filters). Every export is recorded in the audit log. Excel adds a **Subnets** sheet (one row per segment or remote subnet) and a **Related links** sheet.
 
-**Import** reads Excel or CSV, up to 2,000 rows and 5 MB, using the **template**'s headers. Its second sheet lists the accepted values. Link types may be given by name or key, providers by name, officers by email, subnets and segments by network or name (the **Segments** column; older files' **Local Subnets** is read the same way), connected devices by name or MAC separated by `;` (a name that isn't a device is kept as text; older files' **Connected Device** is read too), more WAN IPs as `122.255.35.1/32; 10.0.0.9/24`, related links as `DF-LNK-0002:backup; DF-LNK-0003:underlying`.
+**Import** reads Excel or CSV, up to 2,000 rows and 5 MB, using the **template**'s headers. Its second sheet lists the accepted values. A name that belongs to more than one device or other record is reported for the row, so give the MAC or other unique value. A row may relate to a link added earlier in the same file. Link types may be given by name or key, providers by name, officers by email, subnets and segments by network or name (the **Segments** column; older files' **Local Subnets** is read the same way), connected devices by name or MAC separated by `;` (a name that isn't a device is kept as text; older files' **Connected Device** is read too), more WAN IPs as `122.255.35.1/32; 10.0.0.9/24`, related links as `DF-LNK-0002:backup; DF-LNK-0003:underlying`.
 
 1. **Check the file.** A dry run does everything and keeps nothing, listing each row to add or update and each row skipped, with why.
 2. **Import.** Rows with problems are skipped; the rest go in, each audited.
@@ -95,7 +96,7 @@ Every change is in the audit log in the same transaction: added, changed (each f
 | `links:providers` | Add and edit providers |
 | `links:import_export` | Export, download the template and import |
 
-Change history uses the existing `audit:view`. Starting roles: Network engineer gets all eight; Security auditor gets `links:view` and `links:commercial_view`; IT officer, Requester and Viewer get `links:view`. Administrators have everything.
+`links:commercial_manage` always comes with `links:commercial_view`: a role saved with manage gets view too, since the form can't change costs it can't show. Change history uses the existing `audit:view`. Starting roles: Network engineer gets all eight; Security auditor gets `links:view` and `links:commercial_view`; IT officer, Requester and Viewer get `links:view`. Administrators have everything.
 
 ## The firewall
 

@@ -7,9 +7,24 @@ export const notSwept = (kind: string) => kind === 'cloud' || kind === 'vpn'
 /** A swept segment with more addresses than the scanner sweeps: it is never scanned. */
 export const tooLargeToScan = (s: Segment) => !notSwept(s.kind) && s.usableSize > maxScannable
 
+const privateRanges: [number, number][] = [[0x0a000000, 8], [0xac100000, 12], [0xc0a80000, 16], [0x64400000, 10]]
+
+/** Private address space (RFC 1918 and 100.64/10): the only networks the scanner sweeps. */
+export function isPrivateNetwork(cidr: string): boolean {
+  const [ip] = cidr.split('/')
+  const parts = ip.split('.').map(Number)
+  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) return false
+  const n = ((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]
+  return privateRanges.some(([base, bits]) => (n >>> (32 - bits)) === (base >>> (32 - bits)))
+}
+
+/** A floor or server segment with a public range: never swept. */
+export const publicNotSwept = (s: Pick<Segment, 'kind' | 'network'>) => !notSwept(s.kind) && !isPrivateNetwork(s.network)
+
 /** A segment that needs someone to look at it, with the reason. */
 export function attention(s: Segment): string | null {
   if (tooLargeToScan(s)) return 'Too large to scan; split it'
+  if (publicNotSwept(s)) return 'Public range: not swept'
   if (s.kind === 'dhcp' && !s.dhcpStart) return 'No DHCP pool set'
   if (!s.gateway && !s.detectedGateway && s.kind !== 'vpn') return 'No gateway'
   if (s.openAlerts > 0) return `${s.openAlerts} open alert${s.openAlerts === 1 ? '' : 's'}`

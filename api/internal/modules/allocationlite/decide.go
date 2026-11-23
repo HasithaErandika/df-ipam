@@ -53,41 +53,50 @@ func (h *Handler) decideRequest(c *gin.Context) {
 	}
 	var assigned string
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		var r pendingRequest
-		var status string
-		if err := tx.QueryRow(c, `SELECT to_jsonb(r), requester_id::text, segment_id::text, name, ip_type, host(requested_ip), environment_id::text, status
-			FROM ip_requests r WHERE id = $1::uuid FOR UPDATE`, id).Scan(&r.old, &r.requester, &r.segmentID, &r.name, &r.ipTyp,
-			&r.requestedIP, &r.environmentID, &status); err != nil {
-			return err
-		}
-		if status != "pending" {
-			return errClosed
-		}
-		ipID := ""
-		if in.Status == "approved" {
-			var err error
-			if assigned, ipID, err = h.assign(c, tx, r, in.IP); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Exec(c, `UPDATE ip_requests SET status = $2, decided_by = $3::uuid, decided_at = now(), decision_reason = $4,
-			assigned_ip_id = NULLIF($5, '')::uuid WHERE id = $1::uuid`, id, in.Status, actor(c), in.Reason, ipID); err != nil {
-			return err
-		}
-		if err := auditChange(c, tx, in.Status, "ip_request", id, rawJSON(r.old), map[string]string{"status": in.Status, "reason": in.Reason, "ip": assigned}); err != nil {
-			return err
-		}
-		msg := "Your IP request for " + r.name + " was rejected: " + in.Reason
-		if in.Status == "approved" {
-			msg = "Your IP request for " + r.name + " was approved. Use IP " + assigned + "."
-		}
-		return notify.User(c, tx, r.requester, "request_decision", msg, "/requests", true)
+		var err error
+		assigned, err = h.decide(c, tx, id, in)
+		return err
 	})
 	if err != nil {
 		httpx.Fail(c, friendly(err))
 		return
 	}
 	httpx.OK(c, http.StatusOK, gin.H{"status": in.Status, "ip": assigned})
+}
+
+// decide records the decision on a pending request, assigning the address on
+// approval, and tells the requester. It returns the assigned IP.
+func (h *Handler) decide(c *gin.Context, tx pgx.Tx, id string, in decisionInput) (string, error) {
+	var assigned string
+	var r pendingRequest
+	var status string
+	if err := tx.QueryRow(c, `SELECT to_jsonb(r), requester_id::text, segment_id::text, name, ip_type, host(requested_ip), environment_id::text, status
+		FROM ip_requests r WHERE id = $1::uuid FOR UPDATE`, id).Scan(&r.old, &r.requester, &r.segmentID, &r.name, &r.ipTyp,
+		&r.requestedIP, &r.environmentID, &status); err != nil {
+		return "", err
+	}
+	if status != "pending" {
+		return "", errClosed
+	}
+	ipID := ""
+	if in.Status == "approved" {
+		var err error
+		if assigned, ipID, err = h.assign(c, tx, r, in.IP); err != nil {
+			return "", err
+		}
+	}
+	if _, err := tx.Exec(c, `UPDATE ip_requests SET status = $2, decided_by = $3::uuid, decided_at = now(), decision_reason = $4,
+		assigned_ip_id = NULLIF($5, '')::uuid WHERE id = $1::uuid`, id, in.Status, actor(c), in.Reason, ipID); err != nil {
+		return "", err
+	}
+	if err := auditChange(c, tx, in.Status, "ip_request", id, rawJSON(r.old), map[string]string{"status": in.Status, "reason": in.Reason, "ip": assigned}); err != nil {
+		return "", err
+	}
+	msg := "Your IP request for " + r.name + " was rejected: " + in.Reason
+	if in.Status == "approved" {
+		msg = "Your IP request for " + r.name + " was approved. Use IP " + assigned + "."
+	}
+	return assigned, notify.User(c, tx, r.requester, "request_decision", msg, "/requests", true)
 }
 
 // assign picks the address (chosen, requested, or the Available candidate), checks

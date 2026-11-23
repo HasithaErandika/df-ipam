@@ -47,5 +47,5 @@ func (h *Handler) exportRegister(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
-	sendTable(c, out, format, "ip-register")
+	h.sendTable(c, out, format, "ip-register")
 }

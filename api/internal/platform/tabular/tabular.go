@@ -168,16 +168,7 @@ func Read(name string, r io.Reader, limit int64) ([][]string, error) {
 		cr.LazyQuotes = true
 		return cr.ReadAll()
 	case "xlsx":
-		f, err := excelize.OpenReader(bytes.NewReader(data))
-		if err != nil {
-			return nil, errors.New("the file is not a valid Excel workbook")
-		}
-		defer f.Close()
-		sheets := f.GetSheetList()
-		if len(sheets) == 0 {
-			return nil, errors.New("the workbook has no sheets")
-		}
-		return f.GetRows(sheets[0])
+		return readXLSX(data)
 	}
 	return nil, errors.New("upload a .csv, .txt or .xlsx file")
 }

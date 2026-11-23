@@ -15,11 +15,16 @@ declare module '@tanstack/react-query' {
   }
 }
 
-/** A session that has ended sends the person back to sign in. */
+let ending = false
+
+/** A session that has ended sends the person back to sign in, once: several
+ * requests failing together give one message and one sign-out. */
 function endSession(error: unknown): boolean {
   if (!(error instanceof ApiError) || error.status !== 401) return false
+  if (ending) return true
+  ending = true
   toast.error(errorMessage(error))
-  void signOut().then(() => queryClient.clear())
+  void signOut().then(() => queryClient.clear()).finally(() => { ending = false })
   return true
 }
 

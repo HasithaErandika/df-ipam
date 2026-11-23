@@ -18,3 +18,15 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # Base images are pinned by digest; this keeps them patched.
+  - package-ecosystem: docker
+    directories: [/api, /web]
+    schedule:
+      interval: weekly
+    groups:
+      base-images:
+        patterns: ['*']
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly

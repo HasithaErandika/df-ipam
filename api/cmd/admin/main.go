@@ -38,30 +38,34 @@ func run(email string) error {
 		return err
 	}
 	defer pool.Close()
-	return db.InTx(ctx, pool, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `UPDATE users SET role = 'admin', is_active = true WHERE lower(email) = $1 RETURNING id::text`, email)
+	return db.InTx(ctx, pool, func(tx pgx.Tx) error { return grantAdmin(ctx, tx, email) })
+}
+
+// grantAdmin promotes every account with this email, or adds a pending one
+// when there is none, and audits each.
+func grantAdmin(ctx context.Context, tx pgx.Tx, email string) error {
+	rows, err := tx.Query(ctx, `UPDATE users SET role = 'admin', is_active = true WHERE lower(email) = $1 RETURNING id::text`, email)
+	if err != nil {
+		return err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	action := "grant_admin"
+	if len(ids) == 0 {
+		id, err := auth.AddPendingAdmin(ctx, tx, email)
 		if err != nil {
 			return err
 		}
-		ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
+		ids, action = []string{id}, "create"
+	}
+	for _, id := range ids {
+		if err := audit.Write(ctx, tx, audit.Entry{ActorType: "system", Action: action, ObjectType: "user", ObjectID: id,
+			New: map[string]string{"email": email, "role": "admin", "via": "make admin"}}); err != nil {
 			return err
 		}
-		action := "grant_admin"
-		if len(ids) == 0 {
-			id, err := auth.AddPendingAdmin(ctx, tx, email)
-			if err != nil {
-				return err
-			}
-			ids, action = []string{id}, "create"
-		}
-		for _, id := range ids {
-			if err := audit.Write(ctx, tx, audit.Entry{ActorType: "system", Action: action, ObjectType: "user", ObjectID: id,
-				New: map[string]string{"email": email, "role": "admin", "via": "make admin"}}); err != nil {
-				return err
-			}
-		}
-		fmt.Printf("%s is an Administrator (%s)\n", email, map[string]string{"create": "added; takes effect at first sign-in", "grant_admin": "existing account"}[action])
-		return nil
-	})
+	}
+	fmt.Printf("%s is an Administrator (%s)\n", email, map[string]string{"create": "added; takes effect at first sign-in", "grant_admin": "existing account"}[action])
+	return nil
 }

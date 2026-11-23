@@ -79,12 +79,20 @@ func (h *Handler) addressMap(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	base := toUint(usable.First)
+	counts, runs := summarize(paint(rows, base, size), base)
+	httpx.OK(c, http.StatusOK, gin.H{"usable": size, "mapped": true, "first": usable.First.String(), "counts": counts, "runs": runs,
+		"network": info, "available": free})
+}
+
+// paint gives each address the highest-ranked state any row claims for it.
+// Rows come lowest priority first, so on a tie the later row wins.
+func paint(rows []mapRow, base uint32, size int64) []string {
 	states := make([]string, size)
 	for i := range states {
 		states[i] = stAvailable
 	}
 	rank := map[string]int{stAvailable: 0, stDHCPFree: 1, stDHCPUsed: 2, stSeen: 3, stHeld: 4, stGateway: 5, stBlocked: 6, stReserved: 6, stAssigned: 6}
-	base := toUint(usable.First)
 	for _, r := range rows {
 		a, e1 := netip.ParseAddr(r.A)
 		b, e2 := netip.ParseAddr(r.B)
@@ -97,6 +105,11 @@ func (h *Handler) addressMap(c *gin.Context) {
 			}
 		}
 	}
+	return states
+}
+
+// summarize counts the states and joins neighbours with the same state into runs.
+func summarize(states []string, base uint32) (map[string]int, []run) {
 	counts := map[string]int{}
 	var runs []run
 	for i, st := range states {
@@ -108,8 +121,7 @@ func (h *Handler) addressMap(c *gin.Context) {
 		}
 		runs = append(runs, run{Start: ip, End: ip, State: st, Count: 1})
 	}
-	httpx.OK(c, http.StatusOK, gin.H{"usable": size, "mapped": true, "first": usable.First.String(), "counts": counts, "runs": runs,
-		"network": info, "available": free})
+	return counts, runs
 }
 
 func toUint(a netip.Addr) uint32 {

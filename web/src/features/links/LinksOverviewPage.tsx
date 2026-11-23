@@ -71,7 +71,7 @@ export function LinksOverviewPage() {
         <Stat label="Inactive or terminated" value={d.totals.inactive} hint={d.totals.pending ? `${d.totals.pending} pending` : undefined} />
         <Stat label="VPN tunnels" value={d.totals.vpn} onClick={() => navigate('/network-links/all?vpn=true')} />
         {money && <Stat label="Monthly recurring cost" value={<span className="text-[15px]"><Money d={d} /></span>}
-          hint={d.monthlyCombinedLkr != null ? `About ${formatMoney(d.monthlyCombinedLkr)} at the set USD rate` : 'Terminated links and links with no separate cost are left out.'} />}
+          hint={d.monthlyCombinedLkr != null ? combinedHint(d) : 'Terminated links and links with no separate cost are left out.'} />}
         {money && <Stat label="Contracts ending in 90 days" value={d.totals.expiring} tone={d.totals.expiring ? 'warn' : undefined} onClick={() => navigate('/network-links/renewals')} />}
       </div>
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
@@ -99,4 +99,12 @@ export function LinksOverviewPage() {
       </div>
     </>
   )
+}
+
+// combinedHint gives the approximate rupee total, naming any currency it can't
+// convert (only USD has a rate) so the total isn't mistaken for everything.
+function combinedHint(d: LinkDashboard): string {
+  const other = (d.monthlyByCurrency ?? []).filter((r) => r.currency !== 'LKR' && r.currency !== 'USD' && r.amount > 0).map((r) => r.currency)
+  const base = `About ${formatMoney(d.monthlyCombinedLkr ?? 0)} at the set USD rate`
+  return other.length ? `${base}, not counting ${other.join(', ')}` : base
 }

@@ -42,10 +42,18 @@ func parseModel(packet []byte) string {
 		if err != nil {
 			return ""
 		}
-		for _, kv := range r.TXT {
-			if v, ok := strings.CutPrefix(kv, "model="); ok {
-				return clip(v)
-			}
+		if v, ok := txtModel(r.TXT); ok {
+			return v
 		}
 	}
+}
+
+// txtModel finds the model= entry in one TXT record.
+func txtModel(txt []string) (string, bool) {
+	for _, kv := range txt {
+		if v, ok := strings.CutPrefix(kv, "model="); ok {
+			return clip(v), true
+		}
+	}
+	return "", false
 }

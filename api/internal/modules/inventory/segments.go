@@ -121,6 +121,9 @@ func (h *Handler) saveSegment(c *gin.Context, id string) {
 		if err != nil {
 			return err
 		}
+		if err := segmentConflicts(c, tx, id, in); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(c, `UPDATE segments SET name = $1, kind = $2, floor = $3, vlan = $4, network = $5::cidr, gateway = NULLIF($6, '')::inet,
 			dhcp_start = NULLIF($7, '')::inet, dhcp_end = NULLIF($8, '')::inet, default_environment_id = NULLIF($9, '')::uuid,
 			description = $10, updated_by = $11::uuid, alert_private_macs = $12, check_ports = $13 WHERE id = $14::uuid`, append(args, id)...); err != nil {
@@ -146,14 +149,8 @@ func (h *Handler) deleteSegment(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		var used bool
-		if err := tx.QueryRow(c, `SELECT EXISTS (SELECT 1 FROM ip_addresses WHERE segment_id = $1::uuid)
-			OR EXISTS (SELECT 1 FROM reservations WHERE segment_id = $1::uuid)
-			OR EXISTS (SELECT 1 FROM ip_requests WHERE segment_id = $1::uuid)`, id).Scan(&used); err != nil {
+		if err := segmentUsedBy(c, tx, id); err != nil {
 			return err
-		}
-		if used {
-			return httpx.NewError(http.StatusConflict, "SEGMENT_IN_USE", "This segment still has register entries, reservations or requests. Remove them first.")
 		}
 		if _, err := tx.Exec(c, "DELETE FROM segments WHERE id = $1::uuid", id); err != nil {
 			return err

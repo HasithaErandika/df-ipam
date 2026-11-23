@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"dfipam/api/internal/audit"
 	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
@@ -63,6 +64,10 @@ func (h *Handler) export(c *gin.Context) {
 		httpx.Fail(c, err)
 		return
 	}
+	if err := audit.Export(c, h.conn, actor(c), "network_links", format, c.Request.URL.Query()); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
 	name := "network-links-" + time.Now().Format("2006-01-02") + "." + format
 	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
 	c.Data(http.StatusOK, tabular.Formats[format], data)
@@ -71,9 +76,12 @@ func (h *Handler) export(c *gin.Context) {
 // ioRows loads the matching links with their local subnets and related links,
 // three queries in all.
 func ioRows(ctx context.Context, conn db.Conn, w db.Where, s Settings) ([]*ioRow, error) {
-	links, err := db.All[linkDTO](ctx, conn, linkColumns+linkFrom+w.SQL()+fmt.Sprintf(" ORDER BY l.code LIMIT %d", maxExport), w.Args...)
+	links, err := db.All[linkDTO](ctx, conn, linkColumns+linkFrom+w.SQL()+fmt.Sprintf(" ORDER BY l.code LIMIT %d", maxExport+1), w.Args...)
 	if err != nil {
 		return nil, err
+	}
+	if len(links) > maxExport { // a file cut short without saying so would mislead
+		return nil, httpx.Validation("filters", fmt.Sprintf("More than %d links match. Narrow the filters and export again.", maxExport))
 	}
 	rows, byID, ids := make([]*ioRow, len(links)), map[string]*ioRow{}, make([]string, len(links))
 	for i := range links {

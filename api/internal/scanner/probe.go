@@ -59,22 +59,28 @@ func (p *pinger) read() {
 			}
 			continue
 		}
-		msg, err := icmp.ParseMessage(1, buf[:n])
-		if err != nil || msg.Type != ipv4.ICMPTypeEchoReply {
-			continue
-		}
-		echo, ok := msg.Body.(*icmp.Echo)
-		if !ok || (p.raw && echo.ID != p.id) {
-			continue
-		}
-		p.mu.Lock()
-		w, found := p.waiting[uint16(echo.Seq)]
-		p.mu.Unlock()
-		if found && peerIs(peer, w.ip) {
-			select {
-			case w.reply <- ttl:
-			default:
-			}
+		p.deliver(buf[:n], ttl, peer)
+	}
+}
+
+// deliver passes an echo reply's TTL to the ping waiting for it, if any. A raw
+// socket sees every process's replies, so it also checks the echo ID.
+func (p *pinger) deliver(packet []byte, ttl int, peer net.Addr) {
+	msg, err := icmp.ParseMessage(1, packet)
+	if err != nil || msg.Type != ipv4.ICMPTypeEchoReply {
+		return
+	}
+	echo, ok := msg.Body.(*icmp.Echo)
+	if !ok || (p.raw && echo.ID != p.id) {
+		return
+	}
+	p.mu.Lock()
+	w, found := p.waiting[uint16(echo.Seq)]
+	p.mu.Unlock()
+	if found && peerIs(peer, w.ip) {
+		select {
+		case w.reply <- ttl:
+		default:
 		}
 	}
 }

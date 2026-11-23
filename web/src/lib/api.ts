@@ -125,8 +125,11 @@ export async function download(path: string, fallbackName: string): Promise<void
   const link = document.createElement('a')
   link.href = url
   link.download = name
+  document.body.appendChild(link)
   link.click()
-  URL.revokeObjectURL(url)
+  link.remove()
+  // Revoking at once can cancel the download in some browsers: let it start first.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export async function upload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
@@ -134,17 +137,6 @@ export async function upload<T>(path: string, file: File, fields: Record<string,
   for (const [k, v] of Object.entries(fields)) form.append(k, v)
   form.append('file', file)
   const res = await send(path, { method: 'POST', body: form })
-  return (await res.json()).data
-}
-
-/** PATCH for records without a version, such as reference data. */
-export async function patchPlain<T>(path: string, body: unknown): Promise<T> {
-  const res = await send(path, { method: 'PATCH', body: JSON.stringify(body) })
-  return (await res.json()).data
-}
-
-export async function patch<T>(path: string, body: unknown, version: number): Promise<T> {
-  const res = await send(path, { method: 'PATCH', body: JSON.stringify(body), headers: { 'If-Match': String(version) } })
   return (await res.json()).data
 }
 

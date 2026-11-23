@@ -14,7 +14,7 @@ COMPOSE := docker compose
 .PHONY: help setup env-check dev backend web apache-up apache-web \
         docker-build docker-up docker-down docker-restart docker-logs docker-ps docker-migrate \
         db-up db-down db-shell db-reset db-backup admin \
-        migrate-up migrate-down migrate-version seed db-setup \
+        migrate-up migrate-down migrate-version seed db-setup lint-size \
         build build-api build-web test test-api test-db test-web lint lint-api lint-web vuln fmt clean
 
 help: ## List available commands
@@ -135,9 +135,19 @@ test-web: ## Run web tests
 
 lint: lint-api lint-web ## Run all linters
 
-lint-api: ## Check Go formatting and run go vet
+lint-api: ## Check Go formatting, run go vet, and the size and complexity rules
 	@cd api && test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
 	cd api && go vet ./...
+	@$(MAKE) --no-print-directory lint-size
+
+# CLAUDE.md: files under 200 lines, functions at cognitive complexity 15 or less.
+# Tests are left out: a table of cases reads better whole.
+lint-size: ## Check the 200-line file and complexity-15 function rules
+	@long="$$(find api web/src \( -name '*.go' -o -name '*.ts' -o -name '*.tsx' \) ! -name '*_test.go' ! -name '*.test.ts' ! -name '*.test.tsx' \
+		! -path '*/node_modules/*' -exec awk 'END { if (NR > 200) print NR, FILENAME }' {} \;)"; \
+		if [ -n "$$long" ]; then echo "Files over 200 lines:"; echo "$$long"; exit 1; fi
+	@complex="$$(cd api && go run github.com/uudashr/gocognit/cmd/gocognit@v1.2.0 -over 15 -ignore '_test.go' . 2>&1 || true)"; \
+		if [ -n "$$complex" ]; then echo "Functions over cognitive complexity 15:"; echo "$$complex"; exit 1; fi
 
 lint-web: ## Type-check the web app
 	cd web && pnpm lint

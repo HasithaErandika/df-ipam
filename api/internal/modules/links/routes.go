@@ -65,6 +65,13 @@ func actor(c *gin.Context) string { return auth.Current(c).UserID }
 
 func can(c *gin.Context, permission string) bool { return auth.Current(c).Has(permission) }
 
+// commercialWriter says whether a save may change commercial fields. It needs
+// view as well as manage: without view the person is sent the fields blank, and
+// saving them back would wipe the link's costs and contract dates.
+func commercialWriter(c *gin.Context) bool {
+	return can(c, auth.LinksCommercialManage) && can(c, auth.LinksCommercialView)
+}
+
 func record(c *gin.Context, tx pgx.Tx, action, kind, id string, old, new any) error {
 	return audit.Write(c, tx, audit.Entry{ActorID: actor(c), Action: action, ObjectType: kind, ObjectID: id, Old: old, New: new})
 }

@@ -1,8 +1,11 @@
+import { Plus } from 'lucide-react'
 import { useState } from 'react'
-import { Field, Input, MultiSearchSelect, SearchSelect } from '../../components/ui'
+import { Button, Field, Input, MultiSearchSelect, SearchSelect } from '../../components/ui'
+import { useCan } from '../../lib/session'
 import type { LinkOptions } from '../../lib/types'
 import { inNetwork, networkOf, splitAddress } from '../../lib/validation'
 import type { SectionProps } from './formParts'
+import { NewSegmentDialog } from './NewSegmentDialog'
 
 /** The register segment for an address: the exact network when a prefix is given, else the one holding it. */
 export function segmentFor(segments: LinkOptions['segments'], ip: string, bits: number | null) {
@@ -21,18 +24,32 @@ const opts = (list: LinkOptions['segments'] = []) => list.map((o) => ({ value: o
 export function WanFields({ p, options }: { p: SectionProps; options?: LinkOptions }) {
   const { f, set, errors } = p
   const [note, setNote] = useState('')
+  const [missing, setMissing] = useState('') // the typed address's network, when it isn't a segment
+  const [creating, setCreating] = useState(false)
+  const canAdd = useCan('network:manage')
   const segments = options?.segments ?? []
   const chosen = segments.find((s) => s.id === f.wanSegmentId)
   const ips = (options?.registerIps ?? []).filter((o) => !chosen || o.detail === chosen.id)
   const outside = (ip: string) => (chosen && !inNetwork(ip, chosen.detail) ? `${ip} isn't in ${chosen.label} (${chosen.detail}). Check the address or the subnet.` : '')
   const tidy = () => {
     const a = splitAddress(f.wanIp)
+    setMissing('')
     if (!a) { setNote(''); return }
     set('wanIp', a.ip)
     if (chosen) { setNote(outside(a.ip)); return }
     const seg = segmentFor(segments, a.ip, a.bits)
-    if (seg) { set('wanSegmentId', seg.id); setNote(`WAN subnet set to ${seg.label} (${seg.detail}).`) }
-    else setNote(a.bits != null ? `${networkOf(a.ip, a.bits)} isn't a segment yet. Add it in Network setup > Segments (a /32 works for one address), then choose it as the WAN subnet.` : '')
+    if (seg) { set('wanSegmentId', seg.id); setNote(`WAN subnet set to ${seg.label} (${seg.detail}).`); return }
+    if (a.bits == null) { setNote(''); return }
+    const net = networkOf(a.ip, a.bits)
+    setMissing(net)
+    setNote(canAdd ? `${net} isn't a segment yet. Add it here, or choose another WAN subnet.`
+      : `${net} isn't a segment yet. Ask someone who manages the network to add it (a /32 works for one address); the address is saved on the link meanwhile.`)
+  }
+  const created = (id: string, name: string) => {
+    set('wanSegmentId', id)
+    setNote(`WAN subnet set to ${name} (${missing}).`)
+    setMissing('')
+    setCreating(false)
   }
   const pick = (id: string) => {
     set('wanSegmentId', id)
@@ -50,6 +67,12 @@ export function WanFields({ p, options }: { p: SectionProps; options?: LinkOptio
         <Input id="link-wanIp" className="font-mono" list="link-register-ips" placeholder={chosen ? chosen.detail.replace(/\/\d+$/, '') : '10.10.40.253 /24'} value={f.wanIp}
           onChange={(e) => set('wanIp', e.target.value)} onBlur={tidy} />
       </Field>
+      {canAdd && missing && !chosen && (
+        <div className="sm:col-span-2 lg:col-span-3 -mt-1">
+          <Button onClick={() => setCreating(true)}><Plus size={14} aria-hidden /> Create segment {missing}</Button>
+        </div>
+      )}
+      {creating && <NewSegmentDialog network={missing} suggestedName={f.name ? `${f.name} WAN` : missing} onClose={() => setCreating(false)} onCreated={created} />}
       <datalist id="link-register-ips">{ips.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</datalist>
     </>
   )

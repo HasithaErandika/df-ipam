@@ -10,7 +10,8 @@ x-backend: &backend
   build:
     context: ./api
   read_only: true
-  tmpfs: [/tmp]
+  # /tmp lives in memory: capped so a large upload can't fill it.
+  tmpfs: ['/tmp:size=128m']
   cap_drop: [ALL]
   security_opt: ['no-new-privileges:true']
 
@@ -38,7 +39,7 @@ x-backend-env: &backend-env
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-dfipam}
@@ -71,6 +72,8 @@ services:
     command: [/app/server]
     cap_add: [NET_RAW]
     restart: unless-stopped
+    # A ceiling, so one heavy request restarts the API instead of starving the host.
+    mem_limit: ${BACKEND_MEM_LIMIT:-1g}
     environment:
       <<: *backend-env
       API_LISTEN_ADDR: 0.0.0.0:8080

@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
@@ -48,7 +47,7 @@ func (h *Handler) save(c *gin.Context, id string) {
 		httpx.Fail(c, err)
 		return
 	}
-	money := can(c, auth.LinksCommercialManage)
+	money := commercialWriter(c)
 	err = db.InTx(c, h.conn, func(tx pgx.Tx) error {
 		var err error
 		id, err = writeLink(c, tx, &in, id, settings, money)
@@ -67,22 +66,9 @@ func (h *Handler) save(c *gin.Context, id string) {
 
 // writeLink stores one link inside tx; the import uses it too.
 func writeLink(c *gin.Context, tx pgx.Tx, in *linkInput, id string, s Settings, money bool) (string, error) {
-	var was current
-	var old json.RawMessage
-	if id != "" {
-		raw, err := lockLink(c, tx, id)
-		if err != nil {
-			return id, err
-		}
-		old = raw
-		if err := tx.QueryRow(c, `SELECT link_type, source_site, COALESCE(provider_id::text, ''), COALESCE(officer_id::text, ''),
-			COALESCE(contract_end::text, ''), archived_at IS NOT NULL, device_ids::text[] FROM network_links WHERE id = $1::uuid`, id).
-			Scan(&was.Type, &was.Site, &was.ProviderID, &was.OfficerID, &was.ContractEnd, &was.Archived, &was.DeviceIDs); err != nil {
-			return id, err
-		}
-		if was.Archived {
-			return id, httpx.NewError(http.StatusConflict, "LINK_ARCHIVED", "This link is archived. Restore it before editing.")
-		}
+	was, old, err := loadCurrent(c, tx, id)
+	if err != nil {
+		return id, err
 	}
 	if err := checkChoices(c, tx, in, was, s); err != nil {
 		return id, err
@@ -94,16 +80,8 @@ func writeLink(c *gin.Context, tx pgx.Tx, in *linkInput, id string, s Settings, 
 	if money {
 		cols = append(cols, in.commercialCols()...)
 	}
-	if id == "" {
-		q, args := insertSQL(cols, col{"created_by", "uuid", actor(c)})
-		if err := tx.QueryRow(c, q, args...).Scan(&id); err != nil {
-			return id, err
-		}
-	} else {
-		q, args := updateSQL(cols, id)
-		if _, err := tx.Exec(c, q, args...); err != nil {
-			return id, err
-		}
+	if id, err = storeLink(c, tx, cols, id); err != nil {
+		return id, err
 	}
 	if err := saveRelations(c, tx, id, in); err != nil {
 		return id, err

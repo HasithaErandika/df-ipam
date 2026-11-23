@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"dfipam/api/internal/auth"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
 
@@ -126,7 +125,7 @@ func (r *importRun) row(tx pgx.Tx, line int, rec []string) {
 	}
 	t, _ := r.s.typeOf(in.Type)
 	if err = in.validate(t.VPN); err == nil {
-		id, err = writeLink(r.c, sp, in, id, r.s, can(r.c, auth.LinksCommercialManage))
+		id, err = writeLink(r.c, sp, in, id, r.s, commercialWriter(r.c))
 	}
 	if err != nil {
 		_ = sp.Rollback(r.c)
@@ -145,6 +144,9 @@ func (r *importRun) count(tx pgx.Tx, line int, id, name, action string) {
 	code := "New"
 	if action == "update" || !r.res.DryRun {
 		_ = tx.QueryRow(r.c, `SELECT code FROM network_links WHERE id = $1::uuid`, id).Scan(&code)
+	}
+	if action == "add" && code != "New" {
+		r.x.ids["links"][strings.ToLower(code)] = id // later rows may relate to it
 	}
 	if action == "add" {
 		r.res.Added++

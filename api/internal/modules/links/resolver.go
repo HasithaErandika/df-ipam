@@ -12,6 +12,7 @@ import (
 // subnets, device names, link IDs) into ids, noting any it can't find.
 type resolver struct {
 	ids      map[string]map[string]string
+	shared   map[string]map[string]bool // names held by more than one record
 	settings Settings
 	issues   []string
 }
@@ -25,33 +26,51 @@ var resolverQueries = map[string]string{
 	"links":   `SELECT lower(code), id::text FROM network_links`,
 }
 
+var uniqueBy = map[string]string{"providers": "exact name", "officers": "email", "segments": "network", "devices": "MAC address", "links": "link ID"}
+
 var resolverLabels = map[string]string{"providers": "provider", "officers": "active user", "segments": "subnet", "devices": "device", "links": "link ID"}
 
 func newResolver(ctx context.Context, conn db.Conn, s Settings) (*resolver, error) {
-	x := &resolver{ids: map[string]map[string]string{}, settings: s}
+	x := &resolver{ids: map[string]map[string]string{}, shared: map[string]map[string]bool{}, settings: s}
 	for kind, q := range resolverQueries {
-		rows, err := conn.Query(ctx, q)
-		if err != nil {
+		if err := x.load(ctx, conn, kind, q); err != nil {
 			return nil, err
 		}
-		m := map[string]string{}
-		for rows.Next() {
-			var k, v string
-			if err := rows.Scan(&k, &v); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			m[k] = v
-		}
-		rows.Close()
-		x.ids[kind] = m
 	}
 	return x, nil
+}
+
+// load reads one kind's names. A name two records share (two devices called
+// "Firewall") is marked, so the import asks for something unique instead of
+// picking one.
+func (x *resolver) load(ctx context.Context, conn db.Conn, kind, q string) error {
+	rows, err := conn.Query(ctx, q)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	m, shared := map[string]string{}, map[string]bool{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return err
+		}
+		if old, ok := m[k]; ok && old != v {
+			shared[k] = true
+		}
+		m[k] = v
+	}
+	x.ids[kind], x.shared[kind] = m, shared
+	return rows.Err()
 }
 
 // find returns the id for a name, or "" (noting it) when there is none.
 func (x *resolver) find(kind, name string) string {
 	if name = strings.TrimSpace(name); name == "" {
+		return ""
+	}
+	if x.shared[kind][strings.ToLower(name)] {
+		x.issues = append(x.issues, "More than one "+resolverLabels[kind]+" is called "+name+": give its "+uniqueBy[kind]+" instead.")
 		return ""
 	}
 	if id, ok := x.ids[kind][strings.ToLower(name)]; ok {

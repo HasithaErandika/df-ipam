@@ -131,36 +131,45 @@ func (h *Handler) createReservation(c *gin.Context) {
 	}
 	var id string
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(c, "SELECT 1 FROM segments WHERE id = $1::uuid FOR UPDATE", in.SegmentID); err != nil {
-			return err
-		}
-		var busy bool
-		if err := tx.QueryRow(c, `SELECT EXISTS (SELECT 1 FROM reservations WHERE status = 'active' AND start_ip <= $2::inet AND end_ip >= $1::inet)
-			OR EXISTS (SELECT 1 FROM ip_addresses WHERE ip BETWEEN $1::inet AND $2::inet)
-			OR EXISTS (SELECT 1 FROM sightings v WHERE v.ip BETWEEN $1::inet AND $2::inet AND `+ipam.InUse+`)`,
-			in.StartIP, in.EndIP).Scan(&busy); err != nil {
-			return err
-		}
-		var issue *string
-		if err := tx.QueryRow(c, ipam.RangeIssueSQL, in.StartIP, in.EndIP, in.SegmentID).Scan(&issue); err != nil {
-			return err
-		}
-		if issue != nil {
-			return httpx.Validation("startIp", *issue)
-		}
-		if busy {
-			return httpx.NewError(http.StatusConflict, "RANGE_IN_USE", "The range includes an address that is registered, reserved, or seen in use recently (in the last 30 days outside the DHCP pool, or 24 hours inside it).")
-		}
-		if err := tx.QueryRow(c, `INSERT INTO reservations (segment_id, start_ip, end_ip, reason, owner_id, owner_name, expires_at, created_by, updated_by)
-			VALUES ($1::uuid, $2::inet, $3::inet, $4, $5::uuid, $6, NULLIF($7, '')::date + interval '1 day', $8::uuid, $8::uuid) RETURNING id::text`,
-			in.SegmentID, in.StartIP, in.EndIP, in.Reason, in.OwnerID, in.OwnerName, in.ExpiresOn, p.UserID).Scan(&id); err != nil {
-			return err
-		}
-		return auditChange(c, tx, "reserve", "reservation", id, nil, in)
+		var err error
+		id, err = reserve(c, tx, in, p.UserID)
+		return err
 	})
 	if err != nil {
 		httpx.Fail(c, friendly(err))
 		return
 	}
 	httpx.OK(c, http.StatusCreated, gin.H{"id": id, "status": "active"})
+}
+
+// reserve checks the range is free, under a lock on its segment, then holds it
+// and audits the hold. It returns the new reservation's ID.
+func reserve(c *gin.Context, tx pgx.Tx, in reserveInput, userID string) (string, error) {
+	var id string
+	if _, err := tx.Exec(c, "SELECT 1 FROM segments WHERE id = $1::uuid FOR UPDATE", in.SegmentID); err != nil {
+		return "", err
+	}
+	var busy bool
+	if err := tx.QueryRow(c, `SELECT EXISTS (SELECT 1 FROM reservations WHERE status = 'active' AND start_ip <= $2::inet AND end_ip >= $1::inet)
+		OR EXISTS (SELECT 1 FROM ip_addresses WHERE ip BETWEEN $1::inet AND $2::inet)
+		OR EXISTS (SELECT 1 FROM sightings v WHERE v.ip BETWEEN $1::inet AND $2::inet AND `+ipam.InUse+`)`,
+		in.StartIP, in.EndIP).Scan(&busy); err != nil {
+		return "", err
+	}
+	var issue *string
+	if err := tx.QueryRow(c, ipam.RangeIssueSQL, in.StartIP, in.EndIP, in.SegmentID).Scan(&issue); err != nil {
+		return "", err
+	}
+	if issue != nil {
+		return "", httpx.Validation("startIp", *issue)
+	}
+	if busy {
+		return "", httpx.NewError(http.StatusConflict, "RANGE_IN_USE", "The range includes an address that is registered, reserved, or seen in use recently (in the last 30 days outside the DHCP pool, or 24 hours inside it).")
+	}
+	if err := tx.QueryRow(c, `INSERT INTO reservations (segment_id, start_ip, end_ip, reason, owner_id, owner_name, expires_at, created_by, updated_by)
+		VALUES ($1::uuid, $2::inet, $3::inet, $4, $5::uuid, $6, NULLIF($7, '')::date + interval '1 day', $8::uuid, $8::uuid) RETURNING id::text`,
+		in.SegmentID, in.StartIP, in.EndIP, in.Reason, in.OwnerID, in.OwnerName, in.ExpiresOn, userID).Scan(&id); err != nil {
+		return "", err
+	}
+	return id, auditChange(c, tx, "reserve", "reservation", id, nil, in)
 }

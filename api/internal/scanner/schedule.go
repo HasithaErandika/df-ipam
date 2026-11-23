@@ -95,11 +95,12 @@ func (s *Scanner) dueKinds(ctx context.Context, last map[string]time.Time) ([]st
 	return due, wait
 }
 
-// lastSweeps reads when each kind of segment last answered a sweep.
+// lastSweeps reads when each kind of segment last finished a sweep. Sightings
+// can't tell: the FortiGate reader writes ARP rows too.
 func (s *Scanner) lastSweeps(ctx context.Context) map[string]time.Time {
 	out := map[string]time.Time{}
-	rows, err := s.conn.Query(ctx, `SELECT sg.kind, max(si.last_seen) FROM sightings si JOIN segments sg ON sg.id = si.segment_id
-		WHERE si.source IN ('ping', 'arp', 'netbios') GROUP BY sg.kind`)
+	rows, err := s.conn.Query(ctx, `SELECT kind, max(last_swept_at) FROM segments
+		WHERE last_swept_at IS NOT NULL GROUP BY kind`)
 	if err != nil {
 		return out
 	}

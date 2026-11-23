@@ -99,16 +99,14 @@ func (h *Handler) settings(c *gin.Context) {
 	httpx.OK(c, http.StatusOK, out)
 }
 
-// updateSettings saves the fields sent, each checked against its limits.
-func (h *Handler) updateSettings(c *gin.Context) {
-	var in struct {
-		Values       map[string]int  `json:"values"`
-		Switches     map[string]bool `json:"switches"`
-		EmailEnabled *bool           `json:"emailEnabled"`
-	}
-	if !httpx.Bind(c, &in) {
-		return
-	}
+type settingsInput struct {
+	Values       map[string]int  `json:"values"`
+	Switches     map[string]bool `json:"switches"`
+	EmailEnabled *bool           `json:"emailEnabled"`
+}
+
+// changes checks each field sent and returns them as setting keys and values.
+func (in settingsInput) changes() (map[string]string, error) {
 	var v validate.V
 	changes := map[string]string{}
 	for _, n := range numbers {
@@ -130,11 +128,23 @@ func (h *Handler) updateSettings(c *gin.Context) {
 		changes[emailKey] = strconv.FormatBool(*in.EmailEnabled)
 	}
 	if err := v.Err(); err != nil {
-		httpx.Fail(c, err)
-		return
+		return nil, err
 	}
 	if len(changes) == 0 {
-		httpx.Fail(c, httpx.Validation("values", "Change at least one setting."))
+		return nil, httpx.Validation("values", "Change at least one setting.")
+	}
+	return changes, nil
+}
+
+// updateSettings saves the fields sent, each checked against its limits.
+func (h *Handler) updateSettings(c *gin.Context) {
+	var in settingsInput
+	if !httpx.Bind(c, &in) {
+		return
+	}
+	changes, err := in.changes()
+	if err != nil {
+		httpx.Fail(c, err)
 		return
 	}
 	before, err := h.read(c)

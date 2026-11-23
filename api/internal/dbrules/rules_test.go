@@ -81,6 +81,7 @@ func TestAppRoleGrants(t *testing.T) {
 		{"users", "UPDATE", true}, {"users", "DELETE", false},
 		{"ip_requests", "DELETE", false}, {"reservations", "DELETE", false},
 		{"ip_addresses", "DELETE", true}, {"sightings", "UPDATE", true},
+		{"devices", "DELETE", false},
 	} {
 		var got bool
 		e.row(&got, `SELECT has_table_privilege('dfipam_app', $1, $2)`, c.table, c.privilege)

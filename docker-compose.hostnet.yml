@@ -14,7 +14,9 @@ services:
     environment:
       API_LISTEN_ADDR: 127.0.0.1:${API_PORT:-8080},${DOCKER_GATEWAY:-172.30.0.1}:${API_PORT:-8080}
       DATABASE_URL: postgres://dfipam_app:${DFIPAM_APP_PASSWORD:?use make, or set it in api/.env}@127.0.0.1:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-dfipam}?sslmode=disable
-      TRUSTED_PROXIES: ${WEB_ADDRESS:-172.30.0.10},127.0.0.1
+      # Only the web container. Not 127.0.0.1: on the host network any local process
+      # could connect there and set its own client address.
+      TRUSTED_PROXIES: ${WEB_ADDRESS:-172.30.0.10}
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, 'http://127.0.0.1:${API_PORT:-8080}/ready']
 

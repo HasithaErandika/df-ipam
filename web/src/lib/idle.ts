@@ -74,6 +74,7 @@ export function useIdleTimeout(minutes: number, onTimeout: () => void, paused = 
       }
       const idle = Date.now() - Math.max(last.current, read())
       if (idle >= limit) {
+        window.clearInterval(timer) // sign out once, not every second until the page changes
         setReason(minutes)
         onTimeout()
         return

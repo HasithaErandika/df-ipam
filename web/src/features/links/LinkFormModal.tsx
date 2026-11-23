@@ -34,8 +34,9 @@ export function LinkFormModal({ open, detail, onClose, onSaved }: { open: boolea
 function FormDialog({ title, detail, settings, onClose, onSaved }: { title: string; detail?: LinkDetail; settings: LinkSettings; onClose: () => void; onSaved: (id: string) => void }) {
   const providers = useProviders()
   const options = useLinkOptions()
-  const canManage = useCan('links:commercial_manage')
   const canView = useCan('links:commercial_view')
+  // Changing costs needs seeing them: without view the fields arrive blank.
+  const canManage = useCan('links:commercial_manage') && canView
   const confirmSave = useConfirmSave()
   const refresh = useInvalidate(...linkKeys)
   const [start] = useState<LinkForm>(() => (detail ? fromDetail(detail) : emptyLink(settings.sites.length === 1 ? settings.sites[0] : '')))

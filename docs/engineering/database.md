@@ -93,5 +93,6 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On ano
 | 000024 | Index on open alerts by MAC, for the Devices list |
 | 000023 | Network Links: the five `network_link*` tables, the `links.*` settings (types, sites, reminder days, USD rate), and the `links:*` permissions for the starting roles |
 | 000027 | `network_links.extra_wan_ips` (more WAN addresses) and `device_ids` (several connected devices), replacing `device_id` |
+| 000028 | `segments.last_swept_at` (the scan schedule counts from it); `links:commercial_view` added to roles that manage link costs; the app role can no longer delete devices |
 
 The seed (`make seed`, safe to repeat) loads the five environments and default settings.

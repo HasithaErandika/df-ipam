@@ -21,7 +21,7 @@ export function NotificationBell() {
   const refresh = useInvalidate('/notifications')
   const count = useQuery({ queryKey: ['/notifications/unread-count'], queryFn: () => get<{ count: number }>('/notifications/unread-count'), refetchInterval: 60_000 })
   const items = useQuery({ queryKey: ['/notifications', 'bell'], queryFn: () => list<Notice>('/notifications?pageSize=15'), enabled: open })
-  const read = useMutation({ mutationFn: (id: string) => post(`/notifications/${id}/read`), onSuccess: refresh })
+  const read = useMutation({ mutationFn: (id: string) => post(`/notifications/${id}/read`), onSuccess: refresh, meta: { success: 'Notification marked read.' } })
   const readAll = useMutation({ mutationFn: () => post('/notifications/read-all'), onSuccess: refresh, meta: { success: 'All notifications marked read.' } })
   const unread = count.data?.count ?? 0
   const canView = useCan('inventory:view')
