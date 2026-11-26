@@ -2,6 +2,13 @@
 
 What changed, day by day, on branch `lite`. Newest first. The specification is in [product/](product/overview.md); what is and isn't built is in [status.md](status.md).
 
+## 2026-11-26
+
+**Dependencies** (Dependabot #18–#22)
+- Kept: pgx 5.13.0 and `x/net` 0.63.0, the web dependencies (React Query, React Router, Lucide, Simple Icons, Vitest, Hook Form resolvers), Nginx 1.31, and `pnpm/action-setup` v6.
+- Reverted: **Postgres stays on 16**. Postgres 19 can't open the existing `df-ipam-lite-db-data` volume, so the database wouldn't start; a major upgrade needs a dump and restore. The **Go image stays on 1.26.11**, matching `go.mod` and what CI tests, and **Node stays on 24**. Dependabot now leaves these majors alone.
+- The complexity lint no longer fails on a fresh CI cache: Go's "downloading" messages were counted as findings.
+
 ## 2026-11-23
 
 Fixes from a full review of the code (tech lead, security and dependency reviews), and the BCP site's links.

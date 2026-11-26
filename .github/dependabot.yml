@@ -26,7 +26,19 @@ updates:
     groups:
       base-images:
         patterns: ['*']
+    # Go follows go.mod and Node stays on 24 (the LTS @types/node targets):
+    # those move by hand, together with CI and the docs.
+    ignore:
+      - dependency-name: golang
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: node
+        update-types: [version-update:semver-major]
   - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly
+    # A new Postgres major can't open the existing data volume: it needs a
+    # dump and restore, so it is done by hand.
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
