@@ -146,8 +146,10 @@ lint-size: ## Check the 200-line file and complexity-15 function rules
 	@long="$$(find api web/src \( -name '*.go' -o -name '*.ts' -o -name '*.tsx' \) ! -name '*_test.go' ! -name '*.test.ts' ! -name '*.test.tsx' \
 		! -path '*/node_modules/*' -exec awk 'END { if (NR > 200) print NR, FILENAME }' {} \;)"; \
 		if [ -n "$$long" ]; then echo "Files over 200 lines:"; echo "$$long"; exit 1; fi
-	@complex="$$(cd api && go run github.com/uudashr/gocognit/cmd/gocognit@v1.2.0 -over 15 -ignore '_test.go' . 2>&1 || true)"; \
-		if [ -n "$$complex" ]; then echo "Functions over cognitive complexity 15:"; echo "$$complex"; exit 1; fi
+	@# gocognit exits 1 when a function is over the limit. Only stdout is captured:
+	@# a fresh CI cache prints "go: downloading" lines on stderr, which are not findings.
+	@complex="$$(cd api && go run github.com/uudashr/gocognit/cmd/gocognit@v1.2.0 -over 15 -ignore '_test.go' .)" || \
+		{ echo "Functions over cognitive complexity 15:"; echo "$$complex"; exit 1; }
 
 lint-web: ## Type-check the web app
 	cd web && pnpm lint
