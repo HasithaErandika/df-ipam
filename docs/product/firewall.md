@@ -1,6 +1,6 @@
 # Firewall
 
-The **Firewall** section of the menu is DF-IPAM's view of the connected FortiGate. DF-IPAM **only reads** the firewall, with GET requests over its REST API, and never changes it. The connection (address, read-only API token, VDOM, certificate check) is set in **System > FortiGate** (`system:manage`). There the whole connection can be switched off, which stops every read (scheduled, Read now, Test, Live and Import) and keeps the settings, and the stored token can be deleted, which also switches the scheduled read off.
+The **Firewall** section of the menu is DF-Atlas's view of the connected FortiGate. DF-Atlas **only reads** the firewall, with GET requests over its REST API, and never changes it. The connection (address, read-only API token, VDOM, certificate check) is set in **System > FortiGate** (`system:manage`). There the whole connection can be switched off, which stops every read (scheduled, Read now, Test, Live and Import) and keeps the settings, and the stored token can be deleted, which also switches the scheduled read off.
 
 The API token's admin profile needs read access to: System (interfaces, DHCP servers, status and resources), Network (routes), VPN (IPsec, SSL VPN), Firewall (addresses and virtual IPs), and User & Device (device identification). A part the profile can't read is named on screen, and the rest still works.
 
@@ -37,4 +37,4 @@ People who may see network links also see which link each interface and tunnel b
 | Servers | Single-host address objects, inside addresses of virtual IPs, and DHCP reservations (with their MAC) | Register entries in the segment that holds them, with the object's name as Assigned to, a type (Server on server and cloud segments) and optional monitoring. Already registered addresses and addresses outside any segment are shown but can't be ticked | `inventory:edit` |
 | Network links | WAN-role interfaces and IPsec tunnels | Network links, or updates to recorded ones; tunnels are linked to the line they run over. Saved after the server reads the firewall again | `links:create`, `links:edit` |
 
-Networks, devices and servers are saved one at a time through the same routes as the rest of DF-IPAM, so every check, permission and audit record applies; a refused item is listed with why, and the others still save. The firewall is fetched again afterwards.
+Networks, devices and servers are saved one at a time through the same routes as the rest of DF-Atlas, so every check, permission and audit record applies; a refused item is listed with why, and the others still save. The firewall is fetched again afterwards.

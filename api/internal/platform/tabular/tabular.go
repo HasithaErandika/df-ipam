@@ -1,5 +1,5 @@
 // Package tabular reads and writes the table files people import and export: CSV,
-// tab-separated text (.txt) and Excel (.xlsx). Every export and import in DF-IPAM
+// tab-separated text (.txt) and Excel (.xlsx). Every export and import in DF-Atlas
 // goes through here, so the formats behave the same way.
 package tabular
 

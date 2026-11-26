@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: s
       <div role="alert" className="flex flex-col items-center p-10 text-center">
         <AlertTriangle size={26} className="mb-3 text-danger" aria-hidden />
         <h1 className="text-base font-semibold text-ink">{this.state.stale ? 'A new version is available' : 'This page ran into a problem'}</h1>
-        <p className="mt-1 text-ink-2">{this.state.stale ? 'Reload to get the latest version of DF-IPAM.' : 'Your data is safe. Reload the page, or go to another one.'}</p>
+        <p className="mt-1 text-ink-2">{this.state.stale ? 'Reload to get the latest version of DF-Atlas.' : 'Your data is safe. Reload the page, or go to another one.'}</p>
         <div className="mt-4"><Button variant="primary" onClick={() => window.location.reload()}>Reload</Button></div>
       </div>
     )

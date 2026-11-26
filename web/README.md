@@ -1,4 +1,4 @@
-# DF-IPAM Web
+# DF-Atlas Web
 
 The React frontend: TypeScript, Vite, Tailwind CSS, React Router and TanStack Query. Run commands from the repository root with `make` (see `make help`), or `pnpm` in this folder.
 

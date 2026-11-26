@@ -1,5 +1,5 @@
 // Package auth handles sign-in sessions, Microsoft Entra ID and permissions.
-// DF-IPAM holds no passwords: people sign in with Microsoft (see the signin
+// DF-Atlas holds no passwords: people sign in with Microsoft (see the signin
 // module).
 package auth
 

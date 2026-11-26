@@ -69,7 +69,7 @@ export function IntuneTab() {
         </Card>
         <Card title="Setting it up">
           <ul className="list-disc space-y-1.5 py-3 pr-4 pl-8 text-[12.5px] text-ink-2">
-            <li>In Entra ID, give DF-IPAM's app registration the Microsoft Graph <strong className="text-ink">application</strong> permission <span className="font-mono">DeviceManagementManagedDevices.Read.All</span>, then <strong className="text-ink">Grant admin consent</strong>. A tenant administrator does this once.</li>
+            <li>In Entra ID, give DF-Atlas's app registration the Microsoft Graph <strong className="text-ink">application</strong> permission <span className="font-mono">DeviceManagementManagedDevices.Read.All</span>, then <strong className="text-ink">Grant admin consent</strong>. A tenant administrator does this once.</li>
             <li>For devices in Entra ID but not in Intune, also give it <span className="font-mono">Device.Read.All</span> and <span className="font-mono">User.Read.All</span>. Without them Intune is still read, and Entra ID shows an error here.</li>
             <li>It uses the same app and secret as sign-in. No new secret is stored.</li>
             <li>Each Intune device is matched by Wi-Fi or Ethernet MAC, or by computer name when only one Intune device has it. Discovery then shows its primary user, serial number, maker and model, OS, compliance, disk encryption and last check-in.</li>

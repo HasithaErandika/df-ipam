@@ -72,7 +72,7 @@ func Render(e Email, baseURL, to string) (mail.Letter, error) {
 	}{e, strings.TrimRight(baseURL, "/")}); err != nil {
 		return mail.Letter{}, err
 	}
-	return mail.Letter{To: to, Subject: "DF-IPAM · " + e.Subject, Text: text(e, strings.TrimRight(baseURL, "/")), HTML: html.String()}, nil
+	return mail.Letter{To: to, Subject: "DF-Atlas · " + e.Subject, Text: text(e, strings.TrimRight(baseURL, "/")), HTML: html.String()}, nil
 }
 
 // text is the plain version, for clients that don't show HTML.
@@ -105,6 +105,6 @@ func text(e Email, base string) string {
 	if e.Action.Label != "" {
 		fmt.Fprintf(&b, "%s: %s%s\n\n", e.Action.Label, base, e.Action.Path)
 	}
-	fmt.Fprintf(&b, "-- \nDF-IPAM, Dialog Finance IP address management. %s\n", e.Why)
+	fmt.Fprintf(&b, "-- \nDF-Atlas, Dialog Finance network and IP address management (IPAM). %s\n", e.Why)
 	return b.String()
 }

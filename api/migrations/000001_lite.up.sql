@@ -1,4 +1,4 @@
--- DF-IPAM Lite: one building, IPv4 only, one routing table. See docs/new.md.
+-- DF-Atlas: one building, IPv4 only, one routing table. See docs/new.md.
 -- Discovery writes sightings and alerts only. People own everything else.
 
 -- Runtime role. Created without login here; docker/postgres/init gives it a password,

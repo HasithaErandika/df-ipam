@@ -1,5 +1,5 @@
 // Package firewall reviews what the connected FortiGate knows (networks,
-// devices and servers) against DF-IPAM's records. It only reads: people tick
+// devices and servers) against DF-Atlas's records. It only reads: people tick
 // what to add, and the browser saves each item through the normal routes, so
 // every check, permission and audit record applies.
 package firewall

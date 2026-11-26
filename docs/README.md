@@ -1,6 +1,6 @@
-# DF-IPAM Documentation
+# DF-Atlas Documentation
 
-**DF-IPAM Lite** is the Dialog Finance IP address management system: it scans the network, keeps the official IP register, watches servers and raises alerts. It is read-only towards the network.
+**DF-Atlas** is the Dialog Finance network and IP address management platform. Its IP management part is **IPAM**. It scans the network, keeps the official IP register, watches servers and raises alerts. It is read-only towards the network.
 
 ## Where to start
 
@@ -51,7 +51,7 @@ The specification. What is described here is built.
 
 ## Rules that always hold
 
-1. **Read-only towards the network.** Nothing in DF-IPAM changes DHCP, DNS, firewalls or devices. The FortiGate is only read.
+1. **Read-only towards the network.** Nothing in DF-Atlas changes DHCP, DNS, firewalls or devices. The FortiGate is only read.
 2. **Evidence stays apart from the register.** Discovery writes sightings and raises alerts; it never changes the register, ownership or a device's decision. People decide.
 3. **Nothing is released or assigned automatically.** A silent address isn't freed, and an expired reservation isn't released.
 4. **Every change is audited** in the same transaction as the change.

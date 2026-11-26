@@ -1,5 +1,5 @@
 // Package fortigate reads ARP entries, DHCP leases and VPN sessions from a
-// FortiGate through its REST API. It only ever sends GET requests: DF-IPAM never
+// FortiGate through its REST API. It only ever sends GET requests: DF-Atlas never
 // changes the firewall. Use an API token with a read-only admin profile.
 package fortigate
 

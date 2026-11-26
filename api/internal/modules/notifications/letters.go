@@ -63,7 +63,7 @@ func single(n queued) notify.Email {
 
 func intro(kind string) string {
 	if kind == "alert" {
-		return "DF-IPAM found this on the network just now. It stays open in Alerts until the cause is gone or someone acknowledges it."
+		return "DF-Atlas found this on the network just now. It stays open in Alerts until the cause is gone or someone acknowledges it."
 	}
 	return ""
 }
@@ -97,7 +97,7 @@ func digest(items []queued, minutes int) notify.Email {
 	}
 	subject := summaryLine(counts)
 	return notify.Email{
-		Subject: subject, Preheader: subject, Heading: "What's new in DF-IPAM",
+		Subject: subject, Preheader: subject, Heading: "What's new in DF-Atlas",
 		Intro:    fmt.Sprintf("Gathered over the last %d minutes, so you get one email instead of many. Critical alerts are sent on their own as they happen.", minutes),
 		Sections: sections, Action: notify.Action{Label: action.Action, Path: action.Path}, Why: why(items[0]),
 	}

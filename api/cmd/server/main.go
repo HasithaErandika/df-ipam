@@ -1,4 +1,4 @@
-// Command server is the DF-IPAM Lite backend: the HTTP API, the built-in scanner,
+// Command server is the DF-Atlas backend: the HTTP API, the built-in scanner,
 // server checks, alert rules and the email outbox, in one process (docs/engineering/architecture.md).
 package main
 
@@ -30,6 +30,9 @@ import (
 
 // shutdownWait stays under the 30 seconds Docker gives before it kills the process.
 const shutdownWait = 25 * time.Second
+
+// version is DF-Atlas's release, the same as web/package.json and api/openapi.yaml.
+const version = "1.0.0"
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -130,7 +133,7 @@ func listen(list string, router http.Handler, errs chan<- error) []*http.Server 
 			ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
 		servers = append(servers, srv)
 		go func() {
-			slog.Info("server listening", "addr", addr)
+			slog.Info("server listening", "addr", addr, "version", version)
 			errs <- srv.ListenAndServe()
 		}()
 	}

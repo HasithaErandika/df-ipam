@@ -21,7 +21,7 @@ export interface ReviewProps { inv: FirewallInventory; busy: boolean; onSave: (t
 /**
  * Import from the FortiGate: one fetch reads everything this person may bring
  * in, a tab per kind shows what waits for a decision, and each confirmed item
- * is saved through the route the rest of DF-IPAM uses, so every check,
+ * is saved through the route the rest of DF-Atlas uses, so every check,
  * permission and audit record applies. The firewall is only read.
  */
 export function FirewallImport() {

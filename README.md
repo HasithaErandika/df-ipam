@@ -1,6 +1,6 @@
-# DF-IPAM
+# DF-Atlas
 
-Dialog Finance IP Address Management (Lite): network discovery, the official IP register, server monitoring and alerts, for one building on IPv4. Read-only towards the network. See [docs/README.md](docs/README.md).
+Dialog Finance's network and IP address management platform, version 1.0.0: network discovery, the official IP register (IPAM), server monitoring and alerts, network links and FortiGate evidence, for one building on IPv4. Read-only towards the network. See [docs/README.md](docs/README.md).
 
 | Folder | Contents |
 | --- | --- |

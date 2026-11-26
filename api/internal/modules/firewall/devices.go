@@ -11,7 +11,7 @@ import (
 )
 
 // devProposal is one MAC the firewall knows, with what it says about it and
-// whether DF-IPAM already knows the device.
+// whether DF-Atlas already knows the device.
 type devProposal struct {
 	MAC        string   `json:"mac"`
 	IP         string   `json:"ip"`
@@ -26,7 +26,7 @@ type devProposal struct {
 	// Suggested, from the firewall's identification.
 	DeviceType string `json:"deviceType"`
 	Platform   string `json:"platform"`
-	// DF-IPAM's record: none, pending, approved or rejected.
+	// DF-Atlas's record: none, pending, approved or rejected.
 	DeviceID     *string `json:"deviceId"`
 	DeviceStatus string  `json:"deviceStatus"`
 	DeviceName   string  `json:"deviceName"`
@@ -74,7 +74,7 @@ func (m macs) fromDetected(detected []fortigate.Detected) {
 }
 
 // devices joins the ARP table, DHCP leases and device identification by MAC,
-// and marks each with DF-IPAM's decision on it.
+// and marks each with DF-Atlas's decision on it.
 func (h *Handler) devices(ctx context.Context, client *fortigate.Client, out *inventory) error {
 	found := macs{}
 	if known, err := client.Known(ctx); err == nil {
@@ -118,7 +118,7 @@ func appendOnce(list []string, v string) []string {
 	return append(list, v)
 }
 
-// typeWords map the firewall's hardware type to DF-IPAM's device types, in order.
+// typeWords map the firewall's hardware type to DF-Atlas's device types, in order.
 var typeWords = []struct{ word, kind string }{
 	{"server", "server"}, {"printer", "printer"}, {"camera", "cctv"}, {"access point", "access_point"}, {"phone", "phone"}, {"mobile", "phone"},
 	{"tablet", "phone"}, {"router", "network"}, {"switch", "network"}, {"firewall", "network"}, {"laptop", "laptop"},

@@ -63,7 +63,7 @@ export function AppShell() {
   })
   const current = pageFor(pathname)
   const { search } = useLocation()
-  useEffect(() => { document.title = current ? `${current.label} · DF-IPAM` : 'DF-IPAM' }, [current])
+  useEffect(() => { document.title = current ? `${current.label} · DF-Atlas` : 'DF-Atlas' }, [current])
   useEffect(() => { if (current && !current.hidden) rememberPage(pathname + search, current.label) }, [current, pathname, search])
   return (
     <div className="flex h-full">

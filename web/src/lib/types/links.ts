@@ -115,7 +115,7 @@ export interface FirewallReview { firewall: string; at: string; proposals: Firew
 
 export interface FirewallApplyResult { key: string; action: 'add' | 'update'; ok: boolean; linkId?: string; code?: string; error?: string }
 
-/** What the firewall knows, matched to DF-IPAM (GET /firewall/inventory). */
+/** What the firewall knows, matched to DF-Atlas (GET /firewall/inventory). */
 export interface FirewallInventory {
   firewall: string; at: string; problems: string[]
   networks: {

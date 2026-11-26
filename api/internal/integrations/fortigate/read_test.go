@@ -18,7 +18,7 @@ func fakeFirewall(t *testing.T, token string) *httptest.Server {
 	}
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			t.Errorf("DF-IPAM sent %s: it must only read", r.Method)
+			t.Errorf("DF-Atlas sent %s: it must only read", r.Method)
 		}
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)

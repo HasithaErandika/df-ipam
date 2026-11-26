@@ -45,7 +45,7 @@ export function AlertsPage() {
 
   return (
     <>
-      <PageHeader title="Alerts" description="DF-IPAM only reports: it never blocks a device or changes DHCP. Alerts close by themselves when the cause is gone."
+      <PageHeader title="Alerts" description="DF-Atlas only reports: it never blocks a device or changes DHCP. Alerts close by themselves when the cause is gone."
         actions={<><EmailPreferences /><Link to="/reports" className="text-[13px] font-medium text-accent hover:underline">Alert history report</Link></>} />
       {summary.data && (
         <div className="mb-3 flex flex-wrap gap-2">

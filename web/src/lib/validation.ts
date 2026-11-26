@@ -1,7 +1,7 @@
 /**
  * Checks that catch mistakes before a request is sent. The API checks everything
  * again and has the final word: these only make the answer quicker and clearer.
- * DF-IPAM Lite is IPv4 only.
+ * DF-Atlas is IPv4 only.
  */
 import { z } from 'zod'
 import { isoDate } from './format'

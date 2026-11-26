@@ -12,7 +12,7 @@ type Dev = FirewallInventory['devices'][number]
 interface Pick { on: boolean; name: string; deviceType: string; platform: string }
 
 const statusTone = { none: 'accent', pending: 'warn', approved: 'ok', rejected: 'danger' } as const
-const statusText = { none: 'Not in DF-IPAM', pending: 'Waiting for a decision', approved: 'Approved', rejected: 'Rejected' }
+const statusText = { none: 'Not in DF-Atlas', pending: 'Waiting for a decision', approved: 'Approved', rejected: 'Rejected' }
 const shownMax = 300
 const th = 'px-3 py-2 text-left text-[11px] font-semibold tracking-[.04em] text-ink-3 uppercase'
 
@@ -47,7 +47,7 @@ export function DevicesReview({ inv, busy, onSave }: ReviewProps) {
       {visible.length === 0 ? <EmptyState title={needle ? 'Nothing matches the search' : 'Every device is approved'} body={needle ? 'Change the search to see more.' : 'Choose All to see them.'} /> : (
         <table className="w-full table-fixed text-[13px]">
           <thead className="bg-surface-2"><tr>
-            <th className="w-10 px-3 py-2" /><th className={th}>On the firewall</th><th className={`${th} w-[17%] max-md:hidden`}>In DF-IPAM</th>
+            <th className="w-10 px-3 py-2" /><th className={th}>On the firewall</th><th className={`${th} w-[17%] max-md:hidden`}>In DF-Atlas</th>
             <th className={`${th} w-[20%]`}>Name</th><th className={`${th} w-[15%] max-lg:hidden`}>Type</th><th className={`${th} w-[15%] max-lg:hidden`}>Platform</th>
           </tr></thead>
           <tbody>

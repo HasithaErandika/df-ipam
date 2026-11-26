@@ -45,7 +45,7 @@ func TestFromEnv(t *testing.T) {
 	if _, _, err := FromEnv(); err == nil {
 		t.Fatal("bad MAIL_FROM accepted")
 	}
-	t.Setenv("MAIL_FROM", "DF-IPAM <ipam@example.com>")
+	t.Setenv("MAIL_FROM", "DF-Atlas <ipam@example.com>")
 	t.Setenv("SMTP_PORT", "70000")
 	if _, _, err := FromEnv(); err == nil {
 		t.Fatal("bad port accepted")

@@ -1,6 +1,6 @@
 # Overview
 
-**DF-IPAM Lite** is where Dialog Finance finds out what is on its network and keeps the official record of its IP addresses. It watches, records and reports. **It never changes the network:** it doesn't configure DHCP, set IPs on machines, block devices or touch the firewall. When an IP is assigned in DF-IPAM, that is the official record, and an engineer sets the IP on the machine.
+**DF-Atlas** (formerly DF-IPAM) is where Dialog Finance finds out what is on its network and keeps the official record of its IP addresses; that IP management part is called **IPAM**. It watches, records and reports. **It never changes the network:** it doesn't configure DHCP, set IPs on machines, block devices or touch the firewall. When an IP is assigned in DF-Atlas, that is the official record, and an engineer sets the IP on the machine.
 
 The product documents in this folder are the specification: what is described here is built. What isn't built is in [status.md](../status.md).
 
@@ -16,7 +16,7 @@ The product documents in this folder are the specification: what is described he
 
 ## Scope
 
-One building, IPv4 only, one routing table. No agents on PCs: the DF-IPAM server is the only thing that runs all the time.
+One building, IPv4 only, one routing table. No agents on PCs: the DF-Atlas server is the only thing that runs all the time.
 
 | Part | What it is |
 | --- | --- |
@@ -48,7 +48,7 @@ Twenty-one tables. Sixteen hold the network and its register: `users`, `roles`, 
 | --- | --- | --- |
 | 1 | Every segment: floor, VLAN, CIDR, DHCP pool, and each server segment's environment | Setup, and static detection depends on the pool |
 | 2 | Is the server range `172.168.x.x`, or within `172.16`–`172.31`? | See the warning above |
-| 3 | Can the DF-IPAM server have a trunk port with the floor VLANs, or read-only SNMP on the core switch? | MAC-based detection everywhere |
+| 3 | Can the DF-Atlas server have a trunk port with the floor VLANs, or read-only SNMP on the core switch? | MAC-based detection everywhere |
 | 4 | Which device serves DHCP to the floors? | Exact static detection |
 | 5 | Can the server ping every floor and server segment, and reach TCP 22, 445 and 3389? | Discovery and server checks |
 | 6 | Is Wi-Fi on the floor segments or separate? Guest Wi-Fi? | Guest Wi-Fi should not raise unknown-device alerts |

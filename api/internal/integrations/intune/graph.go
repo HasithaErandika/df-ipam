@@ -46,7 +46,7 @@ type Device struct {
 	Encrypt  bool      `json:"isEncrypted"`
 }
 
-// Client calls Graph as the DF-IPAM app registration.
+// Client calls Graph as the DF-Atlas app registration.
 type Client struct {
 	authority, tenant, id, secret string
 	http                          *http.Client

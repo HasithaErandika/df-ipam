@@ -32,7 +32,7 @@ function Authenticated() {
         <div className="flex flex-col items-center p-8 text-center">
           <ShieldAlert size={28} className="mb-3 text-ink-3" aria-hidden />
           <h1 className="text-base font-semibold text-ink">Waiting for access</h1>
-          <p className="mt-1 text-ink-2">{me.email} is signed in but has no role yet. Ask your IPAM administrator to assign one.</p>
+          <p className="mt-1 text-ink-2">{me.email} is signed in but has no role yet. Ask your DF-Atlas administrator to assign one.</p>
           <div className="mt-5 flex gap-2"><Button onClick={() => refetch()}>Check again</Button><Button variant="ghost" onClick={leave}>Sign out</Button></div>
         </div>
       </Centred>

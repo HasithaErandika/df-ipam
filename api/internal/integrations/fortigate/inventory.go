@@ -6,7 +6,7 @@ import (
 )
 
 // What the firewall knows that can become networks, devices and register
-// entries in DF-IPAM, after people review it. GET only.
+// entries in DF-Atlas, after people review it. GET only.
 
 // DHCPServer is one DHCP server on an interface, with its pool and reservations.
 type DHCPServer struct {

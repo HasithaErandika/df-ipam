@@ -36,7 +36,7 @@ func (s summary) build(p *auth.Principal, team bool) (notify.Email, bool) {
 	if len(sections) == 0 {
 		return notify.Email{}, false
 	}
-	why := "You get this summary because of your role in DF-IPAM."
+	why := "You get this summary because of your role in DF-Atlas."
 	if p == nil {
 		why = teamWhy
 	}
@@ -44,8 +44,8 @@ func (s summary) build(p *auth.Principal, team bool) (notify.Email, bool) {
 	return notify.Email{
 		Subject: "Daily summary · " + s.day.Format("Mon 2 Jan"), Preheader: "What needs attention today",
 		Heading:  "Daily summary for " + date,
-		Intro:    "What needs attention today. Only items that need someone are listed; everything else is in DF-IPAM.",
-		Sections: sections, Action: notify.Action{Label: "Open DF-IPAM", Path: "/"}, Why: why,
+		Intro:    "What needs attention today. Only items that need someone are listed; everything else is in DF-Atlas.",
+		Sections: sections, Action: notify.Action{Label: "Open DF-Atlas", Path: "/"}, Why: why,
 	}, true
 }
 

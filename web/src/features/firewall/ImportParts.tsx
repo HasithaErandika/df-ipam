@@ -14,7 +14,7 @@ export function StartPanel({ busy, error, onFetch }: { busy: boolean; error: unk
       <div className="flex flex-col items-center px-6 py-12 text-center">
         <span aria-hidden className="mb-3 grid size-11 place-items-center rounded-lg bg-accent-soft text-accent"><DownloadCloud size={22} /></span>
         <h2 className="text-[15px] font-semibold text-ink">Import from the FortiGate</h2>
-        <p className="mt-1 max-w-lg text-[13px] text-ink-2">Networks, devices, servers and network links the firewall knows, compared with DF-IPAM. The firewall is only read; nothing is saved until you confirm.</p>
+        <p className="mt-1 max-w-lg text-[13px] text-ink-2">Networks, devices, servers and network links the firewall knows, compared with DF-Atlas. The firewall is only read; nothing is saved until you confirm.</p>
         <ol className="mt-5 flex flex-wrap justify-center gap-2">
           {steps.map((s, i) => (
             <li key={s} className="flex items-center gap-2 rounded-full border border-line bg-surface-2 py-1 pr-3 pl-1 text-[12.5px] text-ink-2">

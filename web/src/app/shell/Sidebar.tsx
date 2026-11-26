@@ -16,11 +16,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     <aside className={cx('flex shrink-0 flex-col border-r border-side-border bg-side transition-[width] duration-150', collapsed ? 'w-[64px]' : 'w-[252px]')}>
       <div className={cx('flex h-[60px] shrink-0 items-center border-b border-side-border', collapsed ? 'justify-center' : 'justify-between gap-2 pr-2 pl-4')}>
         {!collapsed && (
-          <Link to="/" aria-label="DF-IPAM home" className="flex min-w-0 items-center gap-2.5">
+          <Link to="/" aria-label="DF-Atlas home" className="flex min-w-0 items-center gap-2.5">
             <LogoMark />
             <span className="min-w-0 leading-[1.15]">
-              <span className="block text-[15px] font-semibold tracking-tight text-side-ink">DF-IPAM</span>
-              <span className="block truncate text-[11px] text-side-ink-3">Dialog Finance · IP management</span>
+              <span className="block text-[15px] font-semibold tracking-tight text-side-ink">DF-Atlas</span>
+              <span className="block truncate text-[11px] text-side-ink-3">Dialog Finance · Network and IPAM</span>
             </span>
           </Link>
         )}
@@ -64,10 +64,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       </nav>
 
       <div className={cx('shrink-0 border-t border-side-border py-2.5 text-[11px] leading-snug text-side-ink-3', collapsed ? 'text-center' : 'px-4')}
-        title={`DF-IPAM ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}`}>
+        title={`DF-Atlas ${__APP_VERSION__}${__APP_COMMIT__ ? ` (${__APP_COMMIT__})` : ''}`}>
         {collapsed ? <span className="tabular-nums">v{__APP_VERSION__}</span> : (
           <>
-            <div><span className="font-medium text-side-ink-2">DF-IPAM Lite</span> <span className="tabular-nums">v{__APP_VERSION__}</span></div>
+            <div><span className="font-medium text-side-ink-2">DF-Atlas</span> <span className="tabular-nums">v{__APP_VERSION__}</span></div>
             {__APP_COMMIT__ && <div className="tabular-nums">Build {__APP_COMMIT__}</div>}
           </>
         )}

@@ -134,7 +134,7 @@ func defaultGateway() string {
 }
 
 // ownMACs maps this machine's own IPv4 addresses to their MACs. The kernel's
-// ARP table never lists the machine itself, so the DF-IPAM server would
+// ARP table never lists the machine itself, so the DF-Atlas server would
 // otherwise appear without one.
 func ownMACs() map[string]string {
 	out := map[string]string{}

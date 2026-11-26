@@ -97,7 +97,7 @@ func (h *Handler) networks(ctx context.Context, client *fortigate.Client, out *i
 func match(n *netProposal, p netip.Prefix, segs []segmentRecord) {
 	if p.Bits() < 16 || p.Bits() > 30 {
 		n.CanAdd = false
-		n.Notes = append(n.Notes, "DF-IPAM segments are /16 to /30, so "+p.String()+" can't be added.")
+		n.Notes = append(n.Notes, "DF-Atlas segments are /16 to /30, so "+p.String()+" can't be added.")
 	}
 	for i := range segs {
 		s := segs[i]

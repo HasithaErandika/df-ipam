@@ -14,7 +14,7 @@ interface FortiGate {
 }
 
 /**
- * The optional FortiGate connection. DF-IPAM only reads from it: ARP entries,
+ * The optional FortiGate connection. DF-Atlas only reads from it: ARP entries,
  * DHCP leases and VPN sessions become evidence, never register changes.
  */
 export function FortiGateTab() {
@@ -55,7 +55,7 @@ export function FortiGateTab() {
         <div className="space-y-4 p-4">
           {!encryptionReady && <Notice tone="warn">SECRET_ENCRYPTION_KEY is not set in api/.env, so an API token can't be stored. Set it and restart the backend.</Notice>}
           <Switch id="fg-active" checked={form.active} onChange={(v) => set('active', v)} label="Connection on"
-            hint={form.active ? 'DF-IPAM may read the FortiGate: scheduled reads, Read now, Firewall > Live and Firewall > Import.' : 'Off: DF-IPAM doesn\'t contact the FortiGate at all. Scheduled reads, Read now, Live and Import stop until it is switched back on. The settings and token are kept.'} />
+            hint={form.active ? 'DF-Atlas may read the FortiGate: scheduled reads, Read now, Firewall > Live and Firewall > Import.' : 'Off: DF-Atlas doesn\'t contact the FortiGate at all. Scheduled reads, Read now, Live and Import stop until it is switched back on. The settings and token are kept.'} />
           {config.active === false && <Notice tone="warn">The connection is switched off. Nothing reads the FortiGate until it is switched on and saved.</Notice>}
           <Switch id="fg-on" checked={form.enabled} onChange={(v) => set('enabled', v)} label="Read the FortiGate on a schedule" hint="Records its address table, DHCP leases and VPN sessions as Discovery evidence, which raises alerts and feeds reports. Firewall > Live and Review read it when you look, and don't need this. Off by default; “Read now” works while it is off." />
           <div className="grid gap-3 sm:grid-cols-2">
@@ -66,7 +66,7 @@ export function FortiGateTab() {
                 <Input id="fg-token" type="password" autoComplete="off" placeholder={config.hasToken ? '•••••••• stored' : 'Paste the REST API token'} value={form.token} onChange={(e) => set('token', e.target.value)} />
                 {config.hasToken && (
                   <Button variant="danger" busy={removeToken.isPending} aria-label="Delete the stored API token" onClick={async () => {
-                    if (await confirm({ title: 'Delete the FortiGate API token?', body: 'The stored token is erased and the scheduled read is switched off. DF-IPAM can\'t read the firewall until a new token is saved. The address and other settings are kept. Recorded in the audit log. Also revoke the token on the FortiGate if it is no longer needed.', confirmLabel: 'Delete token' })) removeToken.mutate()
+                    if (await confirm({ title: 'Delete the FortiGate API token?', body: 'The stored token is erased and the scheduled read is switched off. DF-Atlas can\'t read the firewall until a new token is saved. The address and other settings are kept. Recorded in the audit log. Also revoke the token on the FortiGate if it is no longer needed.', confirmLabel: 'Delete token' })) removeToken.mutate()
                   }}><Trash2 size={14} aria-hidden />Delete</Button>
                 )}
               </div>
@@ -99,13 +99,13 @@ export function FortiGateTab() {
             <Details items={[['ARP entries', status.counts.arp], ['DHCP leases', status.counts.dhcp], ['VPN clients', status.counts.vpn], ['Last attempt', status.lastRun ? formatAgo(status.lastRun) : '—']]} />
           </div>
         </Card>
-        <Card title="What DF-IPAM reads">
+        <Card title="What DF-Atlas reads">
           <ul className="list-disc space-y-1.5 py-3 pr-4 pl-8 text-[12.5px] text-ink-2">
             <li><strong className="text-ink">ARP table:</strong> IP and MAC of every device the firewall has talked to, so MACs appear even across routed floors.</li>
             <li><strong className="text-ink">DHCP leases:</strong> hostname, MAC and the DHCP vendor class (for example “MSFT 5.0”), which hints at the OS.</li>
             <li><strong className="text-ink">VPN sessions:</strong> SSL and IPsec users with their tunnel IP and where they connected from. Add the VPN client pool as a VPN segment in Network setup to group them.</li>
             <li>Only GET requests are sent. Nothing on the firewall is changed, and no traffic is inspected.</li>
-            <li>Create a REST API admin with a read-only profile, and limit its trusted hosts to the DF-IPAM server.</li>
+            <li>Create a REST API admin with a read-only profile, and limit its trusted hosts to the DF-Atlas server.</li>
           </ul>
         </Card>
       </div>

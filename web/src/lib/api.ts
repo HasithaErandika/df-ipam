@@ -62,7 +62,7 @@ export async function parseFailure(res: Response): Promise<ApiError> {
   } catch {
     // Not our error format: the proxy answered because the API isn't running.
   }
-  return new ApiError(res.status, 'API_UNAVAILABLE', "The DF-IPAM API isn't responding.")
+  return new ApiError(res.status, 'API_UNAVAILABLE', "The DF-Atlas API isn't responding.")
 }
 
 async function send(path: string, init: RequestInit = {}): Promise<Response> {
@@ -74,7 +74,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   try {
     res = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/v1${path}`, { ...init, headers, credentials: 'include' })
   } catch {
-    throw new ApiError(0, 'API_UNAVAILABLE', "The DF-IPAM API isn't responding.")
+    throw new ApiError(0, 'API_UNAVAILABLE', "The DF-Atlas API isn't responding.")
   }
   if (!res.ok) throw await parseFailure(res)
   return res

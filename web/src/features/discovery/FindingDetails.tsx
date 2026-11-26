@@ -97,7 +97,7 @@ export function FindingDetails({ row, canEdit, onClose, onRegister, onApprove, o
             ['Card maker', card ? <span title="From the MAC's first half. It names the card, not the device.">{card}</span> : r.isPrivateMac ? 'Hidden: the device uses a private (random) MAC' : null],
           ]} />
         </Section>
-        <Section title="In DF-IPAM">
+        <Section title="In DF-Atlas">
           <Details items={[
             ['Presence', <Presence key="p" online={r.online} firstSeen={r.firstSeen} lastSeen={r.lastSeen} />],
             ['Register', isRoaming(r) || (!r.registerId && isVpnClient(r)) ? <RegisterCell key="r" r={r} /> : !r.registerId && isDhcpClient(r) ? <DhcpNotRegistered key="r" /> : <span key="r" className="flex items-center gap-2"><RegisterBadge status={r.registerStatus} />{r.assignedName}</span>],

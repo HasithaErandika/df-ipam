@@ -42,7 +42,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
     group: 'Firewall',
     items: [
       { to: '/firewall/live', label: 'Live', icon: Activity, anyOf: ['inventory:view', 'links:view'], summary: 'What the FortiGate reports now: interfaces and traffic, VPN tunnels and users, SD-WAN health and load.' },
-      { to: '/firewall/import', label: 'Import', icon: Import, anyOf: ['inventory:edit', 'network:manage', 'links:create', 'links:edit'], summary: 'Bring networks, devices, servers and links from the FortiGate into DF-IPAM, after you check and confirm them.' },
+      { to: '/firewall/import', label: 'Import', icon: Import, anyOf: ['inventory:edit', 'network:manage', 'links:create', 'links:edit'], summary: 'Bring networks, devices, servers and links from the FortiGate into DF-Atlas, after you check and confirm them.' },
     ],
   },
   {
@@ -57,7 +57,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: 'Requests',
+    group: 'IPAM',
     items: [
       { to: '/requests', label: 'IP Requests', icon: ClipboardList, anyOf: ['ip:request', 'requests:approve'], summary: 'Ask for an IP, and approve requests in one step.', badge: 'requests' },
       { to: '/reservations', label: 'Reservations', icon: BookCheck, anyOf: view, summary: 'Hold an IP or a small range for a purpose. Nothing is released automatically.' },

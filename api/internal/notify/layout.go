@@ -15,8 +15,8 @@ const layout = `<!doctype html>
     <table role="presentation" cellpadding="0" cellspacing="0"><tr>
       <td style="width:30px;height:30px;background:#8fb3f7;border-radius:7px;"></td>
       <td style="padding-left:12px;color:#ffffff;">
-        <div style="font-size:16px;font-weight:600;letter-spacing:.2px;">DF-IPAM</div>
-        <div style="font-size:12px;color:#d6e2fb;">Dialog Finance · IP Address Management</div>
+        <div style="font-size:16px;font-weight:600;letter-spacing:.2px;">DF-Atlas</div>
+        <div style="font-size:12px;color:#d6e2fb;">Dialog Finance · Network and IPAM</div>
       </td>
     </tr></table>
   </td></tr>
@@ -36,7 +36,7 @@ const layout = `<!doctype html>
         {{if $r.Meta}}<div style="font-size:12px;color:#6f7a8c;margin-top:2px;">{{$r.Meta}}</div>{{end}}
       </td></tr>
       {{end}}
-      {{if .More}}<tr><td style="padding:10px 14px;border-top:1px solid #e2e6ec;font-size:13px;color:#6f7a8c;">and {{.More}} more in DF-IPAM</td></tr>{{end}}
+      {{if .More}}<tr><td style="padding:10px 14px;border-top:1px solid #e2e6ec;font-size:13px;color:#6f7a8c;">and {{.More}} more in DF-Atlas</td></tr>{{end}}
     </table>
   </td></tr>
   {{end}}
@@ -46,8 +46,8 @@ const layout = `<!doctype html>
   </td></tr>
   {{end}}
   <tr><td style="padding:16px 28px;background:#f8f9fb;border-top:1px solid #e2e6ec;font-size:12px;line-height:1.5;color:#6f7a8c;">
-    {{.Why}} Choose which emails you get in DF-IPAM under <strong>Alerts › Email preferences</strong>.<br>
-    DF-IPAM only reads the network. This message was sent automatically; replies aren't read.
+    {{.Why}} Choose which emails you get in DF-Atlas under <strong>Alerts › Email preferences</strong>.<br>
+    DF-Atlas only reads the network. This message was sent automatically; replies aren't read.
   </td></tr>
 </table>
 </td></tr></table>

@@ -111,7 +111,7 @@ export function useRejectDevice() {
     onSuccess: () => void refresh(),
   })
   return async (target: { id: string; mac: string }) => {
-    if (await confirm({ title: `Reject ${target.mac}?`, body: 'The device is marked as not allowed. DF-IPAM does not block it: it raises a High alert whenever it is seen, so someone can act.', confirmLabel: 'Reject device' })) {
+    if (await confirm({ title: `Reject ${target.mac}?`, body: 'The device is marked as not allowed. DF-Atlas does not block it: it raises a High alert whenever it is seen, so someone can act.', confirmLabel: 'Reject device' })) {
       reject.mutate(target.id)
     }
   }

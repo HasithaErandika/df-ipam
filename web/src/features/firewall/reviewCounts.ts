@@ -5,7 +5,7 @@ type Dev = FirewallInventory['devices'][number]
 type Host = FirewallInventory['servers'][number]
 type Proposal = FirewallReview['proposals'][number]
 
-/** What needs a decision on each tab: new, or different from DF-IPAM. */
+/** What needs a decision on each tab: new, or different from DF-Atlas. */
 export const netOpen = (n: Net) => n.canAdd || (Boolean(n.existing) && n.changes.length > 0)
 export const devOpen = (d: Dev) => d.deviceStatus !== 'approved'
 export const hostOpen = (h: Host) => !h.registered && Boolean(h.segmentId)

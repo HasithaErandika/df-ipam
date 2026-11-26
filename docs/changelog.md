@@ -4,6 +4,8 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 ## 2026-11-26
 
+**DF-Atlas 1.0.0.** DF-IPAM is renamed **DF-Atlas**, and this is release 1.0.0 (`web/package.json`, `api/openapi.yaml`, the server's start-up log). The name is on the sign-in page, the menu, page titles, reports, PDFs and email; the tagline is "Dialog Finance · Network and IPAM", and the menu group for IP requests and reservations is **IPAM**. Unchanged so deployments keep working: the `X-Requested-With: DF-IPAM` header value, file, folder and volume names (`df-ipam-*`), the database and its roles (`dfipam`, `dfipam_app`), and the Go module.
+
 **Email: only what needs someone** ([alerts.md](product/alerts.md#email))
 - Critical alerts and request decisions go **at once**; High alerts and new IP requests are gathered into **one digest** every 30 minutes; a **daily summary** at 08:00 lists only what needs attention (open alerts, approvals waiting, networks 90% full, failing FortiGate, Intune or Entra ID reads and scans, link contracts ending within 30 days, your reservations expiring), by permission, and nothing on a quiet day. Medium and Low alerts, servers back up and discovery findings stay in the app.
 - **Team mailbox**: alert and request email can go to one address (a distribution list) instead of to every handler.

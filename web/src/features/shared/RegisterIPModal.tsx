@@ -101,7 +101,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
   const monitor = watch('monitor')
   return (
     <Modal open={open} onClose={onClose} size="lg" title={entry ? `Edit ${entry.ip}` : 'Add to the IP register'}
-      subtitle={entry ? entry.segmentName : 'The register is the official record. Set the IP on the machine yourself; DF-IPAM never changes the network.'}
+      subtitle={entry ? entry.segmentName : 'The register is the official record. Set the IP on the machine yourself; DF-Atlas never changes the network.'}
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} onClick={() => void submit()}>{entry ? 'Save changes' : 'Add to register'}</Button></>}>
       <form onSubmit={(e) => { e.preventDefault(); void submit() }} noValidate className="space-y-5">
         <FormSection title="Address">

@@ -1,8 +1,8 @@
 # Authentication and Authorisation
 
-DF-IPAM holds no passwords. The only way in is **Microsoft Entra ID**, for `@dialogfinance.lk` accounts, locally and on servers alike. There is no password-free or development sign-in.
+DF-Atlas holds no passwords. The only way in is **Microsoft Entra ID**, for `@dialogfinance.lk` accounts, locally and on servers alike. There is no password-free or development sign-in.
 
-Authorisation stays entirely in DF-IPAM's own `users` and `roles` tables. Every `/api/v1` request is signed in by its session cookie; there are no bearer tokens.
+Authorisation stays entirely in DF-Atlas's own `users` and `roles` tables. Every `/api/v1` request is signed in by its session cookie; there are no bearer tokens.
 
 ## Microsoft Entra ID
 
@@ -18,11 +18,11 @@ A session ends after 10 hours, after the idle timeout in System (default 30 minu
 
 ### Setting it up in Entra ID
 
-1. In the Microsoft Entra admin centre, **App registrations > New registration**: name `DF-IPAM`, **Accounts in this organizational directory only**, platform **Web**, redirect URI `https://<host>/api/v1/auth/microsoft/callback`. For local use add `http://localhost:5173/api/v1/auth/microsoft/callback` (and `http://localhost:8088/...` for the container).
+1. In the Microsoft Entra admin centre, **App registrations > New registration**: name `DF-Atlas`, **Accounts in this organizational directory only**, platform **Web**, redirect URI `https://<host>/api/v1/auth/microsoft/callback`. For local use add `http://localhost:5173/api/v1/auth/microsoft/callback` (and `http://localhost:8088/...` for the container).
 2. **Certificates & secrets > New client secret.** Copy the value at once; note its expiry and renew it before then.
 3. **API permissions:** Microsoft Graph delegated `openid`, `profile`, `email` (the defaults). Then **Grant admin consent for <organisation>**: when the tenant doesn't let users consent to apps themselves (common), everyone sees "Need admin approval" until an administrator does this once.
 4. Optional: **Token configuration > Add optional claim > ID > email**, so the work email is sent even when it differs from the sign-in name.
-5. Optional: under **Enterprise applications > DF-IPAM > Properties**, set **Assignment required** and assign the people or group allowed in. Multi-factor sign-in is enforced by your Conditional Access policies.
+5. Optional: under **Enterprise applications > DF-Atlas > Properties**, set **Assignment required** and assign the people or group allowed in. Multi-factor sign-in is enforced by your Conditional Access policies.
 6. In `api/.env`: `ENTRA_TENANT_ID` (Directory ID), `ENTRA_CLIENT_ID` (Application ID), `ENTRA_CLIENT_SECRET`, and `APP_BASE_URL` set to the address people use, so the redirect URI matches. Then `make docker-up`.
 
 For local use, leave `VITE_API_URL` empty in `web/.env`, so the app and API share one address and the cookie is sent.

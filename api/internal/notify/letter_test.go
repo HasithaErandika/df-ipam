@@ -26,7 +26,7 @@ func TestRenderEscapesAndLinks(t *testing.T) {
 			t.Errorf("text version missing %q:\n%s", want, l.Text)
 		}
 	}
-	if l.Subject != "DF-IPAM · Test" {
+	if l.Subject != "DF-Atlas · Test" {
 		t.Errorf("subject %q", l.Subject)
 	}
 }

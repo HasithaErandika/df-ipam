@@ -1,4 +1,4 @@
-# DF-IPAM developer commands. Run `make help` to list them.
+# DF-Atlas developer commands. Run `make help` to list them.
 # Settings come from api/.env and web/.env (see their .env.example files). PostgreSQL, the backend and the web
 # app run in Docker. People sign in with Microsoft Entra ID.
 

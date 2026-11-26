@@ -1,5 +1,5 @@
 [Unit]
-Description=DF-IPAM encrypted database backup
+Description=DF-Atlas encrypted database backup
 After=docker.service
 Requires=docker.service
 

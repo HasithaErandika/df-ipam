@@ -1,6 +1,6 @@
 import { useId } from 'react'
 
-/** The DF-IPAM mark. Each copy has its own gradient id, so two on a page don't clash. */
+/** The DF-Atlas mark. Each copy has its own gradient id, so two on a page don't clash. */
 export function LogoMark({ size = 30 }: { size?: number }) {
   const id = `dfipam-logo-${useId().replace(/:/g, '')}`
   return (

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
-  title: DF-IPAM Lite API
-  version: 0.4.0
+  title: DF-Atlas API
+  version: 1.0.0
   description: Every implemented route. A test fails if a route is missing. See docs/product/ for what each part does.
 servers:
   - url: /api/v1
@@ -604,6 +604,6 @@ paths:
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /firewall/inventory:
     get:
-      summary: "What the FortiGate knows, matched to DF-IPAM: interface networks as segments, devices (ARP, DHCP leases, device identification) with their decision, and named hosts (address objects, virtual IPs, DHCP reservations) as register entries. Read only; people save what they confirm through the normal routes"
+      summary: "What the FortiGate knows, matched to DF-Atlas: interface networks as segments, devices (ARP, DHCP leases, device identification) with their decision, and named hosts (address objects, virtual IPs, DHCP reservations) as register entries. Read only; people save what they confirm through the normal routes"
       description: "Permission: inventory:edit or network:manage."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }

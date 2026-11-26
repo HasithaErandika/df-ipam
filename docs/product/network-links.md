@@ -58,7 +58,7 @@ Rupees are shown as `Rs. 25,000.00`, other currencies by code (`USD 1,200.00`). 
 
 ## Contract reminders
 
-Every three hours DF-IPAM checks contract expiry dates against the reminder days (90, 60, 30, 7 and 0, the expiry date, by default), in Sri Lanka time. When a link reaches one, its responsible officer and everyone with `links:commercial_manage` get a notification, and an email when email is on and their preference allows (kind "Network link contracts about to expire"). Each reminder goes once per contract end: days already passed are marked together, so a link entered 20 days before expiry gets one notice, not three. A new expiry date starts the reminders again and is recorded as a **contract renewal**. Terminated and archived links get none, nor do contracts that ended more than 7 days ago.
+Every three hours DF-Atlas checks contract expiry dates against the reminder days (90, 60, 30, 7 and 0, the expiry date, by default), in Sri Lanka time. When a link reaches one, its responsible officer and everyone with `links:commercial_manage` get a notification, and an email when email is on and their preference allows (kind "Network link contracts about to expire"). Each reminder goes once per contract end: days already passed are marked together, so a link entered 20 days before expiry gets one notice, not three. A new expiry date starts the reminders again and is recorded as a **contract renewal**. Terminated and archived links get none, nor do contracts that ended more than 7 days ago.
 
 ## Import and export
 

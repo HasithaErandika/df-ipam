@@ -9,7 +9,7 @@ import { takeSignOutReason } from '../../lib/idle'
 const refused: Record<string, string> = {
   domain: 'Use your @dialogfinance.lk Microsoft account. Other accounts, including guests, can\'t sign in.',
   tenant: 'That Microsoft account belongs to another organisation. Use your Dialog Finance account.',
-  disabled: 'Your DF-IPAM access has been switched off. Ask your IPAM administrator.',
+  disabled: 'Your DF-Atlas access has been switched off. Ask your DF-Atlas administrator.',
   expired: 'The sign-in took too long or was opened in another tab. Try again.',
   cancelled: 'Sign-in was cancelled.',
   off: 'Microsoft sign-in isn\'t set up on this server.',
@@ -61,7 +61,7 @@ export function SignIn() {
         <div className="m-auto w-full max-w-sm py-10">
           <div className="mb-8 flex items-center gap-3">
             <LogoMark size={36} />
-            <div className="leading-tight"><div className="text-[16px] font-semibold text-ink">DF-IPAM</div><div className="text-[12px] text-ink-3">Dialog Finance · IP Address Management</div></div>
+            <div className="leading-tight"><div className="text-[16px] font-semibold text-ink">DF-Atlas</div><div className="text-[12px] text-ink-3">Dialog Finance · Network and IPAM</div></div>
           </div>
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">Sign in</h1>
           <p className="mt-1 text-ink-2">Use your Dialog Finance Microsoft account.</p>
@@ -79,7 +79,7 @@ export function SignIn() {
             <strong className="font-medium text-ink">First time here?</strong> Sign in, and you'll see "Waiting for access" until your IPAM administrator gives you a role.
           </div>
         </div>
-        <p className="pb-5 text-center text-[11.5px] text-ink-3">DF-IPAM Lite v{__APP_VERSION__}{__APP_COMMIT__ ? ` · ${__APP_COMMIT__}` : ''}</p>
+        <p className="pb-5 text-center text-[11.5px] text-ink-3">DF-Atlas v{__APP_VERSION__}{__APP_COMMIT__ ? ` · ${__APP_COMMIT__}` : ''}</p>
       </main>
     </div>
   )

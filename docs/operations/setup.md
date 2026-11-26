@@ -1,6 +1,6 @@
 # Setup, Run and Deploy
 
-How to run DF-IPAM on your machine, and deploy it to a server. What runs is described in [architecture.md](../engineering/architecture.md).
+How to run DF-Atlas on your machine, and deploy it to a server. What runs is described in [architecture.md](../engineering/architecture.md).
 
 ## Run it on your machine
 

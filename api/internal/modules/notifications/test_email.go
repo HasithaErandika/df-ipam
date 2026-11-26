@@ -15,7 +15,7 @@ import (
 // works whether or not email is switched on, and writes no notice.
 func (h *Handler) testEmail(c *gin.Context) {
 	if h.mailer == nil {
-		httpx.Fail(c, httpx.NewError(http.StatusConflict, "SMTP_OFF", "No mail server is set in api/.env (SMTP_HOST), so DF-IPAM can't send email."))
+		httpx.Fail(c, httpx.NewError(http.StatusConflict, "SMTP_OFF", "No mail server is set in api/.env (SMTP_HOST), so DF-Atlas can't send email."))
 		return
 	}
 	to := []string{auth.Current(c).Email}
@@ -38,8 +38,8 @@ func (h *Handler) testEmail(c *gin.Context) {
 // sample looks like a real digest, with made-up rows, so the layout can be judged.
 func sample() notify.Email {
 	return notify.Email{
-		Subject: "Test email", Preheader: "Email from DF-IPAM is working",
-		Heading: "Email from DF-IPAM is working",
+		Subject: "Test email", Preheader: "Email from DF-Atlas is working",
+		Heading: "Email from DF-Atlas is working",
 		Intro:   "This is a test from System › Settings › Email. Real emails look like this. The rows below are examples, not real alerts.",
 		Sections: []notify.Section{
 			{Title: "Alerts", Rows: []notify.Row{
@@ -48,7 +48,7 @@ func sample() notify.Email {
 			}},
 			{Title: "Waiting for a decision", Rows: []notify.Row{{Tone: "accent", Chip: "Requests", Text: "2 IP requests to approve", Meta: "Example", Path: "/requests"}}},
 		},
-		Action: notify.Action{Label: "Open DF-IPAM", Path: "/"},
+		Action: notify.Action{Label: "Open DF-Atlas", Path: "/"},
 		Why:    "You asked for this test email.",
 	}
 }

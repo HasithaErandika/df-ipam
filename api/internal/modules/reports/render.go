@@ -55,7 +55,7 @@ func newPDF(r Report, subtitle string, asOf time.Time) *pdfRenderer {
 	pdf := fpdf.New("L", "mm", "A4", "")
 	pdf.SetMargins(10, 10, 10)
 	pdf.SetAutoPageBreak(true, 12)
-	pdf.SetCreator("DF-IPAM", false)
+	pdf.SetCreator("DF-Atlas", false)
 	pdf.SetTitle(r.Title, false)
 	translate := pdf.UnicodeTranslatorFromDescriptor("")
 	out := &pdfRenderer{pdf: pdf, translate: translate, columns: r.Columns}
@@ -67,7 +67,7 @@ func newPDF(r Report, subtitle string, asOf time.Time) *pdfRenderer {
 		if first {
 			pdf.SetFont("Helvetica", "B", 13)
 			pdf.SetTextColor(23, 48, 95)
-			pdf.CellFormat(0, 7, translate("DF-IPAM · "+r.Title), "", 1, "L", false, 0, "")
+			pdf.CellFormat(0, 7, translate("DF-Atlas · "+r.Title), "", 1, "L", false, 0, "")
 			pdf.SetFont("Helvetica", "", 8)
 			pdf.SetTextColor(90, 100, 115)
 			pdf.CellFormat(0, 5, translate(subtitle), "", 1, "L", false, 0, "")
@@ -86,7 +86,7 @@ func newPDF(r Report, subtitle string, asOf time.Time) *pdfRenderer {
 	pdf.SetFooterFunc(func() {
 		pdf.SetY(-10)
 		pdf.SetFont("Helvetica", "", 7)
-		pdf.CellFormat(0, 4, translate(fmt.Sprintf("DF-IPAM | %s | Generated %s | Confidential | Page %d",
+		pdf.CellFormat(0, 4, translate(fmt.Sprintf("DF-Atlas | %s | Generated %s | Confidential | Page %d",
 			r.Title, asOf.Format("2006-01-02 15:04 MST"), pdf.PageNo())), "", 0, "C", false, 0, "")
 	})
 	pdf.AddPage()

@@ -21,7 +21,7 @@ export function MonitorHeader({ now, problems, loading, full, onFull, onClose }:
         <div className="flex items-center gap-3">
           <LogoMark size={26} />
           <div className="text-[13.5px] leading-none">
-            <span className="font-semibold text-ink">DF-IPAM</span> <span className="text-ink-3">· Network monitor</span>
+            <span className="font-semibold text-ink">DF-Atlas</span> <span className="text-ink-3">· Network monitor</span>
           </div>
         </div>
         <div className="mx-auto flex min-w-0 justify-center" role="status" aria-live="polite">

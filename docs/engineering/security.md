@@ -1,6 +1,6 @@
 # Security
 
-DF-IPAM holds a map of the company network, so read access is itself sensitive.
+DF-Atlas holds a map of the company network, so read access is itself sensitive.
 
 ## Trust boundaries
 
@@ -30,7 +30,7 @@ DF-IPAM holds a map of the company network, so read access is itself sensitive.
 | Spoofing | A server started without real sign-in, or over plain HTTP | No password-free sign-in exists; with `APP_ENV=production`, which the server compose files fix, the API refuses to start without Entra ID and an `https://` `APP_BASE_URL` |
 | | Stolen token through XSS | Content Security Policy, no `dangerouslySetInnerHTML`, idle sign-out |
 | Denial of service | Request flood | Limits per address and per person, an in-flight cap, Nginx limits, host SYN protection |
-| | DF-IPAM flooding the network | 100 pings and 100 TCP connections a second, 16 port checks in flight, slow probes every 6 hours at most per host (15 minutes on Scan now, remembered across restarts), one scan at a time, manual scans a minute apart, at least 5 minutes between scans |
+| | DF-Atlas flooding the network | 100 pings and 100 TCP connections a second, 16 port checks in flight, slow probes every 6 hours at most per host (15 minutes on Scan now, remembered across restarts), one scan at a time, manual scans a minute apart, at least 5 minutes between scans |
 | | Large upload | 1 MB bodies, 5 MB imports |
 | Elevation | A Requester approving | Permissions checked in the API on every route; a test fails on an unprotected route |
 | | Admin locks everyone out | Nobody changes their own role; the last Admin can't be removed |
@@ -58,7 +58,7 @@ DF-IPAM holds a map of the company network, so read access is itself sensitive.
 
 **Auth**
 - [ ] Microsoft sign-in works for a test account, and a non-`@dialogfinance.lk` account is refused
-- [ ] The Entra app is single-tenant, its redirect URIs are only DF-IPAM's, and the client secret is in `api/.env` only, with its expiry noted
+- [ ] The Entra app is single-tenant, its redirect URIs are only DF-Atlas's, and the client secret is in `api/.env` only, with its expiry noted
 - [ ] Sign-in with a non-`dialogfinance.lk` account and a guest account is refused
 - [ ] `ENTRA_CLIENT_SECRET` is only in `api/.env`, and its expiry is in the calendar
 - [ ] The unprotected-route test passes

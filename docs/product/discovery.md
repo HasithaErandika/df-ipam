@@ -58,7 +58,7 @@ A MAC is only visible from the devices' own network. NetBIOS gives MACs for many
 
 ## FortiGate (optional, read-only)
 
-**System > FortiGate** stores the address (`https://` only), VDOM, TLS verification, read interval and a REST API token, encrypted with `SECRET_ENCRYPTION_KEY` and never returned or logged. DF-IPAM sends only GET requests, reading:
+**System > FortiGate** stores the address (`https://` only), VDOM, TLS verification, read interval and a REST API token, encrypted with `SECRET_ENCRYPTION_KEY` and never returned or logged. DF-Atlas sends only GET requests, reading:
 
 - **The ARP table:** a device seen now.
 - **DHCP leases**, with the DHCP vendor class (which hints at the OS). A lease lasts hours or days after a device leaves, so **a lease counts as seen now only when the ARP table confirms it.** Other leases only add their name and vendor class to evidence already held.
@@ -74,7 +74,7 @@ Off by default. "Test connection" and "Read now" work before the schedule is on.
 - Each Intune device (its **primary user**'s sign-in email and display name, and its serial number, maker, model, OS and version, compliance state, disk encryption and last check-in) is matched to sightings by its Wi-Fi or Ethernet MAC, or by computer name when only one Intune device has that name. A MAC match wins over a name match.
 - The user is evidence, shown in the Discovery row, the finding details and the search. It never sets a register entry's or device's owner.
 - A device that leaves Intune loses these details on the next successful read. Shared devices with no primary user keep their details and show no user.
-- A device that isn't in Intune, such as a personal phone or laptop, shows no user. It is still found by the scan and flagged as an unknown device. A network scan can't read who is signed in to a device that DF-IPAM doesn't manage.
+- A device that isn't in Intune, such as a personal phone or laptop, shows no user. It is still found by the scan and flagged as an unknown device. A network scan can't read who is signed in to a device that DF-Atlas doesn't manage.
 
 Off by default, read every 60 minutes when on (15 to 1440). "Read now" works before the schedule is on.
 

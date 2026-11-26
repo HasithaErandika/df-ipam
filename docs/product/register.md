@@ -46,7 +46,7 @@ Known MAC addresses: name, owner, department, type, platform and status (`pendin
 Approving a device or registering an address from Discovery starts with what discovery found already filled in: the name, the user (Intune, then Entra ID, then VPN) as owner, the likely platform and type, and for a register entry a note with maker and model, serial, OS and domain. It is a starting point the person checks; nothing is saved until they do, and an approved device's own record replaces these guesses in the register form.
 
 - A MAC seen for the first time becomes **pending**; private MACs do so only on segments that watch them.
-- Approving can register the address it was seen on. Rejecting only marks it: DF-IPAM never blocks anything, but a rejected MAC raises a High alert whenever it is seen.
+- Approving can register the address it was seen on. Rejecting only marks it: DF-Atlas never blocks anything, but a rejected MAC raises a High alert whenever it is seen.
 - Devices import as CSV, text or Excel, and export as CSV, tab-separated text (.txt) or Excel. A text export imports back as is.
 
 **Registered devices on another network.** The register is per address. An approved device seen at an unregistered address whose MAC is registered elsewhere shows "Registered elsewhere: at 192.168.1.7 · Wi-Fi" and counts as known. It raises nothing on a floor DHCP pool; in a server segment the unknown-server-IP alert still fires. A phone with a private MAC uses another MAC on each network, so it can't be linked.

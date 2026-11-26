@@ -10,7 +10,7 @@ const tabs = [
   { key: 'intune', label: 'Microsoft Intune', view: IntuneTab },
 ]
 
-/** How DF-IPAM runs: scan and check intervals, email, sessions, the firewall and Intune connections. */
+/** How DF-Atlas runs: scan and check intervals, email, sessions, the firewall and Intune connections. */
 export function SystemPage() {
   const key = useRouteTab(tabs.map((t) => t.key))
   const Current = tabs.find((t) => t.key === key)?.view ?? SystemTab

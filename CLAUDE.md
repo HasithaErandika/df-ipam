@@ -1,4 +1,4 @@
-# DF-IPAM
+# DF-Atlas
 
 Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web/`, design docs in `docs/`, Docker in `docker-compose.yml`. Run `make help` for commands. Before finishing a change, run `make lint test`.
 
@@ -43,7 +43,7 @@ Enterprise IPAM for Dialog Finance. Go backend in `api/`, React frontend in `web
 
 ## Auth
 
-Sign-in is Microsoft Entra ID (`api/internal/auth/entra.go`, `api/internal/modules/signin`). It ends in a session cookie (`sessions.go`); there are no bearer tokens. In the browser only `web/src/lib/auth.ts` knows how people sign in. Authorisation stays in DF-IPAM's own tables. The first Administrator comes from `make admin EMAIL=…`.
+Sign-in is Microsoft Entra ID (`api/internal/auth/entra.go`, `api/internal/modules/signin`). It ends in a session cookie (`sessions.go`); there are no bearer tokens. In the browser only `web/src/lib/auth.ts` knows how people sign in. Authorisation stays in DF-Atlas's own tables. The first Administrator comes from `make admin EMAIL=…`.
 
 ## Frontend conventions
 

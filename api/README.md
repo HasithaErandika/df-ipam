@@ -1,4 +1,4 @@
-# DF-IPAM API
+# DF-Atlas API
 
 The Go backend: Gin, pgx and golang-migrate. Run commands from the repository root with `make` (see `make help`).
 

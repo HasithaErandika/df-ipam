@@ -25,7 +25,7 @@ const methods: Method[] = [
  */
 export function DiscoveryMethods() {
   return (
-    <Card title="How discovery works" subtitle="Every method is read-only and standard. Allow these from the DF-IPAM server to the scanned segments.">
+    <Card title="How discovery works" subtitle="Every method is read-only and standard. Allow these from the DF-Atlas server to the scanned segments.">
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[13px]">
           <thead>
@@ -47,7 +47,7 @@ export function DiscoveryMethods() {
         </table>
       </div>
       <div className="grid gap-3 border-t border-line p-4 text-[12.5px] text-ink-2 md:grid-cols-3">
-        <p><strong className="text-ink">Firewall rule.</strong> From the DF-IPAM server to each segment: ICMP echo, UDP 137, 1900 and 5353, and TCP to UPnP description ports and server check ports. Replies come back to the server.</p>
+        <p><strong className="text-ink">Firewall rule.</strong> From the DF-Atlas server to each segment: ICMP echo, UDP 137, 1900 and 5353, and TCP to UPnP description ports and server check ports. Replies come back to the server.</p>
         <p><strong className="text-ink">MAC addresses</strong> need the server on the same network as the devices: a switch trunk port with one VLAN per floor, or the FortiGate connection. Phones and laptops on Wi-Fi often use randomised MACs, shown as Private MAC.</p>
         <p><strong className="text-ink">Never done:</strong> port scanning, logging in to devices, SNMP guessing, packet capture, or blocking anything. Segments over 4,096 addresses are not swept.</p>
       </div>
