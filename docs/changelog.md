@@ -4,6 +4,10 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 ## 2026-11-26
 
+**Report PDFs and Excel files fit their content.**
+- **PDF:** each column is as wide as its content needs, and long names wrap onto more lines instead of being cut off with "…". Short values (IPs, MACs, serials, emails) stay on one line. Reports with many columns use a smaller font, from 7.5 down to 6 pt, so they still fit. Every page has a DF-Atlas band, the report title and the column headers; the first page shows the description, range and row count; the footer reads "Page N of M".
+- **Excel:** columns are sized from the header and the first 500 rows (8 to 60 characters), and the header is the brand blue, frozen and wrapped.
+
 **DF-Atlas 1.0.0.** DF-IPAM is renamed **DF-Atlas**, and this is release 1.0.0 (`web/package.json`, `api/openapi.yaml`, the server's start-up log). The name is on the sign-in page, the menu, page titles, reports, PDFs and email; the tagline is "Dialog Finance · Network and IPAM", and the menu group for IP requests and reservations is **IPAM**. Unchanged so deployments keep working: the `X-Requested-With: DF-IPAM` header value, file, folder and volume names (`df-ipam-*`), the database and its roles (`dfipam`, `dfipam_app`), and the Go module.
 
 **Email: only what needs someone** ([alerts.md](product/alerts.md#email))

@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/xuri/excelize/v2"
 )
 
 // Formats an export can be written in, with their content types.
@@ -90,64 +88,6 @@ func (t *textWriter) Write(row []string) error {
 }
 
 func (t *textWriter) Bytes() ([]byte, error) { return t.buf.Bytes(), nil }
-
-type sheetWriter struct {
-	f   *excelize.File
-	sw  *excelize.StreamWriter
-	row int
-}
-
-func newSheet(name string, header []string) (*sheetWriter, error) {
-	f := excelize.NewFile()
-	if name == "" {
-		name = "Data"
-	}
-	if len(name) > 31 {
-		name = name[:31]
-	}
-	if err := f.SetSheetName("Sheet1", name); err != nil {
-		return nil, err
-	}
-	sw, err := f.NewStreamWriter(name)
-	if err != nil {
-		return nil, err
-	}
-	bold, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}, Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"E8EEF8"}}})
-	_ = sw.SetPanes(&excelize.Panes{Freeze: true, YSplit: 1, TopLeftCell: "A2", ActivePane: "bottomLeft"})
-	for i := range header {
-		_ = sw.SetColWidth(i+1, i+1, 18)
-	}
-	cells := make([]any, len(header))
-	for i, h := range header {
-		cells[i] = excelize.Cell{Value: h, StyleID: bold}
-	}
-	if err := sw.SetRow("A1", cells); err != nil {
-		return nil, err
-	}
-	return &sheetWriter{f: f, sw: sw, row: 1}, nil
-}
-
-func (s *sheetWriter) Write(row []string) error {
-	s.row++
-	cells := make([]any, len(row))
-	for i, v := range row {
-		cells[i] = v // written as text: an IP or MAC must never become a number or date
-	}
-	cell, _ := excelize.CoordinatesToCellName(1, s.row)
-	return s.sw.SetRow(cell, cells)
-}
-
-func (s *sheetWriter) Bytes() ([]byte, error) {
-	if err := s.sw.Flush(); err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := s.f.Write(&buf); err != nil {
-		return nil, err
-	}
-	_ = s.f.Close()
-	return buf.Bytes(), nil
-}
 
 // Read returns every row of an uploaded CSV or .xlsx file (the first sheet).
 // The name decides the format; content that doesn't match is refused.
