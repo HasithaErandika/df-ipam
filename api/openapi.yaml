@@ -306,6 +306,11 @@ paths:
       summary: "Set email on or off for one notification type"
       description: "Permission: any role."
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
+  /notifications/test-email:
+    post:
+      summary: "Send a sample email to yourself, and to the team mailbox when one is set, to check the mail server and layout"
+      description: "Permission: system:manage."
+      responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /ip-requests:
     get:
       summary: "IP requests; Admins see all, others their own"

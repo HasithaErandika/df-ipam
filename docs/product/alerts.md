@@ -32,8 +32,23 @@ After every scan, server check and FortiGate read, and after every change to dev
 
 A bell in the top bar shows each person's notifications and, for those who see the network, how many alerts are open.
 
-- Every new alert is a notification in the app for those who handle alerts. High and Critical ones also go by email when email is switched on in System (off by default, and needs `SMTP_HOST`).
-- **More than five new alerts at once become one summary**, so a noisy scan can't flood anyone.
-- Also sent: new requests (to those who approve them), request decisions, expiring reservations, and **servers back up**: only when the server is still monitored and answering, not when it was released or its monitoring turned off.
-- Each person can switch email off per type. At most 20 emails an hour per person; the rest stay in the app.
+- Every new alert is a notification in the app for those who handle alerts. **More than five new alerts at once become one notice**, so a noisy scan can't flood anyone.
+- Also in the app: new requests (to those who approve them), request decisions, expiring reservations, contracts reaching a reminder day, and **servers back up**: only when the server is still monitored and answering, not when it was released or its monitoring turned off.
 - Read notifications are removed after 90 days.
+
+## Email
+
+Email is off until an Admin switches it on in **System › Settings › Email** (it needs `SMTP_HOST`). It is kept for what someone must act on, and gathered so it doesn't pile up. Discovery findings are never emailed.
+
+| When | What |
+|---|---|
+| **At once**, its own email | Critical alerts; a decision on a person's own IP request |
+| **Digest**, one email every 30 minutes (15 to 240) | High alerts and new IP requests, gathered per person |
+| **Daily summary**, at 08:00 Sri Lanka time (any hour) | Only what needs someone: open alerts (counts and the Critical and High ones), devices and IP requests waiting, DHCP pools and server networks 90% or more used, failing FortiGate, Intune or Entra ID reads and failing scans, network link contracts ending within 30 days, and the person's own reservations about to expire. Each person gets the parts their permissions cover; nothing is sent on a quiet day. |
+| **App only** | Medium and Low alerts, servers back up, everything else |
+
+- **Team mailbox (optional).** With an address set (for example a distribution list), alert and request email goes there once instead of to each person, and the daily summary's team parts go there; people then get only their own parts (their reservations, contracts they are responsible for) and their request decisions.
+- Each person switches kinds off in **Alerts › Email preferences**: Alerts, New IP requests, Decisions on my IP requests, Daily summary. Only kinds their role can get are listed.
+- Emails are HTML with a plain-text copy, in the app's colours, with no images or outside content. Every line links into the app.
+- A failed email is tried again 1, 2, 4 and 8 minutes later, then given up. Email isn't sent to deactivated people.
+- **Send a test email** in Settings sends an example to the Admin, and to the team mailbox when set.

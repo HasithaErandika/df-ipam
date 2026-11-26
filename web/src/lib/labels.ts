@@ -38,11 +38,19 @@ export const segmentKinds: Record<string, string> = { dhcp: 'DHCP network', serv
 
 export const sources: Record<string, string> = { arp: 'ARP', ping: 'Ping', netbios: 'NetBIOS', snmp: 'SNMP', dns: 'DNS', dhcp: 'DHCP lease', vpn: 'VPN' }
 
+/** What each notice under the bell is about. */
 export const notificationKinds: Record<string, string> = {
-  alert: 'High and Critical alerts', server_up: 'Server back up', request: 'New IP requests (Admins)',
-  request_decision: 'Decisions on my IP requests', reservation_expiry: 'Reservations about to expire',
-  link_contract_expiry: 'Network link contracts about to expire',
+  alert: 'Alert', server_up: 'Server back up', request: 'IP request', request_decision: 'Request decided',
+  reservation_expiry: 'Reservation expiring', link_contract_expiry: 'Contract ending',
 }
+
+/** The emails a person can switch on or off, who they are for, and when they come. */
+export const emailKinds: { kind: string; label: string; when: string; permission?: string }[] = [
+  { kind: 'alert', label: 'Alerts', when: 'Critical at once; High gathered into one email every half hour or so. Medium and Low stay in the app.', permission: 'alerts:manage' },
+  { kind: 'request', label: 'New IP requests', when: 'Gathered with alerts into the same periodic email.', permission: 'requests:approve' },
+  { kind: 'request_decision', label: 'Decisions on my IP requests', when: 'At once, when an approver decides.', permission: 'ip:request' },
+  { kind: 'daily_summary', label: 'Daily summary', when: 'Each morning, only when something needs you: open alerts, approvals, full networks, failing reads, contracts and your reservations.' },
+]
 
 export const severityTone: Record<string, Tone> = { critical: 'danger', high: 'warn', medium: 'accent', low: 'neutral' }
 

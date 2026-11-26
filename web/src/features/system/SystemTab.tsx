@@ -1,10 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { Button, Card, ErrorState, Field, FormError, Input, Notice, SkeletonRows, Switch, useConfirm, useConfirmSave } from '../../components/ui'
+import { Button, Card, ErrorState, Field, FormError, Input, SkeletonRows, useConfirmSave } from '../../components/ui'
 import { fieldIssues, get, put } from '../../lib/api'
 import { useInvalidate } from '../../lib/queries'
 import type { SystemSettings } from '../../lib/types'
 import { AutomationSwitches } from './AutomationSwitches'
+import { EmailSettings } from './EmailSettings'
 import { ScanLoad } from './ScanLoad'
 
 interface NumberField { key: string; label: string; unit: string; min: number; max: number; hint: string }
@@ -35,17 +36,12 @@ export function SystemTab() {
   const [values, setValues] = useState<Record<string, string>>({})
   const refresh = useInvalidate('/settings', '/notification-preferences', '/discovery', 'me')
   const confirmSave = useConfirmSave()
-  const confirm = useConfirm()
   // Seed from the saved numbers only when they change: saving a switch refetches and would wipe unsaved numbers.
   const saved = q.data ? JSON.stringify(q.data.values) : ''
   useEffect(() => { if (q.data) setValues(Object.fromEntries(Object.entries(q.data.values).map(([k, v]) => [k, String(v)]))) }, [saved])
   const save = useMutation({
     mutationFn: (body: object) => put('/settings', body),
     meta: { inlineError: true, success: 'Settings saved.' }, onSuccess: () => void refresh(),
-  })
-  const email = useMutation({
-    mutationFn: (on: boolean) => put('/settings', { emailEnabled: on }),
-    meta: { success: (on: boolean) => (on ? 'Email notifications switched on.' : 'Email notifications switched off.') }, onSuccess: () => void refresh(),
   })
   if (q.isPending) return <Card><SkeletonRows rows={6} /></Card>
   if (q.isError) return <Card><ErrorState error={q.error} onRetry={() => void q.refetch()} /></Card>
@@ -67,17 +63,7 @@ export function SystemTab() {
   )
   return (
     <div className="space-y-4">
-      <Card title="Email notifications" subtitle="Notifications always appear under the bell. This switch controls email for everyone.">
-        <div className="space-y-3 p-4">
-          <Switch id="set-email" checked={s.emailEnabled} disabled={email.isPending} onChange={async (on) => {
-            if (await confirm({ title: on ? 'Switch email notifications on?' : 'Switch email notifications off?', tone: 'primary', confirmLabel: on ? 'Switch on' : 'Switch off',
-              body: on ? 'Everyone starts getting emails for the notification types they keep on.' : 'Nobody gets email; notifications still appear under the bell.' })) email.mutate(on)
-          }}
-            label="Send email notifications" hint="High and Critical alerts, request decisions, servers back up and expiring reservations. Each person can switch types off." />
-          {!s.smtpConfigured && <Notice tone="warn">No mail server is set in api/.env (SMTP_HOST). Email stays off in practice until one is configured.</Notice>}
-          {s.emailEnabled && s.smtpConfigured && <Notice tone="ok">Email is on. At most 20 emails an hour go to one person; a burst of alerts arrives as one summary.</Notice>}
-        </div>
-      </Card>
+      <EmailSettings settings={s} onSaved={() => void refresh()} />
       <AutomationSwitches settings={s} onSaved={() => void refresh()} />
       <Card title="Discovery and checks" subtitle={`Method: ${s.scanMethod === 'ping' ? 'ping sweep with reverse DNS and NetBIOS (option C)' : s.scanMethod}. Read-only: nothing on the network is changed.`}>
         <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">{scanning.map(row)}</div>

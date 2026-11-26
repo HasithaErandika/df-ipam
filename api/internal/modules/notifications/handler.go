@@ -10,13 +10,20 @@ import (
 	"dfipam/api/internal/notify"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
+	"dfipam/api/internal/platform/mail"
 
 	"github.com/gin-gonic/gin"
 )
 
-type Handler struct{ conn db.Conn }
+type Handler struct {
+	conn   db.Conn
+	mailer mail.Mailer
+	base   string
+}
 
-func New(conn db.Conn) *Handler { return &Handler{conn: conn} }
+func New(conn db.Conn, mailer mail.Mailer, baseURL string) *Handler {
+	return &Handler{conn: conn, mailer: mailer, base: baseURL}
+}
 
 // Every signed-in person with a role has an inbox, whatever the role.
 var anyRole = []string{auth.InventoryView, auth.IPRequest, auth.SystemManage}
@@ -28,6 +35,7 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPost, "/notifications/read-all", h.readAll, anyRole...)
 	g.Handle(http.MethodGet, "/notification-preferences", h.preferences, anyRole...)
 	g.Handle(http.MethodPut, "/notification-preferences", h.updatePreference, anyRole...)
+	g.Handle(http.MethodPost, "/notifications/test-email", h.testEmail, auth.SystemManage)
 }
 
 type notificationDTO struct {

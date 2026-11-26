@@ -96,5 +96,6 @@ In Docker, `docker/postgres/init` creates `dfipam_app` with its password. On ano
 | 000028 | `segments.last_swept_at` (the scan schedule counts from it); `links:commercial_view` added to roles that manage link costs; the app role can no longer delete devices |
 | 000029 | Segment checks use `<<=` (inside or equal), so a /32 segment can hold its one address |
 | 000030 | `notifications.email_next_at`: a failed email waits 1, 2, 4, then 8 minutes before the next try |
+| 000031 | `notifications.email_mode` (now, digest or none) and `severity`; a notice with no user is an email for the team mailbox, never shown in an inbox |
 
 The seed (`make seed`, safe to repeat) loads the five environments and default settings.

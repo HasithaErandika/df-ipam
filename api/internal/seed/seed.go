@@ -38,7 +38,10 @@ var Settings = []struct{ Key, Value string }{
 	{"scan.auto_servers", "true"},    // scheduled scans of server segments
 	{"server_check.enabled", "true"}, // scheduled checks of monitored servers
 	{"reservations.reminder_days", "7"},
-	{"email.enabled", "false"}, // email stays off until an Admin turns it on in Settings
+	{"email.enabled", "false"},     // email stays off until an Admin turns it on in Settings
+	{"email.digest_minutes", "30"}, // High alerts and new requests are gathered this long
+	{"email.summary_hour", "8"},    // the daily summary goes after this hour, Sri Lanka time
+	{"email.team_address", `""`},   // a team mailbox for alert and request email; empty sends to each person
 	{"session.idle_timeout_minutes", "30"},
 	{"fortigate.enabled", "false"}, // optional, read-only; set up in Settings > Integrations
 	{"fortigate.verify_tls", "true"},

@@ -9,8 +9,9 @@ import (
 	"dfipam/api/internal/platform/db"
 )
 
-// RunReminders checks contract expiry every few hours and notifies each link's
-// responsible officer and everyone who manages link contracts.
+// RunReminders checks contract expiry every few hours and puts a notice in the
+// inbox of each link's responsible officer and everyone who manages link
+// contracts. By email, contracts ending soon come in the daily summary.
 func RunReminders(ctx context.Context, conn db.Conn) {
 	ticker := time.NewTicker(3 * time.Hour)
 	defer ticker.Stop()
@@ -49,15 +50,14 @@ func QueueReminders(ctx context.Context, conn db.Conn) error {
 		UNION
 		SELECT m.*, u.id FROM marked m JOIN users u ON u.is_active AND `+auth.HolderSQL("'"+auth.LinksCommercialManage+"'")+`
 	)
-	INSERT INTO notifications (user_id, kind, message, link, email_status)
+	INSERT INTO notifications (user_id, kind, message, link)
 	SELECT r.user_id, 'link_contract_expiry',
 		'Contract for ' || r.code || ' ' || r.name || CASE
 			WHEN r.left_days > 1 THEN ' ends in ' || r.left_days || ' days, on ' || to_char(r.contract_end, 'DD Mon YYYY') || '.'
 			WHEN r.left_days = 1 THEN ' ends tomorrow, ' || to_char(r.contract_end, 'DD Mon YYYY') || '.'
 			WHEN r.left_days = 0 THEN ' ends today.'
 			ELSE ' ended on ' || to_char(r.contract_end, 'DD Mon YYYY') || '.' END,
-		'/network-links/' || r.id, CASE WHEN COALESCE(p.email, true) THEN 'pending' ELSE 'none' END
-	FROM recipients r JOIN users u ON u.id = r.user_id AND u.is_active
-	LEFT JOIN notification_preferences p ON p.user_id = r.user_id AND p.kind = 'link_contract_expiry'`)
+		'/network-links/' || r.id
+	FROM recipients r JOIN users u ON u.id = r.user_id AND u.is_active`)
 	return err
 }

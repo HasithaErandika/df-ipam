@@ -65,7 +65,6 @@ func run() error {
 	if mailEnabled {
 		mailer = mail.NewSMTP(mailCfg)
 	}
-	go notifications.RunOutbox(ctx, pool, mailer, cfg.AppBaseURL)
 	go notifications.RunReservationReminders(ctx, pool)
 	go links.RunReminders(ctx, pool)
 	// Network link attachments live on their own volume, never in the database.
@@ -86,6 +85,8 @@ func run() error {
 	// Intune is read with the same Entra app that signs people in.
 	directory := intune.NewSyncer(pool, intune.NewClient(cfg.EntraAuthority, cfg.EntraTenantID, cfg.EntraClientID, cfg.EntraClientSecret))
 	go directory.Run(ctx)
+	// Email: what is due now, digests and the daily summary (docs/product/alerts.md#email).
+	go notifications.NewOutbox(pool, mailer, cfg.AppBaseURL, readerHealth(firewall, directory)).Run(ctx)
 
 	sessions := &auth.Sessions{Conn: pool}
 	var microsoft signin.Microsoft
@@ -99,7 +100,8 @@ func run() error {
 		slog.Warn("nobody can sign in: set ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET")
 	}
 	deps := server.Deps{Sessions: sessions, SignIn: signIn, Conn: pool, Ready: pool.Ping, Origins: cfg.AllowedOrigins,
-		TrustedProxies: cfg.TrustedProxies, SecureCookies: strings.HasPrefix(cfg.AppBaseURL, "https://"), MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, Intune: directory, LinkFiles: linkFiles, SMTPConfigured: mailEnabled}
+		TrustedProxies: cfg.TrustedProxies, SecureCookies: strings.HasPrefix(cfg.AppBaseURL, "https://"), MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, Intune: directory, LinkFiles: linkFiles, SMTPConfigured: mailEnabled,
+		Mailer: mailer, AppBaseURL: cfg.AppBaseURL}
 	router, _ := server.New(deps)
 
 	// API_LISTEN_ADDR may list several addresses, for host networking: loopback

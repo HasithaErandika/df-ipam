@@ -5,42 +5,49 @@ import (
 	"log/slog"
 	"time"
 
+	"dfipam/api/internal/notify"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/mail"
 )
 
 const (
-	// maxPerHour caps email to one person. Past it, notices stay in the app only,
-	// so a burst of alerts can't flood anyone's mailbox.
-	maxPerHour  = 20
 	maxAttempts = 5
-	batchSize   = 20
+	batchSize   = 50
 	// Read notifications older than this are removed; unread ones are kept.
 	keepRead = "90 days"
 )
 
-type outboxItem struct {
-	ID, Email, Kind, Message, Link string
-	Attempts                       int
+// Health lists problems with the background readers (FortiGate, Intune) for
+// the daily summary. Nothing when they are fine.
+type Health func() []notify.Row
+
+// Outbox sends email in the API process, only when Settings > Email is on and
+// SMTP is configured; otherwise notices stay in the app. It sends what is due
+// now, each digest that is due, and the daily summary once a day.
+type Outbox struct {
+	conn   db.Conn
+	mailer mail.Mailer
+	base   string
+	health Health
 }
 
-// RunOutbox delivers queued email in the API process. Email is sent only when
-// Settings > Email is on and SMTP is configured; otherwise queued email is
-// dropped while the in-app notification stays. A failed send is retried.
-func RunOutbox(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL string) {
-	ticker := time.NewTicker(5 * time.Second)
+func NewOutbox(conn db.Conn, mailer mail.Mailer, baseURL string, health Health) *Outbox {
+	return &Outbox{conn: conn, mailer: mailer, base: baseURL, health: health}
+}
+
+// Run checks every 30 seconds until ctx ends.
+func (o *Outbox) Run(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	tick := 0
-	for {
-		if err := deliverBatch(ctx, conn, mailer, baseURL); err != nil && ctx.Err() == nil {
-			slog.ErrorContext(ctx, "notification outbox failed", "error", err)
+	for tick := 0; ; tick++ {
+		if err := o.Tick(ctx); err != nil && ctx.Err() == nil {
+			slog.ErrorContext(ctx, "email outbox failed", "error", err)
 		}
-		if tick%720 == 0 { // about hourly
-			if _, err := conn.Exec(ctx, `DELETE FROM notifications WHERE is_read AND created_at < now() - $1::interval`, keepRead); err != nil && ctx.Err() == nil {
+		if tick%120 == 0 { // about hourly
+			if _, err := o.conn.Exec(ctx, `DELETE FROM notifications WHERE is_read AND created_at < now() - $1::interval`, keepRead); err != nil && ctx.Err() == nil {
 				slog.ErrorContext(ctx, "notification cleanup failed", "error", err)
 			}
 		}
-		tick++
 		select {
 		case <-ctx.Done():
 			return
@@ -49,79 +56,72 @@ func RunOutbox(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL st
 	}
 }
 
+// Tick does one round: what is due now, due digests and the daily summary.
+func (o *Outbox) Tick(ctx context.Context) error {
+	cfg := loadConfig(ctx, o.conn)
+	// With email off, or nowhere to send it, a notice stays in the app only.
+	if _, err := o.conn.Exec(ctx, `UPDATE notifications n SET email_status = 'none' WHERE n.email_status = 'pending'
+		AND (NOT $1 OR (n.user_id IS NULL AND $2 = '') OR EXISTS (SELECT 1 FROM users u WHERE u.id = n.user_id AND NOT u.is_active))`,
+		o.mailer != nil && cfg.Enabled, cfg.Team); err != nil {
+		return err
+	}
+	if o.mailer == nil || !cfg.Enabled {
+		return nil
+	}
+	if err := o.sendNow(ctx, cfg); err != nil {
+		return err
+	}
+	if err := o.sendDigests(ctx, cfg); err != nil {
+		return err
+	}
+	return o.dailySummary(ctx, cfg)
+}
+
+// config is the email settings (Settings > Email).
+type config struct {
+	Enabled       bool
+	DigestMinutes int
+	SummaryHour   int
+	Team          string
+}
+
+func loadConfig(ctx context.Context, conn db.Conn) config {
+	c := config{DigestMinutes: 30, SummaryHour: 8}
+	_ = conn.QueryRow(ctx, `SELECT
+		COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'email.enabled'), false),
+		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'email.digest_minutes'), 30),
+		COALESCE((SELECT (value #>> '{}')::integer FROM settings WHERE key = 'email.summary_hour'), 8),
+		`+notify.TeamAddressSQL).Scan(&c.Enabled, &c.DigestMinutes, &c.SummaryHour, &c.Team)
+	return c
+}
+
 // EmailEnabled reads the switch in Settings. It is off until an Admin turns it on.
-func EmailEnabled(ctx context.Context, conn db.Conn) bool {
-	var on bool
-	_ = conn.QueryRow(ctx, `SELECT COALESCE((SELECT (value #>> '{}')::boolean FROM settings WHERE key = 'email.enabled'), false)`).Scan(&on)
-	return on
-}
+func EmailEnabled(ctx context.Context, conn db.Conn) bool { return loadConfig(ctx, conn).Enabled }
 
-func deliverBatch(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL string) error {
-	if mailer == nil || !EmailEnabled(ctx, conn) {
-		_, err := conn.Exec(ctx, `UPDATE notifications SET email_status = 'none' WHERE email_status = 'pending'`)
+// mark records a send: sent, or another try 1, 2, 4 then 8 minutes later, and
+// failed after the last.
+func (o *Outbox) mark(ctx context.Context, ids []string, sendErr error) error {
+	if sendErr == nil {
+		_, err := o.conn.Exec(ctx, `UPDATE notifications SET email_status = 'sent', email_attempts = email_attempts + 1
+			WHERE id = ANY($1::uuid[])`, ids)
 		return err
 	}
-	// Over the hourly cap, an email is skipped rather than delayed: the notice is
-	// still in the app, and a late burst of stale mail helps nobody.
-	if _, err := conn.Exec(ctx, `UPDATE notifications n SET email_status = 'none' WHERE n.email_status = 'pending'
-		AND (SELECT count(*) FROM notifications s WHERE s.user_id = n.user_id AND s.email_status = 'sent' AND s.created_at > now() - interval '1 hour') >= $1`,
-		maxPerHour); err != nil {
-		return err
-	}
-	items, err := pendingEmails(ctx, conn)
-	if err != nil {
-		return err
-	}
-	for _, n := range items {
-		if err := sendEmail(ctx, conn, mailer, baseURL, n); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func pendingEmails(ctx context.Context, conn db.Conn) ([]outboxItem, error) {
-	rows, err := conn.Query(ctx, `SELECT n.id::text, u.email, n.kind, n.message, n.link, n.email_attempts FROM notifications n
-		JOIN users u ON u.id = n.user_id WHERE n.email_status = 'pending' AND u.is_active
-			AND (n.email_next_at IS NULL OR n.email_next_at <= now()) ORDER BY n.created_at LIMIT $1`, batchSize)
-	if err != nil {
-		return nil, err
-	}
-	var items []outboxItem
-	for rows.Next() {
-		var n outboxItem
-		if err := rows.Scan(&n.ID, &n.Email, &n.Kind, &n.Message, &n.Link, &n.Attempts); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		items = append(items, n)
-	}
-	rows.Close()
-	return items, rows.Err()
-}
-
-// sendEmail sends one notice and records the try. A failure stays pending for
-// another try until it reaches maxAttempts.
-func sendEmail(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL string, n outboxItem) error {
-	body := n.Message + "\n\nOpen DF-IPAM: " + baseURL + n.Link + "\n\nYou can turn these emails off under Alerts > Email notifications."
-	sendErr := mailer.Send(ctx, n.Email, "DF-IPAM: "+subjects[n.Kind], body)
-	status := "sent"
-	if sendErr != nil {
-		status = "pending"
-		if n.Attempts+1 >= maxAttempts {
-			status = "failed"
-		}
-		slog.WarnContext(ctx, "notification email failed", "notificationId", n.ID, "attempt", n.Attempts+1)
-	}
-	// The next try waits 1, 2, 4, then 8 minutes.
-	_, err := conn.Exec(ctx, `UPDATE notifications SET email_status = $2, email_attempts = email_attempts + 1,
-		email_next_at = now() + interval '1 minute' * power(2, email_attempts) WHERE id = $1::uuid AND email_status = 'pending'`,
-		n.ID, status)
+	o.logFailure(ctx, "notices", sendErr)
+	_, err := o.conn.Exec(ctx, `UPDATE notifications SET email_attempts = email_attempts + 1,
+		email_status = CASE WHEN email_attempts + 1 >= $2 THEN 'failed' ELSE 'pending' END,
+		email_next_at = now() + interval '1 minute' * power(2, email_attempts) WHERE id = ANY($1::uuid[])`, ids, maxAttempts)
 	return err
 }
 
-var subjects = map[string]string{
-	"alert": "network alert", "server_up": "server back up", "request": "new IP request",
-	"request_decision": "your IP request", "reservation_expiry": "reservation expiring",
-	"link_contract_expiry": "network link contract expiring",
+func (o *Outbox) logFailure(ctx context.Context, what string, err error) {
+	slog.WarnContext(ctx, "email failed", "email", what, "error", err)
+}
+
+// deliver renders one email and sends it.
+func (o *Outbox) deliver(ctx context.Context, e notify.Email, to string) error {
+	letter, err := notify.Render(e, o.base, to)
+	if err != nil {
+		return err
+	}
+	return o.mailer.Send(ctx, letter)
 }

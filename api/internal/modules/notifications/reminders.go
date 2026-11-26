@@ -8,7 +8,8 @@ import (
 	"dfipam/api/internal/platform/db"
 )
 
-// RunReservationReminders queues a one-time reminder in the week before expiry.
+// RunReservationReminders puts a one-time reminder in the owner's inbox in the
+// week before expiry. By email it comes in the daily summary.
 func RunReservationReminders(ctx context.Context, conn db.Conn) {
 	ticker := time.NewTicker(6 * time.Hour)
 	defer ticker.Stop()
@@ -33,9 +34,8 @@ func queueReservationReminders(ctx context.Context, conn db.Conn) error {
 		SELECT d.owner_id AS user_id,d.reason,d.start_ip,d.end_ip FROM due d WHERE d.owner_id IS NOT NULL
 		UNION ALL SELECT u.id,d.reason,d.start_ip,d.end_ip FROM due d JOIN users u ON u.is_active AND EXISTS (SELECT 1 FROM roles r WHERE r.key=u.role AND (r.full_access OR 'inventory:edit'=ANY(r.permissions))) WHERE d.owner_id IS NULL
 	)
-	INSERT INTO notifications(user_id,kind,message,link,email_status)
-	SELECT r.user_id,'reservation_expiry','Reservation expires soon: '||r.reason||' ('||host(r.start_ip)||CASE WHEN r.start_ip<>r.end_ip THEN ' – '||host(r.end_ip) ELSE '' END||')','/reservations',
-		CASE WHEN COALESCE(p.email,true) THEN 'pending' ELSE 'none' END
-	FROM recipients r LEFT JOIN notification_preferences p ON p.user_id=r.user_id AND p.kind='reservation_expiry'`)
+	INSERT INTO notifications(user_id,kind,message,link)
+	SELECT r.user_id,'reservation_expiry','Reservation expires soon: '||r.reason||' ('||host(r.start_ip)||CASE WHEN r.start_ip<>r.end_ip THEN ' – '||host(r.end_ip) ELSE '' END||')','/reservations'
+	FROM recipients r`)
 	return err
 }

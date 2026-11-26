@@ -157,9 +157,10 @@ func candidates(ctx context.Context, tx pgx.Tx) ([]candidate, error) {
 	return found, rows.Err()
 }
 
-// announce tells those who handle alerts about each new one, in the app; High
-// and Critical ones also by email. Many at once become one summary, so a noisy
-// scan can't flood anyone.
+// announce tells those who handle alerts about each new one, in the app.
+// Email goes by severity: Critical at once, High in the next digest, the rest
+// never (it is in the daily summary). Many at once become one notice, so a
+// noisy scan can't flood anyone.
 func announce(ctx context.Context, tx pgx.Tx, fresh []candidate) error {
 	if len(fresh) > digestAfter {
 		urgent, critical := 0, 0
@@ -172,10 +173,16 @@ func announce(ctx context.Context, tx pgx.Tx, fresh []candidate) error {
 			}
 		}
 		msg := fmt.Sprintf("%d new alerts, %d of them High or Critical (%d Critical). Open Alerts to review them.", len(fresh), urgent, critical)
-		return notify.Holders(ctx, tx, alertsPermission, "alert", msg, "/alerts", urgent > 0)
+		d, sev := notify.AppOnly, "warn"
+		if critical > 0 {
+			d, sev = notify.Now, "critical"
+		} else if urgent > 0 {
+			d, sev = notify.Digest, "high"
+		}
+		return notify.Holders(ctx, tx, alertsPermission, "alert", msg, "/alerts", sev, d)
 	}
 	for _, x := range fresh {
-		if err := notify.Holders(ctx, tx, alertsPermission, "alert", x.message, "/alerts?q="+x.ip, x.notifies()); err != nil {
+		if err := notify.Holders(ctx, tx, alertsPermission, "alert", x.message, "/alerts?q="+x.ip, x.severity, delivery(x.severity)); err != nil {
 			return err
 		}
 	}

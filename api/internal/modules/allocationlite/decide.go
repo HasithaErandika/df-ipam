@@ -96,7 +96,7 @@ func (h *Handler) decide(c *gin.Context, tx pgx.Tx, id string, in decisionInput)
 	if in.Status == "approved" {
 		msg = "Your IP request for " + r.name + " was approved. Use IP " + assigned + "."
 	}
-	return assigned, notify.User(c, tx, r.requester, "request_decision", msg, "/requests", true)
+	return assigned, notify.User(c, tx, r.requester, "request_decision", msg, "/requests", notify.Now)
 }
 
 // assign picks the address (chosen, requested, or the Available candidate), checks

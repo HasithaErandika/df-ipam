@@ -1,5 +1,6 @@
-// Package mail sends plain-text email over SMTP. It needs only the standard
-// library, and refuses to send credentials over an unencrypted connection.
+// Package mail sends email over SMTP: an HTML message with a plain-text copy.
+// It needs only the standard library, and refuses to send credentials over an
+// unencrypted connection.
 package mail
 
 import (
@@ -18,7 +19,7 @@ import (
 
 // Mailer sends one message.
 type Mailer interface {
-	Send(ctx context.Context, to, subject, body string) error
+	Send(ctx context.Context, m Letter) error
 }
 
 // Config is the SMTP connection. Port 465 uses implicit TLS; any other port
@@ -58,29 +59,8 @@ type SMTP struct{ cfg Config }
 
 func NewSMTP(cfg Config) *SMTP { return &SMTP{cfg} }
 
-// clean removes line breaks, so a value can't add mail headers.
-func clean(s string) string {
-	return strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
-}
-
-// Message builds an RFC 5322 plain-text message.
-func Message(from, to, subject, body string, now time.Time) []byte {
-	var b strings.Builder
-	fmt.Fprintf(&b, "From: %s\r\n", clean(from))
-	fmt.Fprintf(&b, "To: %s\r\n", clean(to))
-	fmt.Fprintf(&b, "Subject: %s\r\n", clean(subject))
-	fmt.Fprintf(&b, "Date: %s\r\n", now.UTC().Format(time.RFC1123Z))
-	b.WriteString("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
-	// Lines end in CRLF; a lone CR is dropped. Leading dots are left alone:
-	// net/smtp's DATA writer stuffs them, and doing it here too doubled them.
-	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-		b.WriteString(strings.ReplaceAll(line, "\r", "") + "\r\n")
-	}
-	return []byte(b.String())
-}
-
-func (s *SMTP) Send(ctx context.Context, to, subject, body string) error {
-	if _, err := mail.ParseAddress(to); err != nil {
+func (s *SMTP) Send(ctx context.Context, m Letter) error {
+	if _, err := mail.ParseAddress(m.To); err != nil {
 		return fmt.Errorf("invalid recipient")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -94,7 +74,7 @@ func (s *SMTP) Send(ctx context.Context, to, subject, body string) error {
 	if err := s.secure(client, tlsConfig); err != nil {
 		return err
 	}
-	return s.deliver(client, to, subject, body)
+	return s.deliver(client, m)
 }
 
 // connect opens the connection and reads the greeting. Port 465 starts in TLS.
@@ -140,18 +120,18 @@ func (s *SMTP) secure(client *smtp.Client, tlsConfig *tls.Config) error {
 	return nil
 }
 
-func (s *SMTP) deliver(client *smtp.Client, to, subject, body string) error {
+func (s *SMTP) deliver(client *smtp.Client, m Letter) error {
 	if err := client.Mail(s.cfg.From); err != nil {
 		return fmt.Errorf("mail from: %w", err)
 	}
-	if err := client.Rcpt(to); err != nil {
+	if err := client.Rcpt(m.To); err != nil {
 		return fmt.Errorf("recipient refused")
 	}
 	w, err := client.Data()
 	if err != nil {
 		return fmt.Errorf("data: %w", err)
 	}
-	if _, err := w.Write(Message(s.cfg.From, to, subject, body, time.Now())); err != nil {
+	if _, err := w.Write(Message(s.cfg.From, m, time.Now())); err != nil {
 		return err
 	}
 	if err := w.Close(); err != nil {

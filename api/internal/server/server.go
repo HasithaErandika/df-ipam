@@ -24,6 +24,7 @@ import (
 	"dfipam/api/internal/modules/signin"
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
+	"dfipam/api/internal/platform/mail"
 
 	"github.com/gin-gonic/gin"
 )
@@ -70,6 +71,10 @@ type Deps struct {
 	LinkFiles *links.Store
 	// SMTPConfigured says whether api/.env has a mail server, shown in Settings.
 	SMTPConfigured bool
+	// Mailer sends the test email from Settings. Nil without a mail server.
+	Mailer mail.Mailer
+	// AppBaseURL is where links in email point.
+	AppBaseURL string
 	// Sessions resolves sign-in cookies, the only way in. Nil refuses every request.
 	Sessions auth.SessionResolver
 	// SignIn serves the public sign-in routes. Nil in tests that don't need them.
@@ -117,7 +122,7 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	account.NewHandler(d.Conn).Register(guard)
 	inventory.NewHandler(d.Conn).Register(guard)
 	alerts.New(d.Conn).Register(guard)
-	notifications.New(d.Conn).Register(guard)
+	notifications.New(d.Conn, d.Mailer, d.AppBaseURL).Register(guard)
 	allocationlite.New(d.Conn).Register(guard)
 	discovery.New(d.Conn, d.Scanner).Register(guard)
 	admin.New(d.Conn, d.SMTPConfigured).Register(guard)

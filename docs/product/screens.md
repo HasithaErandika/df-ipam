@@ -44,6 +44,9 @@ People who may manage the system change these in **System > Settings**:
 | Reservation reminder | 7 days | 1 to 60 days |
 | Idle sign-out | 30 minutes, warned one minute before | 5 to 480 minutes |
 | Email | Off | |
+| Team mailbox | None | One email address, or none |
+| Email digest | Every 30 minutes | 15 to 240 minutes |
+| Daily summary | 08:00 Sri Lanka time | Any hour |
 
 The three automatic switches stop only scheduled work: **Scan now** still scans any segment. While a kind of segment isn't scanned automatically, its alerts stay open; while checks are off, servers keep their last state.
 

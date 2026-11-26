@@ -1,5 +1,18 @@
 package monitoring
 
+import "dfipam/api/internal/notify"
+
+// delivery is how an alert of this severity is emailed.
+func delivery(severity string) notify.Delivery {
+	switch severity {
+	case "critical":
+		return notify.Now
+	case "high":
+		return notify.Digest
+	}
+	return notify.AppOnly
+}
+
 // candidatesSQL lists every alert cause that is true right now (docs/product/alerts.md).
 // "Recent" is seen_window(): two scan intervals, so alerts don't close between two slow scans.
 // An address in a DHCP pool is a conflict only when two MACs answered within five
@@ -111,10 +124,8 @@ const closeSQL = `WITH closed AS (
 			AND (s.scan_failed_at IS NOT NULL OR (SELECT value = 'false'::jsonb FROM settings
 				WHERE key = CASE s.kind WHEN 'dhcp' THEN 'scan.auto_devices' WHEN 'server' THEN 'scan.auto_servers' END))))
 	RETURNING alert_type, ip
-) INSERT INTO notifications (user_id, kind, message, link, email_status)
-SELECT u.id, 'server_up', 'Server ' || COALESCE(NULLIF(i.assigned_name, ''), host(closed.ip)) || ' (' || host(closed.ip) || ') is back up', '/servers',
-	CASE WHEN COALESCE(p.email, true) THEN 'pending' ELSE 'none' END
+) INSERT INTO notifications (user_id, kind, message, link)
+SELECT u.id, 'server_up', 'Server ' || COALESCE(NULLIF(i.assigned_name, ''), host(closed.ip)) || ' (' || host(closed.ip) || ') is back up', '/servers'
 FROM closed JOIN ip_addresses i ON i.ip = closed.ip AND i.monitor AND i.health = 'up' CROSS JOIN users u
-LEFT JOIN notification_preferences p ON p.user_id = u.id AND p.kind = 'server_up'
 WHERE closed.alert_type = 'server_down' AND u.is_active
 	AND EXISTS (SELECT 1 FROM roles r WHERE r.key = u.role AND (r.full_access OR 'alerts:manage' = ANY(r.permissions)))`

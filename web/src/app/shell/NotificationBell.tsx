@@ -76,7 +76,7 @@ export function NotificationBell() {
                   <div className="min-w-0 flex-1">
                     <p className={`text-[13px] leading-snug ${n.isRead ? 'text-ink-2' : 'font-medium text-ink'}`}>{n.message}</p>
                     <div className="mt-1 flex items-center gap-2 text-[11.5px] text-ink-3">
-                      <Badge>{label(notificationKinds, n.kind).replace(' (Admins)', '')}</Badge>
+                      <Badge>{label(notificationKinds, n.kind)}</Badge>
                       <time dateTime={n.createdAt} title={new Date(n.createdAt).toLocaleString('en-GB')}>{formatAgo(n.createdAt)}</time>
                     </div>
                   </div>

@@ -3,7 +3,9 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+	"net/mail"
 	"strconv"
+	"strings"
 
 	"dfipam/api/internal/platform/db"
 	"dfipam/api/internal/platform/httpx"
@@ -31,9 +33,14 @@ var numbers = []numberSetting{
 	{"server_check.slow_ms", "slowMs", "Slow server limit", 10, 5000},
 	{"reservations.reminder_days", "reminderDays", "Reminder days", 1, 60},
 	{"session.idle_timeout_minutes", "sessionTimeoutMinutes", "Session timeout", 5, 480},
+	{"email.digest_minutes", "digestMinutes", "Digest interval", 15, 240},
+	{"email.summary_hour", "summaryHour", "Daily summary hour", 0, 23},
 }
 
-const emailKey = "email.enabled"
+const (
+	emailKey = "email.enabled"
+	teamKey  = "email.team_address" // where alert and request email goes instead of each person
+)
 
 // switches are on/off settings an Admin may change. Keys are fixed here.
 var switches = []struct{ Key, Field string }{
@@ -48,6 +55,7 @@ type settingsDTO struct {
 	Values         map[string]int  `json:"values"`
 	Switches       map[string]bool `json:"switches"`
 	EmailEnabled   bool            `json:"emailEnabled"`
+	TeamAddress    string          `json:"teamAddress"`
 	SMTPConfigured bool            `json:"smtpConfigured"`
 	ScanMethod     string          `json:"scanMethod"`
 }
@@ -86,6 +94,7 @@ func (h *Handler) read(c *gin.Context) (settingsDTO, error) {
 		out.Switches[s.Field] = on
 	}
 	_ = json.Unmarshal(raw[emailKey], &out.EmailEnabled)
+	_ = json.Unmarshal(raw[teamKey], &out.TeamAddress)
 	_ = json.Unmarshal(raw["scan.method"], &out.ScanMethod)
 	return out, rows.Err()
 }
@@ -103,6 +112,7 @@ type settingsInput struct {
 	Values       map[string]int  `json:"values"`
 	Switches     map[string]bool `json:"switches"`
 	EmailEnabled *bool           `json:"emailEnabled"`
+	TeamAddress  *string         `json:"teamAddress"`
 }
 
 // changes checks each field sent and returns them as setting keys and values.
@@ -124,9 +134,7 @@ func (in settingsInput) changes() (map[string]string, error) {
 			changes[s.Key] = strconv.FormatBool(on)
 		}
 	}
-	if in.EmailEnabled != nil {
-		changes[emailKey] = strconv.FormatBool(*in.EmailEnabled)
-	}
+	in.emailChanges(&v, changes)
 	if err := v.Err(); err != nil {
 		return nil, err
 	}
@@ -134,6 +142,23 @@ func (in settingsInput) changes() (map[string]string, error) {
 		return nil, httpx.Validation("values", "Change at least one setting.")
 	}
 	return changes, nil
+}
+
+// emailChanges adds the email switch and the team mailbox. The mailbox must be
+// one address, or empty for none.
+func (in settingsInput) emailChanges(v *validate.V, changes map[string]string) {
+	if in.EmailEnabled != nil {
+		changes[emailKey] = strconv.FormatBool(*in.EmailEnabled)
+	}
+	if in.TeamAddress == nil {
+		return
+	}
+	addr := strings.TrimSpace(*in.TeamAddress)
+	if a, err := mail.ParseAddress(addr); addr != "" && (err != nil || a.Address != addr) {
+		v.Add("teamAddress", "Enter one email address, such as netops@dialogfinance.lk, or leave it empty.")
+	}
+	b, _ := json.Marshal(addr)
+	changes[teamKey] = string(b)
 }
 
 // updateSettings saves the fields sent, each checked against its limits.
