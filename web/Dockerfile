@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Builds the web app, then serves it from Nginx, which is also the way in to the API.
-FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS build
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS build
 WORKDIR /src
 RUN corepack enable
 COPY package.json pnpm-lock.yaml ./
@@ -13,7 +13,7 @@ ARG APP_COMMIT=""
 ENV VITE_API_URL="" APP_COMMIT=$APP_COMMIT
 RUN pnpm build
 
-FROM nginxinc/nginx-unprivileged:1.30-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+FROM nginxinc/nginx-unprivileged:1.31-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
 COPY --from=build /src/dist /usr/share/nginx/html
 COPY nginx/dfipam.conf.template /etc/nginx/templates/dfipam.conf.template
 COPY nginx/app.inc.template /etc/nginx/templates/app.inc.template
