@@ -49,7 +49,7 @@ export function ScanButton({ segmentId, running, label: text = 'Scan now' }: { s
         </Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 max-h-[70vh] w-72 overflow-y-auto rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 max-h-[70vh] w-72 overflow-y-auto rounded-md border border-line-strong/70 bg-surface p-1 shadow-menu">
           <DropdownMenu.Item className={item} disabled={sweepable === 0} onSelect={() => scan.mutate(undefined)}>
             <span className="font-medium text-ink">All segments</span><span className="text-[12px] text-ink-3">{sweepable}</span>
           </DropdownMenu.Item>

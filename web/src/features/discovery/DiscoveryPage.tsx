@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useDialogParam } from '../../lib/dialogParam'
 import { Card, DataTable, FilterBar, FilterSelect, PageHeader, PathTabs, SearchInput, Segmented } from '../../components/ui'
 import { list } from '../../lib/api'
 import { useFilters, usePagedList } from '../../lib/listing'
@@ -37,8 +37,7 @@ function Findings() {
   const [prefill, setPrefill] = useState<RegisterPrefill | null>(null)
   const [approve, setApprove] = useState<DecisionTarget | null>(null)
   const reject = useRejectDevice()
-  const [params, setParams] = useSearchParams()
-  const openId = params.get('finding')
+  const [openId, setOpen] = useDialogParam('finding')
   // The list stops refreshing while a dialog is open, so rows don't move under it.
   const busy = Boolean(openId || prefill || approve)
   const { query, rows, meta, paging } = usePagedList<Finding>('/discovery/findings', { ...f.values, seen }, { refetchInterval: busy ? undefined : 30_000 })
@@ -50,12 +49,6 @@ function Findings() {
     enabled: Boolean(openId),
     placeholderData: () => { const row = rows.find((r) => r.id === openId); return row ? { data: [row], meta: { page: 1, pageSize: 1, total: 1, totalPages: 1, hasNext: false, hasPrev: false } } : undefined },
   })
-  const setOpen = (id: string | null) => setParams((prev) => {
-    const next = new URLSearchParams(prev)
-    if (id) next.set('finding', id)
-    else next.delete('finding')
-    return next
-  }, { replace: true })
   const setKind = (v: string) => { f.set('kind', v); if (v === 'offline' && seen === 'now') f.set('seen', '24h') }
   const handlers = {
     canEdit,

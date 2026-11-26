@@ -23,7 +23,7 @@ Lists refresh on their own (Discovery every 30 seconds, most others every minute
 
 ## Reports
 
-On demand, as CSV, tab-separated text, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices (with domain or workgroup, and whether Intune knows them), Device users and management (user from Intune or VPN, domain, Windows version, serial, model, OS, compliance, encryption), VPN sessions (the latest session per tunnel address), Static IPs on floors, Server availability, Alert history, Requests and reservations, Audit log, and for people with the links permissions Network links, Network link costs and Network link contract renewals (the last looks ahead: its dates default to the next 90 days).
+On demand, as CSV, tab-separated text, Excel or PDF (PDF up to 5,000 rows, the others 200,000): Segment usage, Servers by environment, IP register, Unknown and pending devices (with domain or workgroup, and whether Intune knows them), Device users and management (user from Intune or VPN, domain, Windows version, serial, model, OS, compliance, encryption), VPN sessions (the latest session per tunnel address), Static IPs on floors, Server availability, Alert history, Requests and reservations, Audit log, and for people with the links permissions Network links, Network link costs and Network link contract renewals (the last looks ahead: its dates default to the next 90 days). A report needs `reports:export` and the permission of the screen it comes from: `inventory:view` for the network, device and request reports, `audit:view` for the Audit log.
 
 ## System settings
 

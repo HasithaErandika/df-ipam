@@ -201,7 +201,7 @@ Use this when the server already runs Apache, or Apache is the standard. Apache 
    sudo apache2ctl configtest && sudo systemctl reload apache2
    ```
 
-6. **Check it** as in step 5 above. The audit log must show each person's own address; the backend trusts `X-Forwarded-For` only from Apache.
+6. **Check it** as in step 5 above. The audit log must show each person's own address; the backend trusts `X-Forwarded-For` only from Apache. With `HOST_NETWORK=true`, `make apache-up` also adds `docker-compose.apache-hostnet.yml`, so the backend trusts Apache on loopback and listens there only.
 
 The site file matches the web container: HTTPS only with HSTS, the same Content Security Policy and headers, the app's own links working on reload, long caching for `/assets`, 2 MB request bodies (8 MB on the three import routes), slow-client timeouts, and `/health` and `/ready` not exposed. The API keeps its own per-address and per-person rate limits; Apache has no per-request limiter built in, so add `mod_evasive` or rely on the FortiGate if you need one in front.
 

@@ -77,6 +77,9 @@ func (h *Handler) updateIP(c *gin.Context) {
 		if err := checkDepartment(c, tx, &in.Department); err != nil {
 			return err
 		}
+		if err := checkGatewayType(c, tx, id, in.Type); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(c, `UPDATE ip_addresses SET status = $2, ip_type = $3, environment_id = NULLIF($4, '')::uuid,
 			device_id = NULLIF($5, '')::uuid, assigned_name = $6, expected_mac = NULLIF($7, '')::macaddr, owner = $8, department = $9,
 			monitor = $10, critical = $11, check_port = $12, notes = $13, updated_by = $14::uuid, platform = $15, services = $16,
@@ -136,6 +139,18 @@ func refuseReserved(c *gin.Context, tx pgx.Tx, segmentID, ip string) error {
 		return httpx.NewError(http.StatusConflict, "IP_RESERVED", "This IP is held by a reservation. Convert or release the reservation first.")
 	}
 	return nil
+}
+
+// checkGatewayType keeps the rule register by hand applies: the segment's
+// gateway may only be registered as network equipment.
+func checkGatewayType(c *gin.Context, tx pgx.Tx, id, ipType string) error {
+	var gateway bool
+	err := tx.QueryRow(c, `SELECT COALESCE(a.ip = s.gateway, false) FROM ip_addresses a JOIN segments s ON s.id = a.segment_id
+		WHERE a.id = $1::uuid`, id).Scan(&gateway)
+	if err != nil || !gateway || ipType == "network" {
+		return err
+	}
+	return httpx.Validation("ipType", "This is the segment's gateway. Register it with the type Network.")
 }
 
 func friendlyIP(err error) error {

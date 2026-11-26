@@ -99,7 +99,7 @@ func savePresent(ctx context.Context, conn db.Conn, entries []Entry) error {
 			x.private, now(), now(), x.usr, x.kind, x.tunnel, x.remote
 		FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::boolean[], $7::text[], $8::text[], $9::text[], $10::text[])
 			AS x(ip, mac, name, vendor, source, private, usr, kind, tunnel, remote)
-		LEFT JOIN segments s ON x.ip::inet << s.network
+		LEFT JOIN segments s ON x.ip::inet <<= s.network
 		WHERE s.id IS NOT NULL OR x.source = 'vpn'
 		-- Locked in (ip, mac) order, as the scanner does, so the two can't deadlock.
 		ORDER BY x.ip::inet, x.mac

@@ -71,11 +71,10 @@ func Message(from, to, subject, body string, now time.Time) []byte {
 	fmt.Fprintf(&b, "Subject: %s\r\n", clean(subject))
 	fmt.Fprintf(&b, "Date: %s\r\n", now.UTC().Format(time.RFC1123Z))
 	b.WriteString("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
+	// Lines end in CRLF; a lone CR is dropped. Leading dots are left alone:
+	// net/smtp's DATA writer stuffs them, and doing it here too doubled them.
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-		if strings.HasPrefix(line, ".") {
-			line = "." + line // dot-stuffing is done by net/smtp, but keep lines safe either way
-		}
-		b.WriteString(line + "\r\n")
+		b.WriteString(strings.ReplaceAll(line, "\r", "") + "\r\n")
 	}
 	return []byte(b.String())
 }

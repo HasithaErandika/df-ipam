@@ -22,6 +22,7 @@ function EditUser({ user, onClose }: { user: User | null; onClose: () => void })
     mutationFn: () => put(`/users/${user!.id}`, { role, isActive: active, displayName: name }),
     meta: { inlineError: true, success: 'Access updated. It applies on their next request.' }, onSuccess: () => { void refresh(); onClose() },
   })
+  useEffect(() => { save.reset() }, [user]) // a dialog opened for another record starts without the last error
   const self = user?.id === me.id
   const roleName = (k: unknown) => roles.data?.find((r) => r.key === k)?.name ?? 'No role'
   const chosen = roles.data?.find((r) => r.key === role)

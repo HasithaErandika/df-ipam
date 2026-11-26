@@ -41,7 +41,7 @@ func importBlocks(c *gin.Context, tx pgx.Tx, valid []importRow) (map[string]stri
 				THEN 'This IP is held by a reservation.'
 		END
 		FROM unnest($1::text[], $2::text[]) AS x(ip, ty)
-		LEFT JOIN segments s ON x.ip::inet << s.network
+		LEFT JOIN segments s ON x.ip::inet <<= s.network
 		LEFT JOIN ip_addresses i ON i.ip = x.ip::inet`, ips, types)
 	if err != nil {
 		return nil, err

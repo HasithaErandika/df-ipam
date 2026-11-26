@@ -21,7 +21,6 @@ const schema = z.object({
   requestedIp: optionalIPv4,
 })
 type Values = z.infer<typeof schema>
-const fields = Object.keys(schema.shape)
 const empty: Values = { segmentId: '', ipType: 'server', environmentId: '', name: '', purpose: '', neededBy: '', requestedIp: '' }
 
 /** Raises a request for an IP. An Admin approves it with one address, in one step. */
@@ -37,7 +36,7 @@ export function RequestForm({ open, onClose }: { open: boolean; onClose: () => v
     mutationFn: (v: Values) => post('/ip-requests', v),
     meta: { inlineError: true, success: 'Request sent. Admins have been notified.' },
     onSuccess: () => { void refresh(); onClose() },
-    onError: (e) => { if (!applyServerErrors(e, setError, fields)) setFormError(e) },
+    onError: (e) => { if (!applyServerErrors(e, setError, ['segmentId', 'requestedIp', 'name', 'purpose', 'neededBy'])) setFormError(e) },
   })
   const submit = handleSubmit((v) => {
     if (segment && v.requestedIp && !inNetwork(v.requestedIp, segment.network)) {

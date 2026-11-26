@@ -136,6 +136,9 @@ func (r *importRun) row(tx pgx.Tx, line int, rec []string) {
 		r.skip(line, describe(err))
 		return
 	}
+	if p, ct := cells["service provider"], cells["circuit id"]; action == "add" && p != "" && ct != "" {
+		r.x.ids["circuits"][circuitKey(p, ct)] = id // a later row in the file may name the same circuit
+	}
 	r.count(tx, line, id, in.Name, action)
 }
 
@@ -143,7 +146,9 @@ func (r *importRun) count(tx pgx.Tx, line int, id, name, action string) {
 	// A dry run's new link has no lasting ID: the real import gives the next one.
 	code := "New"
 	if action == "update" || !r.res.DryRun {
-		_ = tx.QueryRow(r.c, `SELECT code FROM network_links WHERE id = $1::uuid`, id).Scan(&code)
+		if err := tx.QueryRow(r.c, `SELECT code FROM network_links WHERE id = $1::uuid`, id).Scan(&code); err != nil {
+			r.res.Issues = append(r.res.Issues, rowIssue{Row: line, Issue: "Saved, but its Link ID couldn't be read back."})
+		}
 	}
 	if action == "add" && code != "New" {
 		r.x.ids["links"][strings.ToLower(code)] = id // later rows may relate to it

@@ -41,7 +41,7 @@ docker-up: ## Start PostgreSQL, migrate, seed, then start the backend and web ap
 	@$(LOAD_ENV) $(COMPOSE) up -d --build --wait --remove-orphans db backend web
 
 apache-up: ## Start PostgreSQL and the backend for Apache (no web container): API on 127.0.0.1:8080
-	@$(LOAD_ENV) COMPOSE_FILE=docker-compose.yml:docker-compose.apache.yml$$([ "$${HOST_NETWORK:-}" = true ] && echo :docker-compose.hostnet.yml) \
+	@$(LOAD_ENV) COMPOSE_FILE=docker-compose.yml:docker-compose.apache.yml$$([ "$${HOST_NETWORK:-}" = true ] && echo :docker-compose.hostnet.yml:docker-compose.apache-hostnet.yml) \
 		$(COMPOSE) up -d --build --wait --remove-orphans db backend
 
 apache-web: ## Build the web app for Apache into web/dist (copy it to /var/www/df-ipam)

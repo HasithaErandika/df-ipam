@@ -60,7 +60,11 @@ func (h *Handler) history(c *gin.Context) {
 	money := can(c, auth.LinksCommercialView)
 	out := make([]historyEntry, 0, len(rows))
 	for _, r := range rows {
-		e := historyEntry{At: r.At, Action: r.Action, Changes: diff(r.Old, r.New, money)}
+		old, now := r.Old, r.New
+		if !money { // the same redaction as the general audit log
+			old, now = RedactAudit("network_link", old), RedactAudit("network_link", now)
+		}
+		e := historyEntry{At: r.At, Action: r.Action, Changes: diff(old, now, money)}
 		if r.Actor != nil {
 			e.Actor = *r.Actor
 		}

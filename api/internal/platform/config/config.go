@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"sort"
@@ -46,7 +47,7 @@ func splitList(value string) []string {
 // Load reads the API settings and reports every missing value at once.
 func Load() (Config, error) {
 	c := Config{
-		Env:               get("APP_ENV", "development"),
+		Env:               strings.ToLower(get("APP_ENV", "development")), // one spelling for every check
 		ListenAddr:        get("API_LISTEN_ADDR", "127.0.0.1:8080"),
 		LogLevel:          get("LOG_LEVEL", "info"),
 		DatabaseURL:       get("DATABASE_URL", ""),
@@ -73,7 +74,25 @@ func Load() (Config, error) {
 	if c.DatabaseURL == "" {
 		return c, fmt.Errorf("missing settings: DATABASE_URL")
 	}
+	if err := checkProxies(c.TrustedProxies); err != nil {
+		return c, err
+	}
 	return c, c.checkProduction()
+}
+
+// checkProxies refuses an entry that is neither an address nor a network. The
+// router would otherwise drop the whole list silently, and every person would
+// then share the proxy's address for rate limits and the audit log.
+func checkProxies(list []string) error {
+	for _, p := range list {
+		if _, err := netip.ParseAddr(p); err == nil {
+			continue
+		}
+		if _, err := netip.ParsePrefix(p); err != nil {
+			return fmt.Errorf("TRUSTED_PROXIES: %q is not an IP address or network", p)
+		}
+	}
+	return nil
 }
 
 // checkProduction refuses to start a server nobody can sign in to, or one that

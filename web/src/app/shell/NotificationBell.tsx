@@ -48,7 +48,7 @@ export function NotificationBell() {
         )}
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={8} className="z-30 w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-line-strong/70 bg-surface shadow-[0_16px_40px_-12px_rgba(11,18,32,.35)]">
+        <Popover.Content align="end" sideOffset={8} className="z-30 w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-line-strong/70 bg-surface shadow-popover">
           <div className="flex items-center justify-between border-b border-line px-3.5 py-2.5">
             <span className="text-[13px] font-semibold text-ink">Notifications</span>
             {unread > 0 && (

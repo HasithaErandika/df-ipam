@@ -8,7 +8,8 @@ import { label, options, severities } from '../../lib/labels'
 import { useEnvironments, useInvalidate } from '../../lib/queries'
 import type { Environment } from '../../lib/types'
 
-const blank = { name: '', colour: '#2563eb', sortOrder: 100, defaultSeverity: 'medium', defaultMonitor: false, defaultCritical: false }
+// A stored colour (the picker needs hex): the accent, --accent in index.css.
+const blank = { name: '', colour: '#2257c9', sortOrder: 100, defaultSeverity: 'medium', defaultMonitor: false, defaultCritical: false }
 type Values = typeof blank
 
 function EnvironmentForm({ open, env, onClose }: { open: boolean; env?: Environment; onClose: () => void }) {

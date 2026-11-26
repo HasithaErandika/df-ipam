@@ -60,9 +60,23 @@
   --map-c: #93dcc1;
   --map-ink: #131a26;
   --map-accent: #2257c9;
+  /* The DF-IPAM mark and the monitor's top rule. */
+  --brand-deep: #1f4fae;
+  --brand-night: #17305f;
+  --brand-light: #8fb3f7;
+  --os-windows-server: #00508a;
+  /* Behind centred dialogs, and the shadows that lift menus, dialogs and pills. */
+  --overlay: #0b1220;
 }
 
 @theme inline {
+  --color-brand-deep: var(--brand-deep);
+  --color-brand-light: var(--brand-light);
+  --color-overlay: var(--overlay);
+  --shadow-menu: 0 12px 32px -12px rgb(11 18 32 / .3);
+  --shadow-popover: 0 12px 32px -12px rgb(11 18 32 / .35);
+  --shadow-modal: 0 24px 64px -16px rgb(11 18 32 / .35);
+  --shadow-pill: 0 1px 2px rgb(11 18 32 / .12);
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);

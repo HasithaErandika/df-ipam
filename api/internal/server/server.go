@@ -53,6 +53,9 @@ type Deps struct {
 	// TrustedProxies may set the client address through forwarding headers. Nginx
 	// reaches the API container from the Docker gateway, not from localhost.
 	TrustedProxies []string
+	// SecureCookies is true when the site is served over HTTPS: only the
+	// __Host- session cookie then signs a request in.
+	SecureCookies bool
 	// MaxInFlight caps requests running at once. Zero means the default.
 	MaxInFlight int
 	// Scanner runs discovery in this process. Nil in tests: its routes then answer 503.
@@ -82,7 +85,9 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	if len(proxies) == 0 {
 		proxies = []string{"127.0.0.1", "::1"}
 	}
-	_ = r.SetTrustedProxies(proxies)
+	if err := r.SetTrustedProxies(proxies); err != nil {
+		panic("trusted proxies: " + err.Error()) // config.Load checks them, so this is a programming error
+	}
 	inFlight := d.MaxInFlight
 	if inFlight <= 0 {
 		inFlight = defaultMaxInFlight
@@ -107,7 +112,7 @@ func New(d Deps) (*gin.Engine, *auth.Guard) {
 	if d.SignIn != nil {
 		d.SignIn.Register(r)
 	}
-	v1 := r.Group("/api/v1", auth.Authenticate(d.Sessions), perUser)
+	v1 := r.Group("/api/v1", auth.Authenticate(d.Sessions, d.SecureCookies), perUser)
 	guard := auth.NewGuard(v1)
 	account.NewHandler(d.Conn).Register(guard)
 	inventory.NewHandler(d.Conn).Register(guard)

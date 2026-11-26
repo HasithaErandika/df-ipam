@@ -45,7 +45,7 @@ func (s Status) Available() bool {
 func Check(ctx context.Context, conn db.Conn, segmentID string, ip netip.Addr) (Status, error) {
 	out := Status{IP: ip.String()}
 	var network string
-	err := conn.QueryRow(ctx, `SELECT s.network::text, $2::inet << s.network,
+	err := conn.QueryRow(ctx, `SELECT s.network::text, $2::inet <<= s.network,
 		s.dhcp_start IS NOT NULL AND $2::inet BETWEEN s.dhcp_start AND s.dhcp_end, s.gateway IS NOT DISTINCT FROM $2::inet,
 		i.id IS NOT NULL, COALESCE(i.assigned_name, ''),
 		EXISTS (SELECT 1 FROM reservations r WHERE r.segment_id = s.id AND r.status = 'active' AND $2::inet BETWEEN r.start_ip AND r.end_ip),

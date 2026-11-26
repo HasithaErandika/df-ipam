@@ -77,6 +77,7 @@ export function EditReservation({ hold, onClose }: { hold: Reservation | null; o
     mutationFn: () => put(`/reservations/${hold!.id}`, { reason, ownerName: hold!.ownerName, expiresOn }),
     meta: { inlineError: true, success: 'Reservation updated.' }, onSuccess: () => { void refresh(); onClose() },
   })
+  useEffect(() => { save.reset() }, [hold]) // a dialog opened for another record starts without the last error
   const past = expiresOn !== '' && expiresOn < isoDate()
   return (
     <Modal open={hold !== null} onClose={onClose} title="Extend or edit reservation" subtitle={hold ? `${hold.startIp}${hold.endIp !== hold.startIp ? ` – ${hold.endIp}` : ''}` : undefined}
@@ -107,6 +108,7 @@ export function ConvertReservation({ hold, onClose }: { hold: Reservation | null
     mutationFn: () => post(`/reservations/${hold!.id}/convert`, { ip, name, ipType }),
     meta: { inlineError: true, success: () => `${ip} is now assigned in the register.` }, onSuccess: () => { void refresh(); onClose() },
   })
+  useEffect(() => { save.reset() }, [hold]) // a dialog opened for another record starts without the last error
   return (
     <Modal open={hold !== null} onClose={onClose} title="Assign a reserved address" subtitle={hold ? `${hold.reason} · ${hold.size} address${hold.size > 1 ? 'es' : ''}` : undefined}
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={save.isPending} disabled={!inside || !name.trim()} onClick={() => save.mutate()}>Assign {ip}</Button></>}>

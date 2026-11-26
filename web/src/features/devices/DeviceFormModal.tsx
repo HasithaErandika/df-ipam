@@ -41,7 +41,7 @@ export function DeviceFormModal({ open, device, onClose }: { open: boolean; devi
     mutationFn: (v: Values) => (device ? put(`/devices/${device.id}`, v) : post('/devices', v)),
     meta: { inlineError: true, success: device ? 'Device saved.' : 'Device added and approved.' },
     onSuccess: () => { void refresh(); onClose() },
-    onError: (e) => { if (!applyServerErrors(e, setError, ['mac', 'name', 'deviceType', 'owner', 'department', 'notes'])) setFormError(e) },
+    onError: (e) => { if (!applyServerErrors(e, setError, ['mac', 'name', 'owner', 'department', 'notes'])) setFormError(e) },
   })
   const submit = handleSubmit((v) => {
     if (!device && !isMAC(v.mac)) {

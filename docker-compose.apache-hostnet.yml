@@ -1,0 +1,11 @@
+# Apache together with HOST_NETWORK=true: make apache-up adds this file after
+# docker-compose.hostnet.yml. Apache on the host reaches the API on loopback,
+# so loopback is the proxy to trust. Without this, the hostnet file trusts only
+# the web container, which Apache mode doesn't start, and every person would
+# share one client address (127.0.0.1) for rate limits, sign-in and the audit log.
+# There is no web container, so the API listens on loopback only.
+services:
+  backend:
+    environment:
+      API_LISTEN_ADDR: 127.0.0.1:${API_PORT:-8080}
+      TRUSTED_PROXIES: 127.0.0.1

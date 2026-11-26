@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { Badge, Button, Card, DataTable, FilterBar, FilterSelect, none, PageHeader, PathTabs, RowMenu, SearchInput, Stack, useConfirm, type Column } from '../../components/ui'
 import { post } from '../../lib/api'
-import { daysUntil, formatEndOfDay } from '../../lib/format'
+import { daysLeft, formatEndOfDay } from '../../lib/format'
 import { useFilters, usePagedList } from '../../lib/listing'
 import { inventoryKeys, useInvalidate, useSegments } from '../../lib/queries'
 import { useCan, useMe } from '../../lib/session'
@@ -16,9 +16,10 @@ const views: Record<string, string> = { reservations: 'active', expiring: 'expir
 
 function Expiry({ r }: { r: Reservation }) {
   if (!r.expiresAt) return <span className="text-ink-3">No expiry</span>
-  const days = daysUntil(r.expiresAt)
-  const tone = r.status !== 'active' ? 'neutral' : days <= 0 ? 'danger' : days <= 7 ? 'warn' : 'neutral'
-  const text = r.status !== 'active' ? '' : days <= 0 ? 'Expired' : days === 1 ? 'Tomorrow' : `${days} days left`
+  const expired = Date.parse(r.expiresAt) <= Date.now()
+  const days = daysLeft(r.expiresAt) // by calendar day, so the last day reads Today
+  const tone = r.status !== 'active' ? 'neutral' : expired || days === 0 ? 'danger' : days <= 7 ? 'warn' : 'neutral'
+  const text = r.status !== 'active' ? '' : expired ? 'Expired' : days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days} days left`
   return <Stack main={formatEndOfDay(r.expiresAt)} sub={text ? <Badge tone={tone}>{text}</Badge> : undefined} />
 }
 
@@ -27,6 +28,8 @@ export function ReservationsPage() {
   const me = useMe()
   const canReserve = useCan('ip:reserve')
   const isAdmin = useCan('inventory:edit')
+  const canApprove = useCan('requests:approve')
+  const canAssign = isAdmin || canApprove // converting assigns an address
   const segments = useSegments()
   const f = useFilters(['segmentId', 'q', 'mine'] as const)
   const { query, rows, meta, paging } = usePagedList<Reservation>('/reservations', { ...f.values, view: views[tab] })
@@ -48,7 +51,7 @@ export function ReservationsPage() {
     { key: 'act', header: '', className: 'w-10 text-right', cell: (r) => (mayManage(r) ? (
       <RowMenu actions={[
         { label: 'Extend or edit', icon: <CalendarClock size={14} aria-hidden />, onSelect: () => setEditing(r) },
-        { label: 'Assign an address', icon: <CheckSquare size={14} aria-hidden />, onSelect: () => setConverting(r) },
+        ...(canAssign ? [{ label: 'Assign an address', icon: <CheckSquare size={14} aria-hidden />, onSelect: () => setConverting(r) }] : []),
         { label: 'Release', icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: async () => {
           if (await confirm({ title: `Release ${r.reason}?`, body: `${r.size} address${r.size > 1 ? 'es are' : ' is'} no longer held and can be assigned again. This is recorded in the audit log.`, confirmLabel: 'Release' })) release.mutate(r.id)
         } },

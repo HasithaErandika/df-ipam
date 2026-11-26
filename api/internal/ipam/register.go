@@ -49,7 +49,7 @@ func CheckRegister(ctx context.Context, conn db.Conn, segmentID, ip, ipType stri
 // $3: outside it, the network or broadcast address, the gateway, or the DHCP
 // pool. It returns NULL when none applies.
 const RangeIssueSQL = `SELECT CASE
-	WHEN NOT ($1::inet << s.network AND $2::inet << s.network) THEN 'The range must be inside the selected segment.'
+	WHEN NOT ($1::inet <<= s.network AND $2::inet <<= s.network) THEN 'The range must be inside the selected segment.'
 	WHEN masklen(s.network) <= 30 AND ($1::inet <= set_masklen(s.network::inet, 32) OR $2::inet >= set_masklen(broadcast(s.network), 32))
 		THEN 'The range includes the segment''s network or broadcast address.'
 	WHEN s.gateway IS NOT NULL AND s.gateway BETWEEN $1::inet AND $2::inet THEN 'The range includes the segment''s gateway.'

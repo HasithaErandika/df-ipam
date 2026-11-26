@@ -89,7 +89,7 @@ export function AvailableList({ segment: s, ranges, onRegister }: { segment: Seg
     void navigator.clipboard?.writeText(r.start === r.end ? r.start : `${r.start}-${r.end}`).then(() => toast.success('Copied.'))
   }
   return (
-    <Card title="Available addresses" subtitle={total ? `${formatCount(total)} free for static use, in ${ranges.length} range${ranges.length === 1 ? '' : 's'}` : undefined}>
+    <Card title="Available addresses" subtitle={total ? `${formatCount(total)} Available candidate${total === 1 ? '' : 's'} for static use, in ${ranges.length} range${ranges.length === 1 ? '' : 's'}` : undefined}>
       {total === 0 ? (
         <div className="p-4 text-[13px] text-ink-2">
           <p className="font-medium text-ink">No Available candidates.</p>

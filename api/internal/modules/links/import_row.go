@@ -18,8 +18,7 @@ func (r *importRun) target(tx pgx.Tx, cells map[string]string) (string, string, 
 			return "", "", rowError("Link ID " + code + " doesn't exist. Leave Link ID empty to add a new link.")
 		}
 	} else if provider, circuit := cells["service provider"], cells["circuit id"]; provider != "" && circuit != "" {
-		_ = tx.QueryRow(r.c, `SELECT l.id::text FROM network_links l JOIN network_link_providers p ON p.id = l.provider_id
-			WHERE lower(p.name) = lower($1) AND lower(l.circuit_id) = lower($2) AND l.archived_at IS NULL`, provider, circuit).Scan(&id)
+		id = r.x.ids["circuits"][circuitKey(provider, circuit)]
 	}
 	if id == "" {
 		if !can(r.c, auth.LinksCreate) {
@@ -31,9 +30,7 @@ func (r *importRun) target(tx pgx.Tx, cells map[string]string) (string, string, 
 		return "", "", rowError("This link already exists, and you may add links but not change them.")
 	}
 	if !r.update {
-		var code string
-		_ = tx.QueryRow(r.c, `SELECT code FROM network_links WHERE id = $1::uuid`, id).Scan(&code)
-		return "", "", rowError(code + " already exists. Tick “Update existing links” to change it from this file.")
+		return "", "", rowError(r.x.codeOf(id) + " already exists. Tick “Update existing links” to change it from this file.")
 	}
 	return id, "update", nil
 }
@@ -68,6 +65,16 @@ func (r *importRun) input(tx pgx.Tx, id string, cells map[string]string) (*linkI
 		return nil, rowError(strings.Join(r.x.issues, " "))
 	}
 	return in, nil
+}
+
+// codeOf is a link's Link ID, from the lookup read at the start of the import.
+func (x *resolver) codeOf(id string) string {
+	for code, v := range x.ids["links"] {
+		if v == id {
+			return strings.ToUpper(code)
+		}
+	}
+	return "This link"
 }
 
 func deref(p *string) string { return str(p) }

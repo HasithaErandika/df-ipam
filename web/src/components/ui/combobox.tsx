@@ -52,7 +52,7 @@ export function SearchSelect({ id, value, onChange, options, placeholder = 'Sear
         <ChevronDown size={15} aria-hidden className="text-ink-3" />
       </div>
       {open && (
-        <ul id={listId} role="listbox" className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+        <ul id={listId} role="listbox" className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-line-strong/70 bg-surface p-1 shadow-menu">
           {allowEmpty && !query && <li role="option" aria-selected={!value} className="cursor-pointer rounded-[4px] px-2.5 py-1.5 text-[13px] text-ink-3 hover:bg-bg" onMouseDown={(e) => { e.preventDefault(); pick('') }}>{emptyLabel}</li>}
           {matches.length === 0 && <li className="px-2.5 py-1.5 text-[13px] text-ink-3">Nothing matches.</li>}
           {matches.map((o, i) => (

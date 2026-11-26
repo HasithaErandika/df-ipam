@@ -99,7 +99,7 @@ func run() error {
 		slog.Warn("nobody can sign in: set ENTRA_TENANT_ID, ENTRA_CLIENT_ID and ENTRA_CLIENT_SECRET")
 	}
 	deps := server.Deps{Sessions: sessions, SignIn: signIn, Conn: pool, Ready: pool.Ping, Origins: cfg.AllowedOrigins,
-		TrustedProxies: cfg.TrustedProxies, MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, Intune: directory, LinkFiles: linkFiles, SMTPConfigured: mailEnabled}
+		TrustedProxies: cfg.TrustedProxies, SecureCookies: strings.HasPrefix(cfg.AppBaseURL, "https://"), MaxInFlight: cfg.MaxInFlight, Scanner: scan, FortiGate: firewall, Intune: directory, LinkFiles: linkFiles, SMTPConfigured: mailEnabled}
 	router, _ := server.New(deps)
 
 	// API_LISTEN_ADDR may list several addresses, for host networking: loopback

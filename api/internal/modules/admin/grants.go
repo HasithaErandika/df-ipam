@@ -52,25 +52,32 @@ func holdsAll(c *gin.Context, perms []string) bool {
 }
 
 var errBeyondOwn = httpx.NewError(http.StatusForbidden, "BEYOND_OWN_ACCESS",
-	"You can only give permissions you hold yourself. Ask an Administrator.")
+	"You can only give or take away permissions you hold yourself. Ask an Administrator.")
 
-// checkRoleGrant refuses adding permissions the person doesn't hold, and
-// changing the permissions of their own role.
+// checkRoleGrant refuses adding or removing permissions the person doesn't
+// hold, so nobody takes away more than they hold, and changing the permissions
+// of their own role.
 func checkRoleGrant(c *gin.Context, key string, old, next []string) error {
-	added := []string{}
-	for _, p := range next {
-		if !slices.Contains(old, p) {
-			added = append(added, p)
-		}
-	}
-	if !holdsAll(c, added) {
+	added, removed := missing(next, old), missing(old, next)
+	if !holdsAll(c, added) || !holdsAll(c, removed) {
 		return errBeyondOwn
 	}
-	same := len(added) == 0 && len(next) == len(old)
+	same := len(added) == 0 && len(removed) == 0
 	if key != "" && key == auth.Current(c).Role && !same {
 		return httpx.NewError(http.StatusConflict, "SELF_CHANGE", "You can't change the permissions of your own role. Ask another administrator.")
 	}
 	return nil
+}
+
+// missing lists the permissions in a that b lacks.
+func missing(a, b []string) []string {
+	out := []string{}
+	for _, p := range a {
+		if !slices.Contains(b, p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // checkUserGrant refuses giving a role, or changing a person whose role,

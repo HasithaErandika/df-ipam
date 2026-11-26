@@ -40,7 +40,7 @@ export function MonitorHeader({ now, problems, loading, full, onFull, onClose }:
           </div>
         </div>
       </div>
-      <div className="h-0.5 bg-gradient-to-r from-[#1f4fae] via-accent to-[#8fb3f7]" aria-hidden />
+      <div className="h-0.5 bg-gradient-to-r from-brand-deep via-accent to-brand-light" aria-hidden />
     </header>
   )
 }

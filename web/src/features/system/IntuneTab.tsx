@@ -23,7 +23,9 @@ export function IntuneTab() {
   const refresh = useInvalidate('/integrations/intune', '/discovery')
   const confirmSave = useConfirmSave()
   const [form, setForm] = useState({ enabled: false, intervalMinutes: '60' })
-  useEffect(() => { if (q.data) setForm({ enabled: q.data.config.enabled, intervalMinutes: String(q.data.config.intervalMinutes) }) }, [q.data])
+  // Seed from the saved settings only when they change, not on every status poll.
+  const saved = q.data ? JSON.stringify(q.data.config) : ''
+  useEffect(() => { if (q.data) setForm({ enabled: q.data.config.enabled, intervalMinutes: String(q.data.config.intervalMinutes) }) }, [saved])
   const save = useMutation({
     mutationFn: () => put('/integrations/intune', { enabled: form.enabled, intervalMinutes: Number(form.intervalMinutes) }),
     meta: { inlineError: true, success: 'Intune settings saved.' }, onSuccess: () => void refresh(),

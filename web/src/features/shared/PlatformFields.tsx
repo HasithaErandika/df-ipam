@@ -26,7 +26,7 @@ export function PlatformSelect({ id, value: raw, onChange, guess }: { id: string
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content align="start" sideOffset={4} collisionPadding={8}
-              className="z-50 max-h-[min(18rem,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 overflow-y-auto rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+              className="z-50 max-h-[min(18rem,var(--radix-dropdown-menu-content-available-height))] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 overflow-y-auto rounded-md border border-line-strong/70 bg-surface p-1 shadow-menu">
               <DropdownMenu.RadioGroup value={value} onValueChange={onChange}>
                 {choices.map(([code, name]) => (
                   <DropdownMenu.RadioItem key={code || 'none'} value={code}

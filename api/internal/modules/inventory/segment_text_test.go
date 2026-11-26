@@ -2,7 +2,9 @@ package inventory
 
 import (
 	"net/netip"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const fortiSample = `POT-IDC-00-FW-01 $ show system interface
@@ -93,5 +95,25 @@ Sub_vlan_3   static 0.0.0.0 0.0.0.0 172.20.14.30 255.255.255.248 up disable vlan
 		if rows[i].Add != w.add || rows[i].Name != w.name || rows[i].Reason != w.reason {
 			t.Errorf("row %d: got %+v, want %+v", i, rows[i], w)
 		}
+	}
+}
+
+// Pasted rows follow the form's rules: no prefix wider than /16, no gateway on
+// the broadcast address, and a long name cut by character, not by byte.
+func TestPlanAppliesTheFormRules(t *testing.T) {
+	long := strings.Repeat("é", 81)
+	rows := planSegments([]textSegment{
+		{Line: 1, Name: "wide", Network: netip.MustParsePrefix("10.0.0.0/8")},
+		{Line: 2, Name: "bcast", Network: netip.MustParsePrefix("10.1.0.0/24"), Gateway: netip.MustParseAddr("10.1.0.255")},
+		{Line: 3, Name: long, Network: netip.MustParsePrefix("10.2.0.0/24")},
+	}, nil, nil)
+	if rows[0].Add || rows[0].Reason == "" {
+		t.Errorf("a /8 was added: %+v", rows[0])
+	}
+	if !rows[1].Add || rows[1].Gateway != "" {
+		t.Errorf("broadcast gateway kept: %+v", rows[1])
+	}
+	if !utf8.ValidString(rows[2].Name) || utf8.RuneCountInString(rows[2].Name) != 80 {
+		t.Errorf("name cut badly: %q", rows[2].Name)
 	}
 }

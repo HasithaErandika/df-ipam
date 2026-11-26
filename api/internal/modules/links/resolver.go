@@ -24,11 +24,20 @@ var resolverQueries = map[string]string{
 		UNION ALL SELECT lower(host(network)) || '/' || masklen(network), id::text FROM segments`,
 	"devices": `SELECT lower(mac::text), id::text FROM devices UNION ALL SELECT lower(name), id::text FROM devices WHERE name <> ''`,
 	"links":   `SELECT lower(code), id::text FROM network_links`,
+	// Provider and circuit ID of each live link, read once so an import doesn't
+	// query per row. The key is circuitKey(provider, circuit).
+	"circuits": `SELECT lower(p.name) || chr(31) || lower(l.circuit_id), l.id::text FROM network_links l
+		JOIN network_link_providers p ON p.id = l.provider_id WHERE l.archived_at IS NULL AND COALESCE(l.circuit_id, '') <> ''`,
 }
 
-var uniqueBy = map[string]string{"providers": "exact name", "officers": "email", "segments": "network", "devices": "MAC address", "links": "link ID"}
+// circuitKey matches the "circuits" lookup: provider and circuit ID, any case.
+func circuitKey(provider, circuit string) string {
+	return strings.ToLower(provider) + "\x1f" + strings.ToLower(circuit)
+}
 
-var resolverLabels = map[string]string{"providers": "provider", "officers": "active user", "segments": "subnet", "devices": "device", "links": "link ID"}
+var uniqueBy = map[string]string{"circuits": "provider and circuit ID", "providers": "exact name", "officers": "email", "segments": "network", "devices": "MAC address", "links": "link ID"}
+
+var resolverLabels = map[string]string{"circuits": "link", "providers": "provider", "officers": "active user", "segments": "subnet", "devices": "device", "links": "link ID"}
 
 func newResolver(ctx context.Context, conn db.Conn, s Settings) (*resolver, error) {
 	x := &resolver{ids: map[string]map[string]string{}, shared: map[string]map[string]bool{}, settings: s}

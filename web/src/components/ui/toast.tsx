@@ -43,7 +43,7 @@ export function Toaster() {
     <div aria-live="polite" className="pointer-events-none fixed right-4 bottom-4 z-[70] flex w-full max-w-sm flex-col gap-2">
       {shown.map((t) => (
         <div key={t.id} role={t.kind === 'error' ? 'alert' : 'status'}
-          className="pointer-events-auto flex items-start gap-2.5 rounded-md border border-line-strong/70 bg-surface px-3 py-2.5 text-[13px] text-ink shadow-[0_12px_32px_-12px_rgba(11,18,32,.35)]">
+          className="pointer-events-auto flex items-start gap-2.5 rounded-md border border-line-strong/70 bg-surface px-3 py-2.5 text-[13px] text-ink shadow-popover">
           {t.kind === 'error'
             ? <AlertTriangle size={16} className="mt-0.5 shrink-0 text-danger" aria-hidden />
             : <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-ok" aria-hidden />}

@@ -1,6 +1,10 @@
 package reports
 
-import "strings"
+import (
+	"strings"
+
+	"dfipam/api/internal/auth"
+)
 
 // Report is one downloadable report from docs/product/screens.md#reports. Every column
 // is selected as text, so any report renders the same way. Queries are constants;
@@ -21,6 +25,7 @@ type Report struct {
 // $1 from, $2 to (exclusive end, as dates), $3 environment ID or ”.
 var catalogue = []Report{
 	{Key: "segment-usage", Title: "Segment usage", Description: "Per DHCP, server, cloud and VPN network: registered, reserved, seen in use and DHCP pool use.",
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"Segment", "Type", "Network", "VLAN", "Assigned", "Reserved", "Blocked", "Held by reservations", "Seen (24h)", "Pool size", "Pool in use"},
 		sql: `SELECT s.name, s.kind, s.network::text, COALESCE(s.vlan::text, ''),
 			(SELECT count(*) FROM ip_addresses i WHERE i.segment_id = s.id AND i.status = 'assigned')::text,
@@ -33,6 +38,7 @@ var catalogue = []Report{
 				AND v.last_seen > now() - interval '24 hours' AND v.ip BETWEEN s.dhcp_start AND s.dhcp_end)::text END
 			FROM segments s WHERE $1::date IS NOT NULL AND $2::date IS NOT NULL AND $3::text IS NOT NULL ORDER BY s.kind, s.floor NULLS LAST, s.name`},
 	{Key: "servers-by-environment", Title: "Servers by environment", Description: "Every monitored or server-segment entry with its environment and current status.", ByEnv: true,
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"Environment", "IP", "Name", "Segment", "Status", "Since", "Critical", "Monitor", "Owner"},
 		sql: `SELECT COALESCE(e.name, 'None'), host(i.ip), i.assigned_name, s.name, i.health, COALESCE(to_char(i.health_changed_at, 'YYYY-MM-DD HH24:MI'), ''),
 			CASE WHEN i.critical THEN 'Yes' ELSE 'No' END, CASE WHEN i.monitor THEN 'Yes' ELSE 'No' END, i.owner
@@ -40,11 +46,13 @@ var catalogue = []Report{
 			WHERE (s.kind IN ('server', 'cloud') OR i.monitor) AND ($3::text = '' OR e.id::text = $3::text) AND $1::date IS NOT NULL AND $2::date IS NOT NULL
 			ORDER BY e.sort_order NULLS LAST, i.ip`},
 	{Key: "ip-register", Title: "IP register", Description: "Every registered IP with type, owner and status.", ByEnv: true,
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"IP", "Segment", "Status", "Type", "Environment", "Assigned to", "Platform", "Owner", "Department", "Expected MAC"},
 		sql: `SELECT host(i.ip), s.name, i.status, i.ip_type, COALESCE(e.name, ''), i.assigned_name, i.platform, i.owner, i.department, COALESCE(i.expected_mac::text, '')
 			FROM ip_addresses i JOIN segments s ON s.id = i.segment_id LEFT JOIN environments e ON e.id = i.environment_id
 			WHERE ($3::text = '' OR e.id::text = $3::text) AND $1::date IS NOT NULL AND $2::date IS NOT NULL ORDER BY i.ip`},
 	{Key: "unknown-devices", Title: "Unknown and pending devices", Description: "Devices seen but not approved, with first and last seen.",
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"MAC", "Status", "Name", "Last IP", "Segment", "Hostname", "Domain or workgroup", "In Intune", "First seen", "Last seen"},
 		sql: `SELECT d.mac::text, d.status, d.name, COALESCE(host(v.ip), ''), COALESCE(s.name, ''), COALESCE(v.hostname, ''),
 			COALESCE(NULLIF(v.windows_domain, ''), v.workgroup, ''), CASE WHEN v.intune_seen_at IS NULL THEN 'No' ELSE 'Yes' END,
@@ -54,6 +62,7 @@ var catalogue = []Report{
 			LEFT JOIN segments s ON s.id = v.segment_id
 			WHERE d.status <> 'approved' AND $1::date IS NOT NULL AND $2::date IS NOT NULL AND $3::text IS NOT NULL ORDER BY d.last_seen DESC NULLS LAST`},
 	{Key: "device-users", Title: "Device users and management", Description: "Devices seen in the last 30 days with their user (Intune, Entra ID or VPN), domain, Windows version and Intune record.",
+		Needs: []string{auth.InventoryView},
 		Columns: []string{"IP", "Segment", "Name", "MAC", "User", "User from", "Domain or workgroup", "Windows version", "Serial", "Maker and model",
 			"Operating system", "Compliance", "Encrypted", "Last Intune check-in", "Last seen"},
 		sql: `SELECT host(v.ip), COALESCE(s.name, ''), v.hostname, COALESCE(v.mac::text, ''), COALESCE(NULLIF(v.intune_user, ''), NULLIF(v.entra_user, ''), v.vpn_user),
@@ -65,18 +74,21 @@ var catalogue = []Report{
 			WHERE v.last_seen > now() - interval '30 days' AND $1::date IS NOT NULL AND $2::date IS NOT NULL AND $3::text IS NOT NULL
 			ORDER BY v.ip, v.last_seen DESC`},
 	{Key: "vpn-sessions", Title: "VPN sessions", Description: "The latest VPN session on each tunnel address seen in the date range: user, VPN kind and where they connected from. Earlier sessions on the same address are replaced.", Dated: true,
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"User", "Tunnel IP", "VPN", "Connected from", "Segment", "First seen", "Last seen"},
 		sql: `SELECT v.vpn_user, host(v.ip), CASE v.vpn_kind WHEN 'ssl' THEN 'SSL VPN' WHEN 'ipsec' THEN 'IPsec ' || v.vpn_tunnel ELSE '' END, v.vpn_remote,
 			COALESCE(s.name, ''), to_char(v.first_seen, 'YYYY-MM-DD HH24:MI'), to_char(v.last_seen, 'YYYY-MM-DD HH24:MI')
 			FROM sightings v LEFT JOIN segments s ON s.id = v.segment_id
 			WHERE v.source = 'vpn' AND v.last_seen >= $1::date AND v.last_seen < $2::date + 1 AND $3::text IS NOT NULL ORDER BY v.last_seen DESC`},
 	{Key: "static-on-floors", Title: "Static IPs in DHCP networks", Description: "Addresses in use outside the DHCP pool in DHCP networks (floors and Wi-Fi), registered or not.",
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"IP", "Segment", "MAC", "Hostname", "Registered", "Assigned to", "First seen", "Last seen"},
 		sql: `SELECT DISTINCT ON (v.ip) host(v.ip), s.name, COALESCE(v.mac::text, ''), v.hostname, CASE WHEN i.id IS NULL THEN 'No' ELSE 'Yes' END,
 			COALESCE(i.assigned_name, ''), to_char(v.first_seen, 'YYYY-MM-DD HH24:MI'), to_char(v.last_seen, 'YYYY-MM-DD HH24:MI')
 			FROM sightings v JOIN segments s ON s.id = v.segment_id AND s.kind = 'dhcp' LEFT JOIN ip_addresses i ON i.ip = v.ip
 			WHERE v.is_static AND v.last_seen >= $1::date AND v.last_seen < $2::date + 1 AND $3::text IS NOT NULL ORDER BY v.ip, v.last_seen DESC`, Dated: true},
 	{Key: "server-availability", Title: "Server availability", Description: "Outages per monitored server in the date range, from Server down alerts.", Dated: true, ByEnv: true,
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"Environment", "IP", "Name", "Outages", "Downtime (minutes)", "Availability %"},
 		sql: `WITH span AS (SELECT $1::date::timestamptz AS a, LEAST(($2::date + 1)::timestamptz, now()) AS b)
 			SELECT COALESCE(e.name, 'None'), host(i.ip), i.assigned_name, count(al.id)::text,
@@ -89,12 +101,14 @@ var catalogue = []Report{
 			WHERE i.monitor AND ($3::text = '' OR e.id::text = $3::text)
 			GROUP BY e.name, e.sort_order, i.ip, i.assigned_name, span.a, span.b ORDER BY e.sort_order NULLS LAST, i.ip`},
 	{Key: "alert-history", Title: "Alert history", Description: "Alerts raised in the date range, with acknowledgement and closing times.", Dated: true,
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"Opened", "Severity", "Type", "Status", "IP", "MAC", "Segment", "Message", "Acknowledged by", "Closed"},
 		sql: `SELECT to_char(a.opened_at, 'YYYY-MM-DD HH24:MI'), a.severity, a.alert_type, a.status, COALESCE(host(a.ip), ''), COALESCE(a.mac::text, ''),
 			COALESCE(s.name, ''), a.message, COALESCE(u.email, ''), COALESCE(to_char(a.closed_at, 'YYYY-MM-DD HH24:MI'), '')
 			FROM alerts a LEFT JOIN segments s ON s.id = a.segment_id LEFT JOIN users u ON u.id = a.acknowledged_by
 			WHERE a.opened_at >= $1::date AND a.opened_at < $2::date + 1 AND $3::text IS NOT NULL ORDER BY a.opened_at DESC`},
 	{Key: "requests-reservations", Title: "Requests and reservations", Description: "IP requests raised and reservations made in the date range, with their state.", Dated: true,
+		Needs:   []string{auth.InventoryView},
 		Columns: []string{"Kind", "Created", "Status", "Name or reason", "Segment", "IP or range", "Requester or owner", "Decided or expires"},
 		sql: `SELECT 'Request', to_char(r.created_at, 'YYYY-MM-DD'), r.status, r.name, s.name, COALESCE(host(a.ip), host(r.requested_ip), ''), u.email,
 			COALESCE(to_char(r.decided_at, 'YYYY-MM-DD'), '')
@@ -107,6 +121,7 @@ var catalogue = []Report{
 			FROM reservations h JOIN segments s ON s.id = h.segment_id
 			WHERE h.created_at >= $1::date AND h.created_at < $2::date + 1 ORDER BY 2 DESC`},
 	{Key: "audit-log", Title: "Audit log", Description: "Every change in the date range: who, what and when.", Dated: true,
+		Needs:   []string{auth.AuditView},
 		Columns: []string{"When", "Who", "Action", "Record", "Record ID", "Source IP"},
 		sql: `SELECT to_char(a.occurred_at, 'YYYY-MM-DD HH24:MI:SS'), COALESCE(u.email, a.actor_type), a.action, a.object_type, COALESCE(a.object_id, ''),
 			COALESCE(host(a.source_ip), '')

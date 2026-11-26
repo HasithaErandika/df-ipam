@@ -11,12 +11,13 @@ import { useRouteTab } from '../../lib/tabs'
 import type { RegisterEntry } from '../../lib/types'
 import { ExportMenu, ImportButton } from '../shared/FileTransfer'
 import { RegisterIPModal } from '../shared/RegisterIPModal'
-import { useDialogParam } from '../../lib/dialogParam'
+import { useDialogParam, useOpenRecord } from '../../lib/dialogParam'
 import { EntryDetails } from './EntryDetails'
 import { registerColumns, serverColumns } from './registerColumns'
 
 const keys = ['segmentId', 'environmentId', 'status', 'health', 'ipType', 'q', 'sort'] as const
 const importColumns = ['ip', 'status', 'ipType', 'environment', 'assignedName', 'platform', 'services', 'expectedMac', 'owner', 'department', 'monitor', 'critical', 'checkPort', 'notes']
+const serverPrefill = { ipType: 'server' } as const // one object, so the dialog doesn't see a new prefill on every render
 
 function useRelease() {
   const confirm = useConfirm()
@@ -46,6 +47,7 @@ export function ServersPage() {
   const [adding, setAdding] = useState(false)
   const release = useRelease()
   const [openId, setOpen] = useDialogParam('entry')
+  const openEntry = useOpenRecord('/ip-addresses', openId, rows)
   const actions = { canEdit, onOpen: (r: RegisterEntry) => setOpen(r.id), onEdit: setEditing, onRelease: (r: RegisterEntry) => void release(r) }
   const envOptions = [{ value: '', text: 'All' }, ...(environments.data ?? []).map((e) => ({ value: e.id, text: e.name }))]
 
@@ -83,9 +85,9 @@ export function ServersPage() {
             ? { title: 'No servers yet', body: 'Import your verified server list, add a server with an Available candidate IP, or register a server found in Discovery. Discovery findings stay separate until you review and register them.' }
             : { title: 'The register is empty', body: 'Add addresses by hand, import a CSV or Excel file, or register what Discovery finds.' }} />
       </Card>
-      <RegisterIPModal open={adding} serverOnly={servers} prefill={servers ? { ipType: 'server' } : undefined} onClose={() => setAdding(false)} />
+      <RegisterIPModal open={adding} serverOnly={servers} prefill={servers ? serverPrefill : undefined} onClose={() => setAdding(false)} />
       <RegisterIPModal open={editing !== null} entry={editing ?? undefined} onClose={() => setEditing(null)} />
-      <EntryDetails entry={rows.find((r) => r.id === openId) ?? null} canEdit={canEdit} onClose={() => setOpen(null)} onEdit={setEditing} onRelease={(r) => void release(r)} />
+      <EntryDetails entry={openEntry} canEdit={canEdit} onClose={() => setOpen(null)} onEdit={setEditing} onRelease={(r) => void release(r)} />
     </>
   )
 }

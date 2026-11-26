@@ -21,8 +21,12 @@ export function formatIn(iso: string, now = Date.now()): string {
   return `in ${Math.round(minutes / 60)} h`
 }
 
+/** The building's own time zone. Every time is shown in it, whatever the viewer's computer says. */
+export const timeZone = 'Asia/Colombo'
+
+/** A moment as 15 Jan 2027, 14:05, in Sri Lanka time. */
 export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+  return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone })
 }
 
 /** Short date for date-only values such as YYYY-MM-DD, read as calendar dates. */
@@ -49,6 +53,12 @@ export function daysUntil(iso: string, now = Date.now()): number {
  */
 export function endOfDayDate(iso: string): string {
   return new Date(Date.parse(iso) - 1000).toISOString().slice(0, 10)
+}
+
+/** Calendar days to a reservation's last day: 0 on the day itself, 1 the day before. */
+export function daysLeft(iso: string, now = Date.now()): number {
+  const today = new Date(now).toISOString().slice(0, 10)
+  return Math.round((Date.parse(endOfDayDate(iso)) - Date.parse(today)) / 86_400_000)
 }
 
 export function formatEndOfDay(iso: string): string {

@@ -25,7 +25,7 @@ export function ExportMenu({ path, params = {}, name, label = 'Export' }: { path
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild><Button busy={busy}>{!busy && <Download size={14} aria-hidden />}{label}</Button></DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 min-w-44 rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 min-w-44 rounded-md border border-line-strong/70 bg-surface p-1 shadow-menu">
           <DropdownMenu.Item className={item} onSelect={() => void get('xlsx')}><FileSpreadsheet size={14} aria-hidden />Excel (.xlsx)</DropdownMenu.Item>
           <DropdownMenu.Item className={item} onSelect={() => void get('csv')}><FileText size={14} aria-hidden />CSV</DropdownMenu.Item>
           <DropdownMenu.Item className={item} onSelect={() => void get('txt')}><FileText size={14} aria-hidden />Text (.txt)</DropdownMenu.Item>

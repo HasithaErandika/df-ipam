@@ -95,12 +95,13 @@ func applyDecision(c *gin.Context, tx pgx.Tx, id string, in decisionInput) error
 			return err
 		}
 	}
-	var mac, owner, department string
+	var mac, owner, department, name, platform string
 	if err := tx.QueryRow(c, `UPDATE devices SET status = $2, decided_by = $3::uuid, decided_at = now(),
 		name = COALESCE(NULLIF($4, ''), name), owner = COALESCE($5, owner),
 		department = COALESCE($6, department), device_type = COALESCE(NULLIF($7, ''), device_type),
 		platform = COALESCE(NULLIF($8, ''), platform)
-		WHERE id = $1::uuid RETURNING mac::text, owner, department`, id, in.Status, actor(c), in.Name, in.Owner, in.Department, in.Type, in.Platform).Scan(&mac, &owner, &department); err != nil {
+		WHERE id = $1::uuid RETURNING mac::text, owner, department, COALESCE(name, ''), COALESCE(platform, '')`,
+		id, in.Status, actor(c), in.Name, in.Owner, in.Department, in.Type, in.Platform).Scan(&mac, &owner, &department, &name, &platform); err != nil {
 		return err
 	}
 	if err := record(c, tx, in.Status, "device", id, old, in); err != nil {
@@ -109,6 +110,9 @@ func applyDecision(c *gin.Context, tx pgx.Tx, id string, in decisionInput) error
 	if in.Register == nil {
 		return nil
 	}
+	// The register entry takes what the device now holds, not the blanks a
+	// decision may leave to keep the stored name and platform.
+	in.Name, in.Platform = name, platform
 	return registerDecided(c, tx, id, in, mac, owner, department)
 }
 
@@ -122,8 +126,10 @@ func registerDecided(c *gin.Context, tx pgx.Tx, id string, in decisionInput, mac
 		return err
 	}
 	var ipID string
-	if err := tx.QueryRow(c, `INSERT INTO ip_addresses (segment_id, ip, status, ip_type, device_id, assigned_name, expected_mac, owner, department, platform, created_by, updated_by)
-		VALUES ($1::uuid, $2::inet, 'assigned', $3, $4::uuid, $5, $6::macaddr, $7, $8, $10, $9::uuid, $9::uuid) RETURNING id::text`,
+	if err := tx.QueryRow(c, `INSERT INTO ip_addresses (segment_id, ip, status, ip_type, device_id, assigned_name, expected_mac, owner, department, platform,
+			environment_id, created_by, updated_by)
+		SELECT s.id, $2::inet, 'assigned', $3, $4::uuid, $5, $6::macaddr, $7, $8, $10, s.default_environment_id, $9::uuid, $9::uuid
+		FROM segments s WHERE s.id = $1::uuid RETURNING id::text`,
 		in.Register.SegmentID, in.Register.IP, in.Register.IPType, id, in.Name, mac, owner, department, actor(c), in.Platform).Scan(&ipID); err != nil {
 		return err
 	}

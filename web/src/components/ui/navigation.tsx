@@ -36,7 +36,7 @@ export function RowMenu({ actions, label = 'Actions' }: { actions: MenuAction[];
         <MoreHorizontal size={16} aria-hidden />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 min-w-44 rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 min-w-44 rounded-md border border-line-strong/70 bg-surface p-1 shadow-menu">
           {shown.map((a) => (
             <DropdownMenu.Item key={a.label} onSelect={a.onSelect}
               className={cx('flex h-8 cursor-pointer items-center gap-2 rounded-[4px] px-2.5 text-[13px] outline-none data-[highlighted]:bg-bg',

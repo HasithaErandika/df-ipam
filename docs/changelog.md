@@ -4,9 +4,46 @@ What changed, day by day, on branch `lite`. Newest first. The specification is i
 
 ## 2026-11-26
 
+Fixes from a security audit (security-audit skill) and code-quality reviews of the API and web app.
+
+**Access and sign-in**
+- **Converting a reservation needs `inventory:edit` or `requests:approve`.** A Requester holds and releases addresses, but gets one assigned only through an IP request; reserving and then converting skipped the approver. The Reservations screen shows "Assign an address" only to people who may.
+- **Reports need the screen's own permission.** The Audit log report now needs `audit:view`, and the network, device and request reports need `inventory:view`, besides `reports:export`. Before, any report exporter (Viewer, Requester, IT officer, Network engineer) could download the audit trail.
+- **A user manager can't take away what they don't hold.** Editing a role checks removed permissions as well as added ones, so it can't strip access from people who hold more (`403 BEYOND_OWN_ACCESS`).
+- **IDs in paths are lower-cased**, so `PUT /users/<own id in capitals>` no longer slips past the self-change rule.
+- **On HTTPS only the `__Host-` session cookie signs in.** A plain `dfipam_session` cookie, which another host under the same domain could plant, is ignored. The sign-in attempt cookie is `__Host-dfipam_login` on HTTPS too, and sign-ins in progress are counted per IPv6 /64, like the rate limit.
+- **Link change history hides contract and quotation file names** from people without `links:commercial_view`, as the audit log does.
+- **Apache with `HOST_NETWORK=true`** adds `docker-compose.apache-hostnet.yml`: the backend trusts Apache on loopback, so each person keeps their own address for rate limits and the audit log.
+- `TRUSTED_PROXIES` with an entry that isn't an address or network now stops the API at start, instead of being ignored silently. `APP_ENV` is read case-insensitively everywhere.
+
+**Imports and data rules**
+- **Spreadsheet imports keep at most 256 columns per row.** One cell in column XFD padded every row to 16,384 cells, so a 15 KB file could hold gigabytes in memory.
+- **A /32 segment can hold its one address** (migration 000029: the checks use `<<=`).
+- **Editing a register entry keeps the gateway rule:** the gateway stays type Network.
+- **Approving a device** registers its address with the device's stored name and platform, and the segment's default environment.
+- **Pasted segment lists follow the form's rules:** prefixes from /16 to /32 only, no gateway on the network or broadcast address, and long names cut by character.
+- A reservation made for someone else takes their name, not the creator's.
+- **Email retries back off** 1, 2, 4 then 8 minutes (migration 000030), and email isn't sent to deactivated people. Leading dots in emails are no longer doubled.
+
+**Web app**
+- The Add server and register entry dialogs no longer clear what was typed when lists refresh in the background, nor reset Type, Monitor and Critical by hand.
+- FortiGate, Intune and System settings forms keep unsaved edits (including a pasted token) while the status refreshes.
+- Server errors on fields without their own message (platform, services, type) show as a form message instead of nothing.
+- A reservation's expiry badge counts calendar days: "Today" on its last day.
+- Approve, reject, edit-reservation, convert and edit-user dialogs no longer show the previous record's error.
+- "free" is gone from the Available addresses card and the address map legend.
+- **Shared links to a device or register entry open its details** whatever page, tab or filter is showing: the record is fetched by id (`?id=` on `/devices` and `/ip-addresses`). Discovery's finding dialog uses the same query-string handling as the others, and closing a dialog goes back instead of adding a second copy of the list to the history.
+- **Every time shows in Sri Lanka time**, with one formatter: the network links pages and the rest of the app no longer disagree.
+- Brand colours, the dialog backdrop and the menu, dialog and pill shadows are tokens in `index.css`; the sign-in page uses the shared logo.
+
+**Background work**
+- After a restart the scan schedule keeps asking the database when segments were last swept, instead of taking a failed read as "never" and sweeping the whole network straight away.
+- The network link import reads providers' circuit IDs once, not per row, and a database error is reported instead of being taken as "no match", which used to add a duplicate link.
+
 **Dependencies** (Dependabot #18–#22)
 - Kept: pgx 5.13.0 and `x/net` 0.63.0, the web dependencies (React Query, React Router, Lucide, Simple Icons, Vitest, Hook Form resolvers), Nginx 1.31, and `pnpm/action-setup` v6.
 - Reverted: **Postgres stays on 16**. Postgres 19 can't open the existing `df-ipam-lite-db-data` volume, so the database wouldn't start; a major upgrade needs a dump and restore. The **Go image stays on 1.26.11**, matching `go.mod` and what CI tests, and **Node stays on 24**. Dependabot now leaves these majors alone.
+- pnpm 11.12.0 → 11.29.0 (`web/package.json`). 11.12.0's self-installer fails in `pnpm/action-setup` v6, which broke the Web and Security CI jobs; fixed from 11.13.
 - The complexity lint no longer fails on a fresh CI cache: Go's "downloading" messages were counted as findings.
 
 ## 2026-11-23

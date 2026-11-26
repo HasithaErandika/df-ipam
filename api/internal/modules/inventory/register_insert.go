@@ -22,7 +22,7 @@ func insertImported(c *gin.Context, tx pgx.Tx, valid []importRow, asServer bool)
 			SELECT x.*, s.id AS segment_id, COALESCE(NULLIF(x.env, '')::uuid, s.default_environment_id) AS env_id
 			FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[],
 				$9::text[], $10::text[], $11::text[], $12::text[], $13::text[], $14::text[]) AS x(ip, st, ty, nm, mac, ow, dp, nt, env, pf, sv, mon, crit, port)
-			JOIN segments s ON x.ip::inet << s.network
+			JOIN segments s ON x.ip::inet <<= s.network
 		), y AS (
 			SELECT x.*, COALESCE(NULLIF(x.mon, '')::boolean, $16 AND COALESCE(e.default_monitor, false)) AS monitor,
 				COALESCE(NULLIF(x.crit, '')::boolean, $16 AND COALESCE(e.default_critical, false)) AS critical

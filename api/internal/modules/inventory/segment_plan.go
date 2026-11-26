@@ -1,11 +1,14 @@
 package inventory
 
 import (
-	"dfipam/api/internal/audit"
 	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
+
+	"dfipam/api/internal/audit"
+	"dfipam/api/internal/netcalc"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -20,19 +23,14 @@ func planSegments(parsed []textSegment, existing []existingSegment, skip []int) 
 	}
 	out := make([]segmentRow, 0, len(parsed))
 	for _, p := range parsed {
-		r := segmentRow{Line: p.Line, Name: p.Name, VLAN: p.VLAN, Firewall: p.Firewall, Down: p.Down, Reason: p.Skip}
+		r := segmentRow{Line: p.Line, Name: p.Name, VLAN: p.VLAN, Firewall: p.Firewall, Down: p.Down}
 		if p.Network.IsValid() {
 			r.Network = p.Network.String()
 		}
 		if p.Gateway.IsValid() {
 			r.Gateway = p.Gateway.String()
 		}
-		if r.Reason == "" {
-			r.Reason = clash(p.Network, existing)
-		}
-		if r.Reason == "" && slices.Contains(skip, p.Line) {
-			r.Reason = "Left out"
-		}
+		r.Reason = rowReason(p, &r, existing, skip)
 		if r.Reason == "" {
 			r.Name, r.Reason = freeName(r.Name, p.Firewall, names)
 		}
@@ -43,6 +41,40 @@ func planSegments(parsed []textSegment, existing []existingSegment, skip []int) 
 		out = append(out, r)
 	}
 	return out
+}
+
+// rowReason is why a pasted row is skipped, or empty when it can be added.
+func rowReason(p textSegment, r *segmentRow, existing []existingSegment, skip []int) string {
+	if p.Skip != "" {
+		return p.Skip
+	}
+	if reason := formRules(p, r); reason != "" {
+		return reason
+	}
+	if reason := clash(p.Network, existing); reason != "" {
+		return reason
+	}
+	if slices.Contains(skip, p.Line) {
+		return "Left out"
+	}
+	return ""
+}
+
+// formRules applies the segment form's rules to a pasted row: a prefix from
+// /16 to /32, and a gateway only on a host address. A gateway that isn't one
+// is left out rather than refusing the whole row.
+func formRules(p textSegment, r *segmentRow) string {
+	if p.Network.IsValid() && p.Network.Bits() < 16 {
+		return "Use a prefix from /16 to /32"
+	}
+	if !p.Gateway.IsValid() {
+		return ""
+	}
+	span := netcalc.UsableRange(p.Network)
+	if p.Network.Bits() == 32 || p.Gateway.Less(span.First) || span.Last.Less(p.Gateway) {
+		r.Gateway = ""
+	}
+	return ""
 }
 
 func clash(network netip.Prefix, existing []existingSegment) string {
@@ -58,15 +90,15 @@ func clash(network netip.Prefix, existing []existingSegment) string {
 }
 
 func freeName(name, firewall string, taken map[string]bool) (string, string) {
-	if len(name) > 80 {
-		name = name[:80]
+	if utf8.RuneCountInString(name) > 80 {
+		name = string([]rune(name)[:80]) // by character: a cut byte is invalid UTF-8
 	}
 	if !taken[strings.ToLower(name)] {
 		return name, ""
 	}
 	if firewall != "" {
 		alt := name + " (" + firewall + ")"
-		if len(alt) <= 80 && !taken[strings.ToLower(alt)] {
+		if utf8.RuneCountInString(alt) <= 80 && !taken[strings.ToLower(alt)] {
 			return alt, ""
 		}
 	}

@@ -67,7 +67,7 @@ export const addressStates: Record<string, { label: string; color: string; hint:
   gateway: { label: 'Gateway', color: 'var(--addr-gateway)', hint: "The segment's gateway." },
   seen: { label: 'Seen, not registered', color: 'var(--addr-seen)', hint: 'Answered on the network but is not in the register.' },
   dhcp_used: { label: 'DHCP in use', color: 'var(--addr-dhcp-used)', hint: 'In the DHCP pool and answering.' },
-  dhcp_free: { label: 'DHCP free', color: 'var(--addr-dhcp-free)', hint: 'In the DHCP pool, not seen recently.' },
+  dhcp_free: { label: 'DHCP not in use', color: 'var(--addr-dhcp-free)', hint: 'In the DHCP pool, not seen recently.' },
   available: { label: 'Available candidate', color: 'var(--addr-available)', hint: 'Not registered, reserved, in the pool or seen.' },
 }
 

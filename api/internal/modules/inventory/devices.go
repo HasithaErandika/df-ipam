@@ -59,15 +59,18 @@ var deviceSorts = map[string]string{"name": "lower(d.name)", "mac": "d.mac", "la
 
 func (h *Handler) devices(c *gin.Context) {
 	var w db.Where
-	status := c.Query("status")
-	if status != "" {
-		var v validate.V
+	var v validate.V
+	if id := c.Query("id"); id != "" { // one device, for a shared link to its details
+		v.UUID("id", id, true, "a device")
+		w.Add("d.id = ?::uuid", id)
+	}
+	if status := c.Query("status"); status != "" {
 		v.OneOf("status", status, []string{"pending", "approved", "rejected"}, "status")
-		if err := v.Err(); err != nil {
-			httpx.Fail(c, err)
-			return
-		}
 		w.Add("d.status = ?", status)
+	}
+	if err := v.Err(); err != nil {
+		httpx.Fail(c, err)
+		return
 	}
 	if t := c.Query("deviceType"); t != "" {
 		w.Add("d.device_type = ?", t)

@@ -43,3 +43,16 @@ func TestDevelopmentStartsWithoutEntra(t *testing.T) {
 		t.Fatalf("development: %v", err)
 	}
 }
+
+func TestBadTrustedProxyStopsStartup(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("TRUSTED_PROXIES", "172.30.0.10,web-container")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "web-container") {
+		t.Fatalf("want a TRUSTED_PROXIES error, got %v", err)
+	}
+	t.Setenv("TRUSTED_PROXIES", "172.30.0.10,10.0.0.0/8")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+}

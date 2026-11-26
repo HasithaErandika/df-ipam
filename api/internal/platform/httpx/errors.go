@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -62,9 +63,11 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 // IsUUID reports whether s is a well-formed UUID.
 func IsUUID(s string) bool { return uuidPattern.MatchString(s) }
 
-// PathID reads the :id parameter. A malformed ID is simply not found.
+// PathID reads the :id parameter in its canonical lower-case form, so it
+// compares equal to IDs read back from the database. A malformed ID is simply
+// not found.
 func PathID(c *gin.Context) (string, bool) {
-	id := c.Param("id")
+	id := strings.ToLower(c.Param("id"))
 	if !IsUUID(id) {
 		Fail(c, ErrNotFound)
 		return "", false

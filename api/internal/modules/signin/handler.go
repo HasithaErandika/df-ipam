@@ -23,8 +23,12 @@ import (
 )
 
 const (
-	attemptCookie = "dfipam_login"
-	attemptTTL    = 10 * time.Minute
+	// The sign-in attempt cookie binds the callback to the browser that started
+	// it. On HTTPS it takes the __Host- prefix (which needs Path=/), so no other
+	// host under the same domain can plant one.
+	attemptCookiePlain  = "dfipam_login"
+	attemptCookieSecure = "__Host-dfipam_login"
+	attemptTTL          = 10 * time.Minute
 	// maxAttempts bounds memory (about 2 MB). perClient stops one address from
 	// filling it: a client over its share loses its own oldest attempt, never
 	// someone else's.
@@ -74,7 +78,7 @@ func (h *Handler) Register(r gin.IRouter) {
 // already holds a session.
 func (h *Handler) status(c *gin.Context) {
 	session := false
-	if token := cookieToken(c); token != "" {
+	if token := h.cookieToken(c); token != "" {
 		_, err := h.sessions.Resolve(c, token)
 		session = err == nil
 	}
@@ -87,9 +91,10 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 	a := auth.NewAttempt(safeReturn(c.Query("returnTo")))
-	h.remember(a, c.ClientIP())
+	h.remember(a, httpx.ClientKey(c.ClientIP())) // one share per /64, as the rate limit
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(attemptCookie, a.State, int(attemptTTL.Seconds()), "/api/v1/auth/microsoft", "", h.secure, true)
+	name, path := h.attemptCookie()
+	c.SetCookie(name, a.State, int(attemptTTL.Seconds()), path, "", h.secure, true)
 	c.Redirect(http.StatusFound, h.ms.AuthCodeURL(a))
 }
 
@@ -99,7 +104,8 @@ func (h *Handler) fail(c *gin.Context, reason string) {
 
 func (h *Handler) callback(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(attemptCookie, "", -1, "/api/v1/auth/microsoft", "", h.secure, true)
+	name, path := h.attemptCookie()
+	c.SetCookie(name, "", -1, path, "", h.secure, true)
 	if h.ms == nil {
 		h.fail(c, "off")
 		return
@@ -108,7 +114,7 @@ func (h *Handler) callback(c *gin.Context) {
 		h.fail(c, map[bool]string{true: "cancelled", false: "failed"}[e == "access_denied"])
 		return
 	}
-	state, _ := c.Cookie(attemptCookie)
+	state, _ := c.Cookie(name)
 	a, ok := h.take(c.Query("state"))
 	if !ok || state == "" || state != a.State {
 		h.fail(c, "expired")
@@ -152,7 +158,7 @@ func (h *Handler) logout(c *gin.Context) {
 	if !csrfOK(c) {
 		return
 	}
-	if token := cookieToken(c); token != "" {
+	if token := h.cookieToken(c); token != "" {
 		err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
 			id, err := h.sessions.Revoke(c, tx, token)
 			if err != nil || id == "" {
@@ -182,11 +188,11 @@ func (h *Handler) audit(c *gin.Context, actor, action string, values any) {
 	}
 }
 
-func cookieToken(c *gin.Context) string {
-	for _, name := range []string{auth.SessionCookieSecure, auth.SessionCookiePlain} {
-		if v, err := c.Cookie(name); err == nil && v != "" {
-			return v
-		}
+func (h *Handler) attemptCookie() (name, path string) {
+	if h.secure {
+		return attemptCookieSecure, "/"
 	}
-	return ""
+	return attemptCookiePlain, "/api/v1/auth/microsoft"
 }
+
+func (h *Handler) cookieToken(c *gin.Context) string { return auth.SessionToken(c, h.secure) }

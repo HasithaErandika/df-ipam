@@ -23,7 +23,9 @@ export function FortiGateTab() {
   const confirmSave = useConfirmSave()
   const confirm = useConfirm()
   const [form, setForm] = useState({ active: true, enabled: false, url: '', vdom: '', verifyTls: true, intervalMinutes: '10', token: '' })
-  useEffect(() => { if (q.data) setForm({ ...q.data.config, intervalMinutes: String(q.data.config.intervalMinutes), token: '' }) }, [q.data])
+  // Seed the form from the saved settings only when they change: the status polls every few seconds and would wipe edits.
+  const savedConfig = q.data ? JSON.stringify(q.data.config) : ''
+  useEffect(() => { if (q.data) setForm({ ...q.data.config, intervalMinutes: String(q.data.config.intervalMinutes), token: '' }) }, [savedConfig])
   const save = useMutation({
     mutationFn: () => put('/integrations/fortigate', { ...form, intervalMinutes: Number(form.intervalMinutes) }),
     meta: { inlineError: true, success: 'FortiGate settings saved.' }, onSuccess: () => { void refresh(); setForm((f) => ({ ...f, token: '' })) },

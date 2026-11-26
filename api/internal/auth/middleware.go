@@ -23,10 +23,12 @@ type SessionResolver interface {
 const CSRFHeader = "X-Requested-With"
 
 // Authenticate signs a request in by its session cookie. The user is loaded on
-// every request, so deactivating someone takes effect immediately.
-func Authenticate(sessions SessionResolver) gin.HandlerFunc {
+// every request, so deactivating someone takes effect immediately. On HTTPS
+// only the __Host- cookie counts: a plain one may have been planted by another
+// host under the same domain.
+func Authenticate(sessions SessionResolver, secure bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := sessionToken(c)
+		token := SessionToken(c, secure)
 		if token == "" || sessions == nil {
 			httpx.Fail(c, httpx.ErrUnauthenticated)
 			return
@@ -35,13 +37,11 @@ func Authenticate(sessions SessionResolver) gin.HandlerFunc {
 	}
 }
 
-func sessionToken(c *gin.Context) string {
-	for _, name := range []string{SessionCookieSecure, SessionCookiePlain} {
-		if v, err := c.Cookie(name); err == nil && v != "" {
-			return v
-		}
-	}
-	return ""
+// SessionToken reads the session cookie this site issues: the __Host- one on
+// HTTPS, the plain one otherwise.
+func SessionToken(c *gin.Context, secure bool) string {
+	v, _ := c.Cookie(SessionCookie(secure))
+	return v
 }
 
 func bySession(c *gin.Context, sessions SessionResolver, token string) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LogoMark } from '../../components/LogoMark'
 import { SubnetMap } from '../../components/SubnetMap'
 import { Button, Notice } from '../../components/ui'
 import { authStatus, signInWithMicrosoft, type AuthStatus } from '../../lib/auth'
@@ -59,11 +60,7 @@ export function SignIn() {
       <main className="flex w-full flex-col bg-surface px-6 lg:w-[480px] lg:shrink-0">
         <div className="m-auto w-full max-w-sm py-10">
           <div className="mb-8 flex items-center gap-3">
-            <svg width="36" height="36" viewBox="0 0 32 32" aria-hidden>
-              <rect width="32" height="32" rx="8" fill="#1f4fae" />
-              <rect x="7" y="7" width="8" height="8" rx="1.5" fill="#8fb3f7" /><rect x="17" y="17" width="8" height="8" rx="1.5" fill="#8fb3f7" />
-              <rect x="17" y="7" width="8" height="8" rx="1.5" fill="#fff" opacity=".6" /><rect x="7" y="17" width="8" height="8" rx="1.5" fill="#fff" opacity=".6" />
-            </svg>
+            <LogoMark size={36} />
             <div className="leading-tight"><div className="text-[16px] font-semibold text-ink">DF-IPAM</div><div className="text-[12px] text-ink-3">Dialog Finance · IP Address Management</div></div>
           </div>
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">Sign in</h1>

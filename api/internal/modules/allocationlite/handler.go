@@ -19,6 +19,8 @@ func (h *Handler) Register(g *auth.Guard) {
 	g.Handle(http.MethodPost, "/reservations", h.createReservation, auth.IPReserve)
 	g.Handle(http.MethodPut, "/reservations/:id", h.updateReservation, auth.IPReserve)
 	g.Handle(http.MethodPost, "/reservations/:id/release", h.releaseReservation, auth.IPReserve)
-	g.Handle(http.MethodPost, "/reservations/:id/convert", h.convertReservation, auth.IPReserve)
+	// Converting assigns an address, so it needs the authority to assign one: a Requester
+	// with ip:reserve holds and releases, but assigning goes through an IP request.
+	g.Handle(http.MethodPost, "/reservations/:id/convert", h.convertReservation, auth.InventoryEdit, auth.RequestsApprove)
 	g.Handle(http.MethodGet, "/dashboard", h.dashboard, auth.InventoryView)
 }

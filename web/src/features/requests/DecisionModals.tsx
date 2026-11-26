@@ -26,6 +26,7 @@ export function ApproveRequestModal({ request, onClose }: { request: IPRequest |
     meta: { inlineError: true, success: (_: void, r: { ip: string }) => `Approved. ${r.ip} is now in the register and the requester has been told.` },
     onSuccess: () => { void refresh(); onClose() },
   })
+  useEffect(() => { approve.reset() }, [request]) // a dialog opened for another record starts without the last error
   return (
     <Modal open={request !== null} onClose={onClose} title="Approve request" subtitle={request?.name} size="lg"
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" busy={approve.isPending} disabled={!isIPv4(ip.trim())} onClick={() => approve.mutate()}>Approve with {ip || 'this IP'}</Button></>}>
@@ -60,6 +61,7 @@ export function RejectRequestModal({ request, onClose }: { request: IPRequest | 
     meta: { inlineError: true, success: 'Request rejected. The requester has been told why.' },
     onSuccess: () => { void refresh(); onClose() },
   })
+  useEffect(() => { reject.reset() }, [request]) // a dialog opened for another record starts without the last error
   return (
     <Modal open={request !== null} onClose={onClose} title="Reject request" subtitle={request?.name}
       footer={<><Button onClick={onClose}>Cancel</Button><Button variant="danger" busy={reject.isPending} disabled={!reason.trim()} onClick={() => reject.mutate()}>Reject request</Button></>}>

@@ -126,9 +126,9 @@ func (h *Handler) createReservation(c *gin.Context) {
 	if in.OwnerID == "" {
 		in.OwnerID = p.UserID
 	}
-	if in.OwnerName == "" {
+	if in.OwnerName == "" && in.OwnerID == p.UserID {
 		in.OwnerName = p.Email
-	}
+	} // a hold for someone else takes their name in reserve, not the creator's
 	var id string
 	err := db.InTx(c, h.conn, func(tx pgx.Tx) error {
 		var err error
@@ -167,7 +167,9 @@ func reserve(c *gin.Context, tx pgx.Tx, in reserveInput, userID string) (string,
 		return "", httpx.NewError(http.StatusConflict, "RANGE_IN_USE", "The range includes an address that is registered, reserved, or seen in use recently (in the last 30 days outside the DHCP pool, or 24 hours inside it).")
 	}
 	if err := tx.QueryRow(c, `INSERT INTO reservations (segment_id, start_ip, end_ip, reason, owner_id, owner_name, expires_at, created_by, updated_by)
-		VALUES ($1::uuid, $2::inet, $3::inet, $4, $5::uuid, $6, NULLIF($7, '')::date + interval '1 day', $8::uuid, $8::uuid) RETURNING id::text`,
+		VALUES ($1::uuid, $2::inet, $3::inet, $4, $5::uuid,
+			COALESCE(NULLIF($6, ''), (SELECT COALESCE(NULLIF(display_name, ''), email) FROM users WHERE id = $5::uuid), ''),
+			NULLIF($7, '')::date + interval '1 day', $8::uuid, $8::uuid) RETURNING id::text`,
 		in.SegmentID, in.StartIP, in.EndIP, in.Reason, in.OwnerID, in.OwnerName, in.ExpiresOn, userID).Scan(&id); err != nil {
 		return "", err
 	}

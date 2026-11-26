@@ -83,6 +83,10 @@ var ipSorts = map[string]string{"ip": "i.ip", "name": "lower(i.assigned_name)", 
 func registerFilter(c *gin.Context) (db.Where, error) {
 	var w db.Where
 	var v validate.V
+	if id := c.Query("id"); id != "" { // one entry, for a shared link to its details
+		v.UUID("id", id, true, "an entry")
+		w.Add("i.id = ?::uuid", id)
+	}
 	if id := c.Query("segmentId"); id != "" {
 		v.UUID("segmentId", id, true, "a segment")
 		w.Add("i.segment_id = ?::uuid", id)

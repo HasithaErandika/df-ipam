@@ -49,7 +49,7 @@ export function EnvironmentBadge({ name, colour }: { name: string | null; colour
   if (!name) return <span className="text-ink-3">—</span>
   return (
     <span className="inline-flex items-center gap-1.5 rounded-[3px] border border-line bg-surface px-1.5 text-[11.5px] leading-[18px] font-medium whitespace-nowrap text-ink-2">
-      <span aria-hidden className="size-2 rounded-[2px]" style={{ backgroundColor: colour ?? '#64748b' }} />{name}
+      <span aria-hidden className="size-2 rounded-[2px]" style={{ backgroundColor: colour ?? 'var(--ink-3)' }} />{name}
     </span>
   )
 }

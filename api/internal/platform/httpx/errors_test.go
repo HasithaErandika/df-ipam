@@ -134,3 +134,13 @@ func TestMaxInFlightShedsLoad(t *testing.T) {
 	close(release)
 	<-done
 }
+
+// Path IDs come back lower case, so they compare equal to IDs from the
+// database; an upper-case own ID can't slip past a self-change check.
+func TestPathIDIsCanonical(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Params = gin.Params{{Key: "id", Value: "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D"}}
+	if id, ok := PathID(c); !ok || id != "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d" {
+		t.Fatalf("got %q, %v", id, ok)
+	}
+}

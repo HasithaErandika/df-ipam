@@ -96,23 +96,41 @@ func (s *Scanner) dueKinds(ctx context.Context, last map[string]time.Time) ([]st
 }
 
 // lastSweeps reads when each kind of segment last finished a sweep. Sightings
-// can't tell: the FortiGate reader writes ARP rows too.
+// can't tell: the FortiGate reader writes ARP rows too. Until the database
+// answers it keeps trying: an empty answer would start a full sweep straight
+// after a restart, which is what waiting out the interval is meant to avoid.
 func (s *Scanner) lastSweeps(ctx context.Context) map[string]time.Time {
-	out := map[string]time.Time{}
+	for {
+		out, err := s.readLastSweeps(ctx)
+		if err == nil {
+			return out
+		}
+		slog.WarnContext(ctx, "can't read when segments were last swept; trying again", "error", err)
+		select {
+		case <-ctx.Done():
+			return map[string]time.Time{}
+		case <-time.After(10 * time.Second):
+		}
+	}
+}
+
+func (s *Scanner) readLastSweeps(ctx context.Context) (map[string]time.Time, error) {
 	rows, err := s.conn.Query(ctx, `SELECT kind, max(last_swept_at) FROM segments
 		WHERE last_swept_at IS NOT NULL GROUP BY kind`)
 	if err != nil {
-		return out
+		return nil, err
 	}
 	defer rows.Close()
+	out := map[string]time.Time{}
 	for rows.Next() {
 		var kind string
 		var at time.Time
-		if rows.Scan(&kind, &at) == nil {
-			out[kind] = at
+		if err := rows.Scan(&kind, &at); err != nil {
+			return nil, err
 		}
+		out[kind] = at
 	}
-	return out
+	return out, rows.Err()
 }
 
 // enabled reads an on/off setting. Missing or unreadable means on.

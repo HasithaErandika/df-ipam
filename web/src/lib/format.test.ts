@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { daysUntil, endOfDayDate, formatAgo, formatDate, initialsFromEmail, level, nameFromEmail, pageWindow, segmentCaption } from './format'
+import { daysLeft, daysUntil, endOfDayDate, formatAgo, formatDate, initialsFromEmail, level, nameFromEmail, pageWindow, segmentCaption } from './format'
 
 describe('level', () => {
   it('grades a percentage', () => {
@@ -52,5 +52,15 @@ describe('names from email', () => {
   it('makes initials from the first two names', () => {
     expect(initialsFromEmail('hasitha.wickramasinghe@dialogfinance.lk')).toBe('HW')
     expect(initialsFromEmail('nimal@dialogfinance.lk')).toBe('NI')
+  })
+})
+
+describe('daysLeft', () => {
+  // A hold for 10 June is stored as the midnight after it.
+  const expires = '2026-06-11T00:00:00Z'
+  it('is 0 on the last day and 1 the day before', () => {
+    expect(daysLeft(expires, Date.parse('2026-06-10T09:00:00Z'))).toBe(0)
+    expect(daysLeft(expires, Date.parse('2026-06-09T23:00:00Z'))).toBe(1)
+    expect(daysLeft(expires, Date.parse('2026-06-03T09:00:00Z'))).toBe(7)
   })
 })

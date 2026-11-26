@@ -25,3 +25,6 @@ docs/DF-IPAM-System-Guide.pdf
 # Local Claude Code settings
 .claude/settings.local.json
 CLAUDE.local.md
+
+# Local security-audit skill, not shared
+.claude/skills/security-audit/

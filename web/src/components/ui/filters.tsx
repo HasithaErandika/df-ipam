@@ -65,7 +65,7 @@ export function Segmented({ label, value, onChange, options }: { label: string; 
       {options.map((o) => (
         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
           className={cx('h-[26px] cursor-pointer rounded-[4px] px-2.5 text-[12.5px] font-medium',
-            value === o.value ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(11,18,32,.12)]' : 'text-ink-3 hover:text-ink')}>
+            value === o.value ? 'bg-surface text-ink shadow-pill' : 'text-ink-3 hover:text-ink')}>
           {o.text}
         </button>
       ))}

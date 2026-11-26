@@ -1,59 +1,25 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { z } from 'zod'
 import { Button, Field, FormError, FormSection, Input, Modal, Notice, Select, Switch, Textarea, useConfirmSave } from '../../components/ui'
 import { get, post, put, queryString } from '../../lib/api'
 import { applyServerErrors } from '../../lib/forms'
 import { ipTypes, options, registerStatuses } from '../../lib/labels'
 import { inventoryKeys, useEnvironments, useInvalidate, useSegments } from '../../lib/queries'
 import type { RegisterEntry } from '../../lib/types'
-import { choose, inNetwork, ipv4, optionalInt, optionalMAC, text, toInt } from '../../lib/validation'
+import { inNetwork, toInt } from '../../lib/validation'
 import { AddressCheck } from './AddressCheck'
 import { DepartmentSelect } from './DepartmentSelect'
 import { PlatformSelect, ServicePicker } from './PlatformFields'
 import { fillFromDevice, useApprovedDevice } from './registerFromDevice'
+import { fillable, initial, schema, type RegisterPrefill, type Values } from './registerForm'
 
-const schema = z.object({
-  segmentId: choose('a segment'),
-  ip: ipv4,
-  status: z.enum(['assigned', 'reserved', 'blocked']),
-  ipType: z.string(),
-  deviceId: z.string(),
-  environmentId: z.string(),
-  assignedName: text('Assigned to', 120),
-  platform: z.string(),
-  services: z.array(z.string()).max(10),
-  expectedMac: optionalMAC,
-  owner: text('Owner', 120),
-  department: text('Department', 120),
-  monitor: z.boolean(),
-  critical: z.boolean(),
-  checkPort: optionalInt('Check port', 1, 65535),
-  notes: text('Notes', 1000),
-}).superRefine((v, ctx) => {
-  if (v.status === 'assigned' && !v.assignedName) ctx.addIssue({ code: 'custom', path: ['assignedName'], message: 'Say who or what the address is assigned to.' })
-  if (v.critical && !v.monitor) ctx.addIssue({ code: 'custom', path: ['critical'], message: 'Turn on Monitor to mark an entry critical.' })
-})
-type Values = z.infer<typeof schema>
-const fields = Object.keys(schema.shape) as (keyof Values)[]
+export type { RegisterPrefill }
 
-/** What to pre-fill when registering from something seen on the network. */
-export interface RegisterPrefill { segmentId?: string; ip?: string; mac?: string | null; name?: string | null; ipType?: string; platform?: string; platformGuess?: string | null; owner?: string; notes?: string }
-
-const fillable = ['deviceId', 'ipType', 'assignedName', 'platform', 'owner', 'department'] as const
-
-function initial(entry?: RegisterEntry, prefill?: RegisterPrefill): Values {
-  return {
-    segmentId: entry?.segmentId ?? prefill?.segmentId ?? '', ip: entry?.ip ?? prefill?.ip ?? '', status: entry?.status ?? 'assigned',
-    ipType: entry?.ipType ?? prefill?.ipType ?? 'other', deviceId: entry?.deviceId ?? '', environmentId: entry?.environmentId ?? '', assignedName: entry?.assignedName ?? prefill?.name ?? '',
-    platform: entry?.platform ?? prefill?.platform ?? '', services: entry?.services ?? [],
-    expectedMac: entry?.expectedMac ?? prefill?.mac ?? '', owner: entry?.owner ?? prefill?.owner ?? '', department: entry?.department ?? '',
-    monitor: entry?.monitor ?? false, critical: entry?.critical ?? false, checkPort: entry?.checkPort ? String(entry.checkPort) : '', notes: entry?.notes ?? prefill?.notes ?? '',
-  }
-}
+// Fields that show their own error. Others (platform, services, type…) fall back to the form message.
+const shownErrors = ['segmentId', 'ip', 'assignedName', 'expectedMac', 'owner', 'department', 'critical', 'checkPort', 'notes']
 
 /**
  * Adds an address to the IP register, or edits an entry. A new entry can take the
@@ -70,7 +36,12 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
   const [formError, setFormError] = useState<unknown>(null)
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: initial(entry, prefill) })
   const { register, handleSubmit, watch, setValue, reset, setError, formState: { errors } } = form
-  useEffect(() => { if (open) { reset(initial(entry, prefill)); setFormError(null) } }, [open, entry, prefill, reset])
+  // Reset when the dialog opens, not on every render: background refetches would wipe what was typed.
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (open && !wasOpen.current) { reset(initial(entry, prefill)); setFormError(null) }
+    wasOpen.current = open
+  }, [open, entry, prefill, reset])
 
   // A new entry for an approved device's address starts from what people recorded about the device.
   const device = useApprovedDevice(prefill?.mac, open && !entry)
@@ -84,18 +55,21 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
   const segment = segments.data?.find((s) => s.id === segmentId)
   const choices = (segments.data ?? []).filter((s) => !serverOnly || s.kind !== 'dhcp')
 
-  // A new entry in a server segment starts with that segment's environment and its defaults.
+  // A new entry in a server segment starts with that segment's environment and its defaults,
+  // applied when the choice changes, not when a background refetch returns new objects.
+  const [segmentKind, segmentEnv] = [segment?.kind, segment?.defaultEnvironmentId]
   useEffect(() => {
-    if (entry || !segment) return
-    if (segment.kind !== 'dhcp' && !form.getValues('environmentId') && segment.defaultEnvironmentId) setValue('environmentId', segment.defaultEnvironmentId)
-    if (segment.kind !== 'dhcp' && ['other', 'user_pc'].includes(form.getValues('ipType'))) setValue('ipType', 'server')
-  }, [segment, entry, setValue, form])
+    if (entry || !segmentKind || segmentKind === 'dhcp') return
+    if (!form.getValues('environmentId') && segmentEnv) setValue('environmentId', segmentEnv)
+    if (['other', 'user_pc'].includes(form.getValues('ipType'))) setValue('ipType', 'server')
+  }, [segmentId, segmentKind, segmentEnv, entry, setValue, form])
   const environmentId = watch('environmentId')
+  const env = environments.data?.find((e) => e.id === environmentId)
+  const [envMonitor, envCritical] = [env?.defaultMonitor, env?.defaultCritical]
   useEffect(() => {
-    if (entry) return
-    const env = environments.data?.find((e) => e.id === environmentId)
-    if (env) { setValue('monitor', env.defaultMonitor); setValue('critical', env.defaultCritical) }
-  }, [environmentId, environments.data, entry, setValue])
+    if (entry || envMonitor === undefined || envCritical === undefined) return
+    setValue('monitor', envMonitor); setValue('critical', envCritical)
+  }, [environmentId, envMonitor, envCritical, entry, setValue])
 
   const suggest = useMutation({
     mutationFn: () => get<{ ip: string }>(`/ip-addresses/available-candidate${queryString({ segmentId })}`),
@@ -111,7 +85,7 @@ export function RegisterIPModal({ open, onClose, entry, prefill, serverOnly }: {
     },
     meta: { inlineError: true, success: (v: Values) => (entry ? `Saved ${v.ip}.` : `${v.ip} added to the register.`) },
     onSuccess: () => { void refresh(); onClose() },
-    onError: (e) => { if (!applyServerErrors(e, setError, fields)) setFormError(e) },
+    onError: (e) => { if (!applyServerErrors(e, setError, shownErrors)) setFormError(e) },
   })
 
   const submit = handleSubmit((v) => {

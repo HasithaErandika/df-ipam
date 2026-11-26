@@ -186,7 +186,7 @@ paths:
     get:
       summary: "Known devices, pending first"
       description: "Permission: inventory:view."
-      parameters: [{ name: status, in: query, schema: { type: string } }, { name: deviceType, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      parameters: [{ name: id, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: deviceType, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     post:
       summary: "Add an approved device"
@@ -218,7 +218,7 @@ paths:
     get:
       summary: "The IP register; view=servers gives server segments plus monitored entries"
       description: "Permission: inventory:view."
-      parameters: [{ name: segmentId, in: query, schema: { type: string } }, { name: environmentId, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: health, in: query, schema: { type: string } }, { name: ipType, in: query, schema: { type: string } }, { name: view, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
+      parameters: [{ name: id, in: query, schema: { type: string } }, { name: segmentId, in: query, schema: { type: string } }, { name: environmentId, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: health, in: query, schema: { type: string } }, { name: ipType, in: query, schema: { type: string } }, { name: view, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: sort, in: query, schema: { type: string } }, { $ref: '#/components/parameters/page' }, { $ref: '#/components/parameters/pageSize' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
     post:
       summary: "Register an address"
@@ -353,7 +353,7 @@ paths:
   /reservations/{id}/convert:
     post:
       summary: "Turn one reserved address into a register entry; the rest stays held"
-      description: "Permission: ip:reserve."
+      description: "Permission: inventory:edit or requests:approve, and the hold's owner unless inventory:edit."
       parameters: [{ $ref: '#/components/parameters/id' }]
       responses: { '2XX': { description: OK }, default: { $ref: '#/components/responses/Error' } }
   /users:

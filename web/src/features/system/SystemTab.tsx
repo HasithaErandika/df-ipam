@@ -36,7 +36,9 @@ export function SystemTab() {
   const refresh = useInvalidate('/settings', '/notification-preferences', '/discovery', 'me')
   const confirmSave = useConfirmSave()
   const confirm = useConfirm()
-  useEffect(() => { if (q.data) setValues(Object.fromEntries(Object.entries(q.data.values).map(([k, v]) => [k, String(v)]))) }, [q.data])
+  // Seed from the saved numbers only when they change: saving a switch refetches and would wipe unsaved numbers.
+  const saved = q.data ? JSON.stringify(q.data.values) : ''
+  useEffect(() => { if (q.data) setValues(Object.fromEntries(Object.entries(q.data.values).map(([k, v]) => [k, String(v)]))) }, [saved])
   const save = useMutation({
     mutationFn: (body: object) => put('/settings', body),
     meta: { inlineError: true, success: 'Settings saved.' }, onSuccess: () => void refresh(),

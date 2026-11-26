@@ -29,7 +29,7 @@ export function ColumnChooser({ columns, shown, onToggle }: { columns: { key: st
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger asChild><Button><Columns3 size={14} aria-hidden />Columns</Button></DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 min-w-48 rounded-md border border-line-strong/70 bg-surface p-1 shadow-[0_12px_32px_-12px_rgba(11,18,32,.3)]">
+        <DropdownMenu.Content align="end" sideOffset={4} className="z-30 min-w-48 rounded-md border border-line-strong/70 bg-surface p-1 shadow-menu">
           {columns.map((c) => (
             <DropdownMenu.CheckboxItem key={c.key} className={item} checked={shown.includes(c.key)} onCheckedChange={() => onToggle(c.key)} onSelect={(e) => e.preventDefault()}>
               <span className="grid w-4 place-items-center">{shown.includes(c.key) && <Check size={14} aria-hidden />}</span>{c.label}

@@ -1,5 +1,6 @@
 import type { Tone } from '../../lib/labels'
 import type { LinkSettings } from '../../lib/types'
+import { formatDate, formatDateTime } from '../../lib/format'
 
 export const linkStatuses: Record<string, string> = { active: 'Active', inactive: 'Inactive', pending: 'Pending', terminated: 'Terminated' }
 export const linkStatusTone: Record<string, Tone> = { active: 'ok', inactive: 'neutral', pending: 'warn', terminated: 'danger' }
@@ -39,17 +40,13 @@ export function bandwidthLine(down: number | null, up: number | null): string {
   return `${formatBandwidth(down) || '—'} down / ${formatBandwidth(up) || '—'} up`
 }
 
-/** A YYYY-MM-DD date as 15 Jan 2027. */
+/** A YYYY-MM-DD date as 15 Jan 2027, or a dash. */
 export function formatDay(day: string | null | undefined): string {
-  if (!day) return '—'
-  const [y, m, d] = day.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+  return day ? formatDate(day) : '—'
 }
 
-/** A time in Sri Lanka, as 15 Jan 2027, 14:05. */
-export function formatColombo(iso: string): string {
-  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Colombo' })
-}
+/** A time in Sri Lanka, as 15 Jan 2027, 14:05: the app-wide formatter. */
+export const formatColombo = formatDateTime
 
 export function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`

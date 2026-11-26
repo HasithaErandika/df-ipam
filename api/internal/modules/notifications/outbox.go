@@ -82,7 +82,8 @@ func deliverBatch(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL
 
 func pendingEmails(ctx context.Context, conn db.Conn) ([]outboxItem, error) {
 	rows, err := conn.Query(ctx, `SELECT n.id::text, u.email, n.kind, n.message, n.link, n.email_attempts FROM notifications n
-		JOIN users u ON u.id = n.user_id WHERE n.email_status = 'pending' ORDER BY n.created_at LIMIT $1`, batchSize)
+		JOIN users u ON u.id = n.user_id WHERE n.email_status = 'pending' AND u.is_active
+			AND (n.email_next_at IS NULL OR n.email_next_at <= now()) ORDER BY n.created_at LIMIT $1`, batchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +113,9 @@ func sendEmail(ctx context.Context, conn db.Conn, mailer mail.Mailer, baseURL st
 		}
 		slog.WarnContext(ctx, "notification email failed", "notificationId", n.ID, "attempt", n.Attempts+1)
 	}
-	_, err := conn.Exec(ctx, `UPDATE notifications SET email_status = $2, email_attempts = email_attempts + 1 WHERE id = $1::uuid AND email_status = 'pending'`,
+	// The next try waits 1, 2, 4, then 8 minutes.
+	_, err := conn.Exec(ctx, `UPDATE notifications SET email_status = $2, email_attempts = email_attempts + 1,
+		email_next_at = now() + interval '1 minute' * power(2, email_attempts) WHERE id = $1::uuid AND email_status = 'pending'`,
 		n.ID, status)
 	return err
 }

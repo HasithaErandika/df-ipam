@@ -13,7 +13,7 @@ import type { Device } from '../../lib/types'
 import { WithPlatform } from '../../components/PlatformIcon'
 import { deviceLine, iconEvidence, networkCard, serviceName } from '../discovery/deviceInfo'
 import { Presence } from '../discovery/findingColumns'
-import { useDialogParam } from '../../lib/dialogParam'
+import { useDialogParam, useOpenRecord } from '../../lib/dialogParam'
 import { DeviceDetails } from './DeviceDetails'
 import { ApproveDeviceModal, type DecisionTarget, useRejectDevice } from '../shared/DeviceDecision'
 import { ExportMenu, ImportButton } from '../shared/FileTransfer'
@@ -33,6 +33,7 @@ export function DevicesPage() {
   const [approve, setApprove] = useState<DecisionTarget | null>(null)
   const reject = useRejectDevice()
   const [openId, setOpen] = useDialogParam('device')
+  const openDevice = useOpenRecord('/devices', openId, rows)
 
   const actionsWidth = !canEdit ? 'w-24' : rows.some((d) => d.status === 'pending') ? 'w-48' : 'w-12'
   const columns: Column<Device>[] = [
@@ -98,7 +99,7 @@ export function DevicesPage() {
       </Card>
       <DeviceFormModal open={form !== null} device={form?.device} onClose={() => setForm(null)} />
       <ApproveDeviceModal target={approve} onClose={() => setApprove(null)} />
-      <DeviceDetails device={rows.find((d) => d.id === openId) ?? null} canEdit={canEdit} onClose={() => setOpen(null)}
+      <DeviceDetails device={openDevice} canEdit={canEdit} onClose={() => setOpen(null)}
         onApprove={(d) => setApprove({ ...d })} onReject={(d) => void reject(d)} onEdit={(d) => setForm({ device: d })} />
     </>
   )

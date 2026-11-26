@@ -33,7 +33,7 @@ const byType: Record<string, LucideIcon> = {
 function Windows({ size, server }: { size: number; server?: boolean }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
-      <g fill={server ? '#00508a' : '#0078d4'}>
+      <g fill={server ? 'var(--os-windows-server)' : 'var(--os-windows)'}>
         <rect x="2" y="2" width="9.5" height="9.5" rx="1" /><rect x="12.5" y="2" width="9.5" height="9.5" rx="1" />
         <rect x="2" y="12.5" width="9.5" height="9.5" rx="1" /><rect x="12.5" y="12.5" width="9.5" height="9.5" rx="1" />
       </g>

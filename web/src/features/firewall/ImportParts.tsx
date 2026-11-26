@@ -75,7 +75,7 @@ export function ListTools({ all, open, onlyOpen, setOnlyOpen, allChosen, chooseA
 }) {
   const opt = (on: boolean, text: string, n: number) => (
     <button type="button" role="radio" aria-checked={onlyOpen === on} onClick={() => setOnlyOpen(on)}
-      className={cx('h-[26px] cursor-pointer rounded-[4px] px-2.5 text-[12.5px] font-medium', onlyOpen === on ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(11,18,32,.12)]' : 'text-ink-3 hover:text-ink')}>
+      className={cx('h-[26px] cursor-pointer rounded-[4px] px-2.5 text-[12.5px] font-medium', onlyOpen === on ? 'bg-surface text-ink shadow-pill' : 'text-ink-3 hover:text-ink')}>
       {text} <span className="tabular-nums text-ink-3">{n}</span>
     </button>
   )
